@@ -200,18 +200,16 @@ export const ItemsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClos
             <Pencil className="w-3.5 h-3.5" />
           </button>
 
-          {/* Delete (Admin Only) */}
-          {!isCashier && (
-            <button
-              type="button"
-              onClick={() => deleteItem(row.id)}
-              className="p-1 rounded-md text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer"
-              title="Delete Item"
-              aria-label="Delete Item"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          )}
+          {/* Delete Item */}
+          <button
+            type="button"
+            onClick={() => deleteItem(row.id)}
+            className="p-1 rounded-md text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer"
+            title="Delete Item"
+            aria-label="Delete Item"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
         </div>
       ),
     },

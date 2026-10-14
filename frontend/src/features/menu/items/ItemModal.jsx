@@ -157,11 +157,9 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
     if (!categoryName.trim()) {
       errs.categoryName = 'Category is required';
     }
-    if (!isCashier || !isEdit) {
-      const priceNum = parseFloat(basePrice);
-      if (basePrice === '' || isNaN(priceNum) || priceNum < 0) {
-        errs.basePrice = 'Price must be 0 or greater';
-      }
+    const priceNum = parseFloat(basePrice);
+    if (basePrice === '' || isNaN(priceNum) || priceNum < 0) {
+      errs.basePrice = 'Price must be 0 or greater';
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -246,13 +244,8 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
         };
       });
 
-    const finalBasePrice = (isCashier && isEdit)
-      ? (item?.basePrice !== undefined ? Number(item.basePrice) : 0)
-      : Math.round(parseFloat(basePrice) || 0);
-
-    const finalCostPrice = (isCashier && isEdit)
-      ? (item?.costPrice !== undefined ? item.costPrice : null)
-      : costPrice.trim() !== '' && !isNaN(Number(costPrice)) ? Math.round(parseFloat(costPrice)) : null;
+    const finalBasePrice = Math.round(parseFloat(basePrice) || 0);
+    const finalCostPrice = costPrice.trim() !== '' && !isNaN(Number(costPrice)) ? Math.round(parseFloat(costPrice)) : null;
 
     const payload = {
       name: name.trim(),
@@ -422,18 +415,12 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
               >
                 {servingUnit.toLowerCase().includes('kg') ? 'Cost/Kg (Rs)' : 'Cost Price (Rs)'}
               </label>
-              {isCashier && (
-                <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded-md border border-amber-200/60 flex items-center gap-0.5 shrink-0" title="Only Admin can modify cost price">
-                  <Lock className="w-2.5 h-2.5 stroke-[2.5]" /> Admin
-                </span>
-              )}
             </div>
             <input
               ref={costPriceInputRef}
               type="number"
               min="0"
               step="10"
-              disabled={isCashier}
               value={costPrice}
               onChange={(e) => setCostPrice(e.target.value)}
               onKeyDown={(e) => {
@@ -442,13 +429,8 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
                   priceInputRef.current?.focus();
                 }
               }}
-              placeholder={isCashier ? 'Locked' : servingUnit.toLowerCase().includes('kg') ? 'e.g. 600' : 'e.g. 280'}
-              className={`w-full h-8 px-3 rounded-full border text-xs font-medium outline-none transition-colors ${
-                isCashier
-                  ? 'bg-slate-100/90 text-slate-500 border-slate-200 cursor-not-allowed select-none'
-                  : 'bg-white text-slate-800 border-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-0 focus:border-slate-400'
-              }`}
-              title={isCashier ? 'Only Admin can modify cost price' : undefined}
+              placeholder={servingUnit.toLowerCase().includes('kg') ? 'e.g. 600' : 'e.g. 280'}
+              className="w-full h-8 px-3 rounded-full border text-xs font-medium outline-none transition-colors bg-white text-slate-800 border-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-0 focus:border-slate-400"
             />
           </div>
 
@@ -461,18 +443,12 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
               >
                 {servingUnit.toLowerCase().includes('kg') ? 'Selling/Kg *' : 'Selling Price *'}
               </label>
-              {isCashier && (
-                <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded-md border border-amber-200/60 flex items-center gap-0.5 shrink-0" title="Only Admin can modify selling price">
-                  <Lock className="w-2.5 h-2.5 stroke-[2.5]" /> Admin
-                </span>
-              )}
             </div>
             <input
               ref={priceInputRef}
               type="number"
               min="0"
               step="10"
-              disabled={isCashier}
               value={basePrice}
               onChange={(e) => {
                 setBasePrice(e.target.value);
@@ -485,17 +461,14 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
                   unitInputRef.current?.focus();
                 }
               }}
-              placeholder={isCashier ? 'Locked' : servingUnit.toLowerCase().includes('kg') ? 'e.g. 1000' : 'e.g. 450'}
+              placeholder={servingUnit.toLowerCase().includes('kg') ? 'e.g. 1000' : 'e.g. 450'}
               className={`w-full h-8 px-3 rounded-full border text-xs font-medium outline-none transition-colors ${
-                isCashier
-                  ? 'bg-slate-100/90 text-slate-500 border-slate-200 cursor-not-allowed select-none'
-                  : errors.basePrice
+                errors.basePrice
                   ? 'border-rose-400 bg-white text-slate-800'
                   : 'border-slate-300 bg-white text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-0 focus:border-slate-400'
               }`}
-              title={isCashier ? 'Only Admin can modify selling price' : undefined}
             />
-            {errors.basePrice && !isCashier && (
+            {errors.basePrice && (
               <p className="text-[10px] font-medium text-rose-600 mt-0.5 truncate">
                 {errors.basePrice}
               </p>

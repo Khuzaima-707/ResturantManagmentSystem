@@ -20,6 +20,8 @@ export const MenuPage = () => {
 
   const [activeTab, setActiveTab] = useState('All Items');
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
+  const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] = useState(false);
+  const [isAddAddonModalOpen, setIsAddAddonModalOpen] = useState(false);
 
   const tabs = [
     {
@@ -40,7 +42,7 @@ export const MenuPage = () => {
     <div className="space-y-4 max-w-[1440px] mx-auto select-none">
       {/* Main Container Card */}
       <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/70 shadow-[0_2px_8px_rgba(0,0,0,0.02)]">
-        {/* Navigation Tabs Header with + Add Item button matching Screenshot 2 */}
+        {/* Navigation Tabs Header with + Add Item / Category / Add-on button */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200/90 mb-5 pb-0.5">
           <Tabs
             tabs={tabs}
@@ -50,7 +52,7 @@ export const MenuPage = () => {
             className="border-b-0"
           />
 
-          {activeTab === 'All Items' && !isCashier && (
+          {activeTab === 'All Items' && (
             <button
               type="button"
               onClick={() => setIsAddItemModalOpen(true)}
@@ -58,6 +60,28 @@ export const MenuPage = () => {
             >
               <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>Add Item</span>
+            </button>
+          )}
+
+          {activeTab === 'Categories' && (
+            <button
+              type="button"
+              onClick={() => setIsAddCategoryModalOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#FF5C28] hover:bg-[#E04D1D] text-white text-xs font-semibold rounded-full shadow-xs transition-colors cursor-pointer self-start sm:self-center shrink-0 mb-2 sm:mb-0"
+            >
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>Add Category</span>
+            </button>
+          )}
+
+          {activeTab === 'Add-ons' && (
+            <button
+              type="button"
+              onClick={() => setIsAddAddonModalOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#FF5C28] hover:bg-[#E04D1D] text-white text-xs font-semibold rounded-full shadow-xs transition-colors cursor-pointer self-start sm:self-center shrink-0 mb-2 sm:mb-0"
+            >
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>Add Add-on</span>
             </button>
           )}
         </div>
@@ -70,8 +94,18 @@ export const MenuPage = () => {
               onAddModalClose={() => setIsAddItemModalOpen(false)}
             />
           )}
-          {activeTab === 'Categories' && <CategoriesList />}
-          {activeTab === 'Add-ons' && <AddonsList />}
+          {activeTab === 'Categories' && (
+            <CategoriesList
+              isAddModalOpen={isAddCategoryModalOpen}
+              onAddModalClose={() => setIsAddCategoryModalOpen(false)}
+            />
+          )}
+          {activeTab === 'Add-ons' && (
+            <AddonsList
+              isAddModalOpen={isAddAddonModalOpen}
+              onAddModalClose={() => setIsAddAddonModalOpen(false)}
+            />
+          )}
         </div>
       </div>
     </div>

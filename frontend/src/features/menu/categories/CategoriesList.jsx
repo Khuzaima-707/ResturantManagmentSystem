@@ -5,17 +5,20 @@ import { CategoryModal } from './CategoryModal';
 import { useAppStore } from '../../../store';
 import { cn } from '../../../utils/cn';
 
-export const CategoriesList = () => {
-  const { categories, items, addCategory, setCategoryStatus, deleteCategory, user } = useAppStore();
-  const isCashier = Boolean(
-    (user?.role?.toLowerCase().includes('cashier') && !user?.role?.toLowerCase().includes('admin')) ||
-    (user?.username?.toLowerCase() === 'cashier' && user?.username?.toLowerCase() !== 'admin')
-  );
+export const CategoriesList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClose }) => {
+  const { categories, items, addCategory, setCategoryStatus, deleteCategory } = useAppStore();
 
   const [newCategoryName, setNewCategoryName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [internalModalOpen, setInternalModalOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(null);
+
+  const isModalOpen = Boolean(externalAddModalOpen || internalModalOpen);
+  const closeModal = () => {
+    setInternalModalOpen(false);
+    setSelectedCategory(null);
+    onAddModalClose?.();
+  };
 
   // Filtered categories
   const filteredCategories = useMemo(() => {
@@ -35,7 +38,7 @@ export const CategoriesList = () => {
 
   const handleOpenEdit = (cat) => {
     setSelectedCategory(cat);
-    setIsModalOpen(true);
+    setInternalModalOpen(true);
   };
 
   const handleToggleStatus = (cat) => {
@@ -155,18 +158,16 @@ export const CategoriesList = () => {
             <Power className="w-3.5 h-3.5" />
           </button>
 
-          {/* Delete (Admin Only) */}
-          {!isCashier && (
-            <button
-              type="button"
-              onClick={() => deleteCategory(row.id)}
-              className="p-1 rounded-md text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer"
-              title="Delete Category"
-              aria-label="Delete Category"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          )}
+          {/* Delete Category */}
+          <button
+            type="button"
+            onClick={() => deleteCategory(row.id)}
+            className="p-1 rounded-md text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer"
+            title="Delete Category"
+            aria-label="Delete Category"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
         </div>
       ),
     },
@@ -176,25 +177,23 @@ export const CategoriesList = () => {
     <div className="space-y-4">
       {/* Top Action & Search Bar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        {/* Quick Add Input matching Screenshot 1 (Admin Only) */}
-        {!isCashier && (
-          <form onSubmit={handleQuickAdd} className="flex items-center gap-2.5 flex-1 max-w-md">
-            <input
-              type="text"
-              value={newCategoryName}
-              onChange={(e) => setNewCategoryName(e.target.value)}
-              placeholder="Enter new category name..."
-              className="flex-1 min-w-[200px] px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#FF5C28] transition-colors"
-            />
-            <button
-              type="submit"
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#FF5C28] hover:bg-[#E04D1D] text-white text-xs font-semibold rounded-full shadow-xs transition-colors cursor-pointer shrink-0"
-            >
-              <FolderPlus className="w-3.5 h-3.5 stroke-[2]" />
-              <span>Add Category</span>
-            </button>
-          </form>
-        )}
+        {/* Quick Add Input matching Screenshot 1 */}
+        <form onSubmit={handleQuickAdd} className="flex items-center gap-2.5 flex-1 max-w-md">
+          <input
+            type="text"
+            value={newCategoryName}
+            onChange={(e) => setNewCategoryName(e.target.value)}
+            placeholder="Enter new category name..."
+            className="flex-1 min-w-[200px] px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#FF5C28] transition-colors"
+          />
+          <button
+            type="submit"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#FF5C28] hover:bg-[#E04D1D] text-white text-xs font-semibold rounded-full shadow-xs transition-colors cursor-pointer shrink-0"
+          >
+            <FolderPlus className="w-3.5 h-3.5 stroke-[2]" />
+            <span>Add Category</span>
+          </button>
+        </form>
 
         {/* Filter / Search by name or keyword */}
         <div className="relative w-full sm:w-64">
@@ -223,7 +222,7 @@ export const CategoriesList = () => {
       {/* Add / Edit Category Modal */}
       <CategoryModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={closeModal}
         category={selectedCategory}
       />
 

@@ -6,12 +6,8 @@ import { useAppStore } from '../../../store';
 import { detectAddonCategories, ADDON_TYPES, detectAddonType } from '../../../domain/rules';
 import { cn } from '../../../utils/cn';
 
-export const AddonsList = () => {
-  const { addons, categories, addAddon, setAddonStatus, deleteAddon, user } = useAppStore();
-  const isCashier = Boolean(
-    (user?.role?.toLowerCase().includes('cashier') && !user?.role?.toLowerCase().includes('admin')) ||
-    (user?.username?.toLowerCase() === 'cashier' && user?.username?.toLowerCase() !== 'admin')
-  );
+export const AddonsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClose }) => {
+  const { addons, categories, addAddon, setAddonStatus, deleteAddon } = useAppStore();
 
   const [newAddonName, setNewAddonName] = useState('');
   const [newAddonCostPrice, setNewAddonCostPrice] = useState('');
@@ -19,8 +15,15 @@ export const AddonsList = () => {
   const [quickError, setQuickError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Status');
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [internalModalOpen, setInternalModalOpen] = useState(false);
   const [selectedAddon, setSelectedAddon] = useState(null);
+
+  const isModalOpen = Boolean(externalAddModalOpen || internalModalOpen);
+  const closeModal = () => {
+    setInternalModalOpen(false);
+    setSelectedAddon(null);
+    onAddModalClose?.();
+  };
 
   // Category map for lookup
   const categoryMap = useMemo(() => {
@@ -60,7 +63,7 @@ export const AddonsList = () => {
 
   const handleOpenEdit = (addon) => {
     setSelectedAddon(addon);
-    setIsModalOpen(true);
+    setInternalModalOpen(true);
   };
 
   const handleToggleStatus = (addon) => {
@@ -240,18 +243,16 @@ export const AddonsList = () => {
             <Power className="w-3.5 h-3.5" />
           </button>
 
-          {/* Delete (Admin Only) */}
-          {!isCashier && (
-            <button
-              type="button"
-              onClick={() => deleteAddon(row.id)}
-              className="p-1 rounded-md text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer"
-              title="Delete Add-on"
-              aria-label="Delete Add-on"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          )}
+          {/* Delete Add-on */}
+          <button
+            type="button"
+            onClick={() => deleteAddon(row.id)}
+            className="p-1 rounded-md text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer"
+            title="Delete Add-on"
+            aria-label="Delete Add-on"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
         </div>
       ),
     },
@@ -261,9 +262,8 @@ export const AddonsList = () => {
     <div className="space-y-4">
       {/* Top Action & Search Bar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        {/* Quick Add Form (Admin Only) */}
-        {!isCashier && (
-          <form onSubmit={handleQuickAdd} noValidate className="flex flex-wrap items-center gap-2 flex-1 max-w-2xl">
+        {/* Quick Add Form */}
+        <form onSubmit={handleQuickAdd} noValidate className="flex flex-wrap items-center gap-2 flex-1 max-w-2xl">
           <input
             type="text"
             value={newAddonName}
@@ -325,7 +325,6 @@ export const AddonsList = () => {
             </span>
           )}
         </form>
-        )}
 
         {/* Filter / Search + Type Filter + Status Filter */}
         <div className="flex items-center gap-2 flex-wrap self-end sm:self-auto">
@@ -366,7 +365,7 @@ export const AddonsList = () => {
       {/* Add / Edit Add-on Modal */}
       <AddonModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={closeModal}
         addon={selectedAddon}
       />
     </div>
