@@ -14,7 +14,8 @@ import { ensureDefaultUsers } from './src/controllers/authController.js';
 
 let isConnected = false;
 
-export default async function handler(req, res) {
+// Auto-connect MongoDB on cloud/serverless requests
+app.use(async (req, res, next) => {
   if (!isConnected && process.env.MONGODB_URI) {
     try {
       await connectDB();
@@ -24,8 +25,7 @@ export default async function handler(req, res) {
       console.warn('[Vercel Serverless] MongoDB connection deferred:', err.message);
     }
   }
+  next();
+});
 
-  return app(req, res);
-}
-
-export { app };
+export default app;
