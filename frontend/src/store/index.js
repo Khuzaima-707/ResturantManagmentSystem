@@ -320,6 +320,78 @@ export const useAppStore = create((set, get) => ({
   // Transaction Ledger (Canonical Orders & Reversals)
   orders: (() => {
     const saved = storage.get('orders', null);
+    const catalogItems = storage.get('menu_items', seedMenuItems);
+    const catalogAddons = storage.get('addons', seedAddons);
+
+    const enrichOrderLines = (orderList) => {
+      return (orderList || []).map((o) => {
+        if (!Array.isArray(o.lines) || o.lines.length === 0) return o;
+        let orderHasChange = false;
+        const enrichedLines = o.lines.map((l) => {
+          if (l.costPriceSnapshot !== undefined && l.costPriceSnapshot !== null && Number(l.costPriceSnapshot) > 0 && l.itemCOGS !== undefined) {
+            return l;
+          }
+          orderHasChange = true;
+          const foundItem = catalogItems.find(
+            (ci) => ci.id === l.itemId || (ci.name && l.itemNameSnapshot && ci.name.trim().toLowerCase() === l.itemNameSnapshot.trim().toLowerCase())
+          );
+          const itemCost = (l.costPriceSnapshot && Number(l.costPriceSnapshot) > 0)
+            ? Number(l.costPriceSnapshot)
+            : (foundItem?.costPrice || Math.round((Number(l.unitPrice) || 0) * 0.55));
+          const qty = Math.max(1, Number(l.quantity || 1));
+          const isWeight = Boolean(l.pricingMode === 'portion' || l.pricingMode === 'custom_weight' || l.selectedWeightGrams);
+          let derivedGrams = Number(l.selectedWeightGrams) || 0;
+          if (isWeight && derivedGrams <= 0) {
+            const label = String(l.selectedPortionLabel || l.portion || '').toLowerCase();
+            if (label.includes('1kg') || label === '1 kg') derivedGrams = 1000;
+            else if (label.match(/(\d+)\s*g/)) derivedGrams = Number(label.match(/(\d+)\s*g/)[1]);
+            else if (label.includes('half')) derivedGrams = 500;
+            else if (label.includes('quarter')) derivedGrams = 250;
+          }
+          let lineItemCOGS = itemCost * qty;
+          if (isWeight) {
+            if (derivedGrams > 0) {
+              lineItemCOGS = Math.round((derivedGrams / 1000) * itemCost * qty);
+            } else if (l.unitPrice && foundItem?.basePrice) {
+              const ratio = Math.min(1, Math.max(0.1, Number(l.unitPrice) / Number(foundItem.basePrice)));
+              lineItemCOGS = Math.round(itemCost * ratio * qty);
+            }
+          }
+          const rawAddons = l.addonSnapshots || l.addons || [];
+          let lineAddonCOGS = 0;
+          const enrichedAddons = rawAddons.map((a) => {
+            if (a.costPrice !== undefined && a.costPrice !== null && Number(a.costPrice) > 0) {
+              lineAddonCOGS += Number(a.costPrice) * (Number(a.quantity) || 1) * qty;
+              return a;
+            }
+            const foundAddon = catalogAddons.find(
+              (ca) => ca.id === a.id || (ca.name && a.name && ca.name.trim().toLowerCase() === a.name.trim().toLowerCase())
+            );
+            const aCost = foundAddon?.costPrice || Math.round((Number(a.price) || 0) * 0.45);
+            lineAddonCOGS += aCost * (Number(a.quantity) || 1) * qty;
+            return { ...a, costPrice: aCost };
+          });
+          const totalCOGS = lineItemCOGS + lineAddonCOGS;
+          const lineGross = Number(l.grossLineSale ?? l.lineSubtotal ?? (Number(l.unitPrice || 0) * qty));
+          const netRev = Number(l.netRevenue ?? lineGross);
+          const grossProfit = Math.round(netRev - totalCOGS);
+          const margin = netRev > 0 ? Number(((grossProfit / netRev) * 100).toFixed(2)) : 0;
+
+          return {
+            ...l,
+            costPriceSnapshot: itemCost,
+            itemCOGS: lineItemCOGS,
+            addonCOGS: lineAddonCOGS,
+            totalCOGS,
+            addonSnapshots: enrichedAddons,
+            grossProfit,
+            grossProfitMargin: margin,
+          };
+        });
+        return orderHasChange ? { ...o, lines: enrichedLines } : o;
+      });
+    };
+
     if (saved && Array.isArray(saved)) {
       // Deduplicate by ID and invoiceNumber
       const seen = new Set();
@@ -333,12 +405,14 @@ export const useAppStore = create((set, get) => ({
           deduped.push(o);
         }
       }
-      storage.set('orders', deduped);
-      return deduped;
+      const enriched = enrichOrderLines(deduped);
+      storage.set('orders', enriched);
+      return enriched;
     }
     // Initialize default seed data
-    storage.set('orders', defaultSeedData.orders);
-    return defaultSeedData.orders;
+    const enrichedSeed = enrichOrderLines(defaultSeedData.orders);
+    storage.set('orders', enrichedSeed);
+    return enrichedSeed;
   })(),
 
   reversals: (() => {
@@ -374,7 +448,20 @@ export const useAppStore = create((set, get) => ({
 
   items: (() => {
     const saved = storage.get('menu_items', null);
-    if (saved && Array.isArray(saved)) return saved;
+    if (saved && Array.isArray(saved)) {
+      const enriched = saved.map((it) => {
+        if (it.costPrice !== undefined && it.costPrice !== null && !isNaN(it.costPrice) && Number(it.costPrice) > 0) {
+          return it;
+        }
+        const seedMatch = seedMenuItems.find(
+          (sm) => sm.id === it.id || (sm.name && it.name && sm.name.trim().toLowerCase() === it.name.trim().toLowerCase())
+        );
+        const fallbackCost = seedMatch?.costPrice || Math.round((Number(it.basePrice) || 0) * 0.55);
+        return { ...it, costPrice: fallbackCost };
+      });
+      storage.set('menu_items', enriched);
+      return enriched;
+    }
     storage.set('menu_items', seedMenuItems);
     return seedMenuItems;
   })(),
@@ -382,12 +469,22 @@ export const useAppStore = create((set, get) => ({
   addons: (() => {
     const saved = storage.get('addons', null);
     if (saved && Array.isArray(saved)) {
-      const sanitized = saved.map((a) => ({
-        ...a,
-        categoryIds: Array.isArray(a.categoryIds)
-          ? a.categoryIds.filter((cid) => cid !== 'cat-biryani' && !String(cid).toLowerCase().includes('rice'))
-          : [],
-      }));
+      const sanitized = saved.map((a) => {
+        let cost = a.costPrice;
+        if (cost === undefined || cost === null || isNaN(cost) || Number(cost) <= 0) {
+          const seedMatch = seedAddons.find(
+            (sa) => sa.id === a.id || (sa.name && a.name && sa.name.trim().toLowerCase() === a.name.trim().toLowerCase())
+          );
+          cost = seedMatch?.costPrice || Math.round((Number(a.price) || 0) * 0.45);
+        }
+        return {
+          ...a,
+          costPrice: cost,
+          categoryIds: Array.isArray(a.categoryIds)
+            ? a.categoryIds.filter((cid) => cid !== 'cat-biryani' && !String(cid).toLowerCase().includes('rice'))
+            : [],
+        };
+      });
       storage.set('addons', sanitized);
       return sanitized;
     }

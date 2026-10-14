@@ -51,6 +51,7 @@ export const DashboardPage = () => {
     orders,
     reversals,
     items,
+    addons,
     datePreset,
     setDatePreset,
     customDateRange,
@@ -78,12 +79,25 @@ export const DashboardPage = () => {
     );
   }, [orders, reversals, effectiveDatePreset, customDateRange, isCashier]);
 
-  // Derive compact Today Gross Profit for management dashboard KPI indicator (Hidden for Cashier)
-  const todayProfit = useMemo(() => {
+  // Derive Gross Profit for management dashboard KPI indicator (Hidden for Cashier)
+  const activeProfit = useMemo(() => {
     if (isCashier) return null;
-    const data = getProfitAndCostReportData(orders, reversals, { datePreset: 'Today' });
+    const data = getProfitAndCostReportData(
+      orders,
+      reversals,
+      {
+        datePreset: effectiveDatePreset,
+        customRange: isCashier ? null : customDateRange,
+        items,
+        addons,
+        itemsMaster: items,
+        addonsMaster: addons,
+      },
+      items,
+      addons
+    );
     return data?.kpis || null;
-  }, [orders, reversals, isCashier]);
+  }, [orders, reversals, effectiveDatePreset, customDateRange, isCashier, items, addons]);
 
   // Derive real top dishes from canonical transaction data (empty when no orders exist)
   const displayTopDishes = useMemo(() => {
@@ -359,11 +373,24 @@ export const DashboardPage = () => {
             </span>
           </div>
 
-          {todayProfit && (
+          {activeProfit && (
             <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10.5px]">
-              <span className="text-slate-400 font-medium">Profit Today:</span>
+              <span className="text-slate-400 font-medium">
+                {effectiveDatePreset === 'Today'
+                  ? 'Profit Today:'
+                  : effectiveDatePreset === 'This Week'
+                  ? 'Profit This Week:'
+                  : effectiveDatePreset === 'This Month'
+                  ? 'Profit This Month:'
+                  : 'Est. Gross Profit:'}
+              </span>
               <span className="font-semibold text-emerald-700">
-                {formatCurrency(todayProfit.grossProfit || 0)}
+                {formatCurrency(activeProfit.grossProfit || 0)}
+                {activeProfit.grossProfitMargin > 0 && (
+                  <span className="text-[9.5px] text-emerald-600/80 ml-1 font-medium">
+                    ({activeProfit.grossProfitMargin}%)
+                  </span>
+                )}
               </span>
             </div>
           )}

@@ -608,12 +608,16 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
     ? itemsMaster
     : Array.isArray(filters.itemsMaster)
     ? filters.itemsMaster
+    : Array.isArray(filters.items)
+    ? filters.items
     : [];
 
   const masterAddons = Array.isArray(addonsMaster) && addonsMaster.length > 0
     ? addonsMaster
     : Array.isArray(filters.addonsMaster)
     ? filters.addonsMaster
+    : Array.isArray(filters.addons)
+    ? filters.addons
     : [];
 
   const itemMap = new Map();
@@ -656,16 +660,23 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
 
       // Check item cost presence
       let lineItemCostPrice = null;
+      let matchedCatItem = null;
       if (line.costPriceSnapshot !== undefined && line.costPriceSnapshot !== null) {
         lineItemCostPrice = Number(line.costPriceSnapshot);
       } else if (line.costPrice !== undefined && line.costPrice !== null) {
         lineItemCostPrice = Number(line.costPrice);
-      } else if (masterItems.length > 0) {
-        const catItem = masterItems.find(
-          (mi) => mi && (mi.id === line.itemId || String(mi.id).toLowerCase() === String(line.itemId).toLowerCase())
+      }
+
+      if (masterItems.length > 0) {
+        matchedCatItem = masterItems.find(
+          (mi) =>
+            mi &&
+            (mi.id === line.itemId ||
+              String(mi.id).toLowerCase() === String(line.itemId).toLowerCase() ||
+              (mi.name && lineItemName && mi.name.trim().toLowerCase() === lineItemName.trim().toLowerCase()))
         );
-        if (catItem?.costPrice !== undefined && catItem?.costPrice !== null) {
-          lineItemCostPrice = Number(catItem.costPrice);
+        if (lineItemCostPrice === null && matchedCatItem?.costPrice !== undefined && matchedCatItem?.costPrice !== null) {
+          lineItemCostPrice = Number(matchedCatItem.costPrice);
         }
       }
 
@@ -674,6 +685,31 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
         line.pricingMode === 'custom_weight' ||
         (line.selectedWeightGrams && Number(line.selectedWeightGrams) > 0)
       );
+
+      // Helper function for portion or piece COGS
+      const calcItemBaseCOGS = () => {
+        if (lineItemCostPrice === null || isNaN(lineItemCostPrice) || lineItemCostPrice < 0) {
+          return null;
+        }
+        if (isWeight) {
+          let derivedGrams = Number(line.selectedWeightGrams) || 0;
+          if (derivedGrams <= 0) {
+            const label = String(line.selectedPortionLabel || line.portion || '').toLowerCase();
+            if (label.includes('1kg') || label === '1 kg') derivedGrams = 1000;
+            else if (label.match(/(\d+)\s*g/)) derivedGrams = Number(label.match(/(\d+)\s*g/)[1]);
+            else if (label.includes('half')) derivedGrams = 500;
+            else if (label.includes('quarter')) derivedGrams = 250;
+          }
+          if (derivedGrams > 0) {
+            return Math.round((derivedGrams / 1000) * lineItemCostPrice * qty);
+          }
+          if (line.unitPrice && matchedCatItem?.basePrice) {
+            const ratio = Math.min(1, Math.max(0.1, Number(line.unitPrice) / Number(matchedCatItem.basePrice)));
+            return Math.round(lineItemCostPrice * ratio * qty);
+          }
+        }
+        return Math.round(lineItemCostPrice * qty);
+      };
 
       // Process attached add-ons
       let lineAddonsGrossSale = 0;
@@ -728,20 +764,19 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
           itemCOGSVal = Number(line.totalCOGS);
         } else if (line.itemCOGS !== undefined && line.itemCOGS !== null) {
           itemCOGSVal = Number(line.itemCOGS) + (Number(line.addonCOGS) || 0);
-        } else if (lineItemCostPrice !== null && !isNaN(lineItemCostPrice) && lineItemCostPrice >= 0) {
-          itemCOGSVal = isWeight
-            ? Math.round(((Number(line.selectedWeightGrams) || 0) / 1000) * lineItemCostPrice * qty)
-            : Math.round(lineItemCostPrice * qty);
+        } else {
+          itemCOGSVal = calcItemBaseCOGS();
         }
       } else {
         if (line.itemCOGS !== undefined && line.itemCOGS !== null) {
           itemCOGSVal = Number(line.itemCOGS);
-        } else if (lineItemCostPrice !== null && !isNaN(lineItemCostPrice) && lineItemCostPrice >= 0) {
-          itemCOGSVal = isWeight
-            ? Math.round(((Number(line.selectedWeightGrams) || 0) / 1000) * lineItemCostPrice * qty)
-            : Math.round(lineItemCostPrice * qty);
-        } else if (line.totalCOGS !== undefined && line.totalCOGS !== null) {
-          itemCOGSVal = Math.max(0, Number(line.totalCOGS) - lineAddonsTotalCOGS);
+        } else {
+          const baseCOGS = calcItemBaseCOGS();
+          if (baseCOGS !== null) {
+            itemCOGSVal = baseCOGS;
+          } else if (line.totalCOGS !== undefined && line.totalCOGS !== null) {
+            itemCOGSVal = Math.max(0, Number(line.totalCOGS) - lineAddonsTotalCOGS);
+          }
         }
       }
 

@@ -515,4 +515,66 @@ describe('Chartered Accountant Audit: Financial & Cost Accounting Integrity', ()
     expect(varianceCOGS).toBe(0);
     expect(varianceProfit).toBe(0);
   });
+
+  // ----------------------------------------------------------------------------
+  // AUDIT TEST 7: Rs 1,000 Order Reconciliation (Fixing Rs 60 Missing Cost Bug)
+  // ----------------------------------------------------------------------------
+  it('Audit Test 7 [Profit Verification]: Verifies Rs 1,000 order generates accurate gross profit (~Rs 420-460) instead of flawed Rs 60', () => {
+    // Scenario: User orders Special Chicken Biryani (Price 900, Cost 540) + Zeera Raita (Price 100, Cost 40) = Rs 1,000 Net Revenue
+    const cartLines = [
+      {
+        id: 'cart-line-1000',
+        itemId: 'item-biryani-default',
+        itemNameSnapshot: 'Special Chicken Biryani',
+        categoryNameSnapshot: 'Rice / Biryani',
+        quantity: 1,
+        unitPrice: 1000,
+        lineSubtotal: 1000,
+        costPriceSnapshot: 540,
+        addonSnapshots: [
+          { id: 'addon-raita-default', name: 'Zeera Raita', price: 100, costPrice: 40, quantity: 1 },
+        ],
+      },
+    ];
+
+    const masterCatalog = [
+      { id: 'item-biryani-default', name: 'Special Chicken Biryani', basePrice: 900, costPrice: 540 },
+    ];
+    const masterAddons = [
+      { id: 'addon-raita-default', name: 'Zeera Raita', price: 100, costPrice: 40 },
+    ];
+
+    const snapshots = buildOrderLineSnapshots(cartLines, masterCatalog, masterAddons, 0);
+    const line = snapshots[0];
+
+    // Total COGS = 540 (Biryani) + 40 (Raita) = 580
+    expect(line.itemCOGS).toBe(540);
+    expect(line.addonCOGS).toBe(40);
+    expect(line.totalCOGS).toBe(580);
+    expect(line.grossProfit).toBe(420); // 1000 - 580 = 420
+    expect(line.grossProfitMargin).toBe(42.0); // 42%
+
+    const testOrder = {
+      id: 'ord-1000-test',
+      invoiceNumber: 'INV-1000',
+      status: 'completed',
+      completedAt: auditDate,
+      createdAt: auditDate,
+      subtotal: 1000,
+      discountAmount: 0,
+      taxAmount: 0,
+      grandTotal: 1000,
+      lines: snapshots,
+    };
+
+    const report = getProfitAndCostReportData([testOrder], [], { datePreset: 'Today' }, masterCatalog, masterAddons);
+
+    // Verify KPIs
+    expect(report.kpis.netSales).toBe(1000);
+    expect(report.kpis.cogs).toBe(580);
+    expect(report.kpis.grossProfit).toBe(420); // Verified Rs 420 profit, eliminating flawed Rs 60!
+    expect(report.kpis.grossProfitMargin).toBe(42.0);
+    expect(report.kpis.missingCostCount).toBe(0);
+    expect(report.kpis.hasMissingCosts).toBe(false);
+  });
 });
