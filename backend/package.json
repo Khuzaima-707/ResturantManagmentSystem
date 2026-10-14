@@ -1,0 +1,48 @@
+{
+  "name": "rms-backend",
+  "version": "1.0.0",
+  "description": "Restaurant POS & Management System - Express & MongoDB Backend API",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node test_categories.js && node test_items.js && node test_addons.js && node test_orders.js && node test_reversals.js && node test_reports.js && node test_settings.js && node test_expenses.js && node test_tables.js && node test_shifts.js",
+    "test:categories": "node test_categories.js",
+    "test:items": "node test_items.js",
+    "test:addons": "node test_addons.js",
+    "test:orders": "node test_orders.js",
+    "test:reversals": "node test_reversals.js",
+    "test:reports": "node test_reports.js",
+    "test:settings": "node test_settings.js",
+    "test:expenses": "node test_expenses.js",
+    "test:tables": "node test_tables.js",
+    "test:shifts": "node test_shifts.js"
+  },
+  "keywords": [
+    "restaurant",
+    "pos",
+    "express",
+    "mongodb",
+    "mongoose",
+    "api"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cloudinary": "^2.11.0",
+    "compression": "^1.8.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^8.9.5",
+    "morgan": "^1.10.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3"
+  }
+}

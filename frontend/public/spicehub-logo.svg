@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 44" fill="none">
+  <!-- Chef Hat Icon Mark (Without solid orange background container) -->
+  <rect x="2" y="2" width="40" height="40" rx="12" fill="#FFF5F0" stroke="#FFE4D6" stroke-width="1"/>
+  <!-- Chef Hat Mark in Coral-Orange -->
+  <path d="M14 27h16v3a1 1 0 0 1-1 1H15a1 1 0 0 1-1-1v-3z" stroke="#FF5C28" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M14 23.5v-1a5 5 0 0 1 5-5h6a5 5 0 0 1 5 5v1" stroke="#FF5C28" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M14 23.5h16" stroke="#FF5C28" stroke-width="2.2" stroke-linecap="round"/>
+  <circle cx="22" cy="17.5" r="3.5" fill="#FF5C28" fill-opacity="0.18"/>
+
+  <!-- Brand Title: SpiceHub -->
+  <text x="50" y="23" font-family="Inter, system-ui, -apple-system, sans-serif" font-size="18" font-weight="900" fill="#0F172A" letter-spacing="-0.4">SpiceHub</text>
+
+  <!-- Subtitle: Restaurant POS -->
+  <text x="50" y="36" font-family="Inter, system-ui, -apple-system, sans-serif" font-size="8.5" font-weight="700" fill="#94A3B8" letter-spacing="0.8">RESTAURANT POS</text>
+</svg>
