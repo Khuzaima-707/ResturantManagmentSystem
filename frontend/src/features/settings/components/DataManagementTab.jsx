@@ -25,7 +25,7 @@ export const DataManagementTab = () => {
       setResetSuccessMessage('All restaurant operational data was permanently deleted.');
       setTimeout(() => {
         navigate('/dashboard');
-      }, 1200);
+      }, 400);
     }
   };
 

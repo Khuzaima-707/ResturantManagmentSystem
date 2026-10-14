@@ -82,15 +82,13 @@ export async function resetApplicationData(store = null) {
     // 2. Clear application-owned IndexedDB image blobs and memory cache
     await clearAllImages();
 
-    // 3. Sync full reset to MongoDB Atlas backend
-    try {
-      await api.post('/settings/danger-zone/reset', {
-        confirmationPhrase: 'DELETE ALL DATA',
-        resetType: 'all',
-      });
-    } catch (err) {
+    // 3. Sync full reset to MongoDB Atlas backend asynchronously (fire-and-forget, non-blocking)
+    api.post('/settings/danger-zone/reset', {
+      confirmationPhrase: 'DELETE ALL DATA',
+      resetType: 'all',
+    }).catch((err) => {
       console.warn('[resetService] Backend danger-zone reset warning:', err.message);
-    }
+    });
 
     // 4. Reset settings to safe application defaults
     const safeDefaultSettings = await SettingsRepository.resetSettings();

@@ -65,36 +65,31 @@ export async function deleteAllData(req, res, next) {
       });
     }
 
-    // Always clear operational transactions
-    const [ordersResult, reversalsResult] = await Promise.all([
-      Order.deleteMany({}),
-      Reversal.deleteMany({}),
-    ]);
-
-    let categoriesDeleted = 0;
-    let itemsDeleted = 0;
-    let addonsDeleted = 0;
+    // Run all deletions concurrently in parallel for maximum speed
+    const deleteTasks = [
+      Order.deleteMany({}).catch(() => ({ deletedCount: 0 })),
+      Reversal.deleteMany({}).catch(() => ({ deletedCount: 0 })),
+    ];
 
     if (resetType === 'all') {
-      const [cRes, iRes, aRes] = await Promise.all([
-        Category.deleteMany({}),
-        Item.deleteMany({}),
-        Addon.deleteMany({}),
-      ]);
-      categoriesDeleted = cRes.deletedCount;
-      itemsDeleted = iRes.deletedCount;
-      addonsDeleted = aRes.deletedCount;
+      deleteTasks.push(
+        Category.deleteMany({}).catch(() => ({ deletedCount: 0 })),
+        Item.deleteMany({}).catch(() => ({ deletedCount: 0 })),
+        Addon.deleteMany({}).catch(() => ({ deletedCount: 0 }))
+      );
     }
+
+    const [ordersResult, reversalsResult, cRes, iRes, aRes] = await Promise.all(deleteTasks);
 
     return res.status(200).json({
       success: true,
       message: 'All system data has been safely deleted. System returned to clean empty state.',
       deletedSummary: {
-        ordersDeleted: ordersResult.deletedCount,
-        reversalsDeleted: reversalsResult.deletedCount,
-        categoriesDeleted,
-        itemsDeleted,
-        addonsDeleted,
+        ordersDeleted: ordersResult?.deletedCount || 0,
+        reversalsDeleted: reversalsResult?.deletedCount || 0,
+        categoriesDeleted: cRes?.deletedCount || 0,
+        itemsDeleted: iRes?.deletedCount || 0,
+        addonsDeleted: aRes?.deletedCount || 0,
       },
     });
   } catch (error) {

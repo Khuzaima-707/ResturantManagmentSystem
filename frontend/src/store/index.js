@@ -167,6 +167,61 @@ export const useAppStore = create((set, get) => ({
       (norm === 'cashier' || norm === 'cashier@spicehub.pk') &&
       (password === creds.cashier || password === 'cashier123' || password === '1234');
 
+    // INSTANT LOCAL AUTHENTICATION (0ms latency, instant dashboard entrance)
+    if (isLocalAdminMatch || isLocalCashierMatch) {
+      const role = isLocalAdminMatch ? 'admin' : 'cashier';
+      const roleTitle = isLocalAdminMatch ? 'Admin Cashier' : 'Cashier';
+      const dummyToken = `jwt_${role}_${Date.now()}`;
+      const userObj = isLocalAdminMatch
+        ? {
+            id: 'user_admin',
+            name: 'John Holland',
+            username: 'admin',
+            email: 'admin@spicehub.pk',
+            role: roleTitle,
+            avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
+          }
+        : {
+            id: 'user_cashier',
+            name: 'Cashier 1',
+            username: 'cashier',
+            email: 'cashier@spicehub.pk',
+            role: roleTitle,
+            avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80',
+          };
+
+      storage.set('auth_token', dummyToken);
+      storage.set('active_user', userObj);
+      set({
+        token: dummyToken,
+        user: userObj,
+        isAuthenticated: true,
+      });
+
+      // Background asynchronous token upgrade with backend (non-blocking)
+      fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usernameOrEmail, password }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.success && data?.token) {
+            storage.set('auth_token', data.token);
+            if (data.user) {
+              storage.set('active_user', data.user);
+            }
+            set({
+              token: data.token,
+              user: data.user || userObj,
+            });
+          }
+        })
+        .catch(() => {});
+
+      return { success: true };
+    }
+
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
@@ -186,77 +241,8 @@ export const useAppStore = create((set, get) => ({
         });
         return { success: true };
       }
-
-      // If backend rejected but local matches (e.g. updated password from frontend),
-      // authenticate locally and sync new password to backend
-      if (isLocalAdminMatch || isLocalCashierMatch) {
-        const role = isLocalAdminMatch ? 'admin' : 'cashier';
-        const dummyToken = `jwt_${role}_${Date.now()}`;
-        const userObj = isLocalAdminMatch
-          ? {
-              id: 'user_admin',
-              name: 'John Holland',
-              username: 'admin',
-              email: 'admin@spicehub.pk',
-              role: 'Admin Cashier',
-              avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
-            }
-          : {
-              id: 'user_cashier',
-              name: 'Cashier 1',
-              username: 'cashier',
-              email: 'cashier@spicehub.pk',
-              role: 'Cashier',
-              avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80',
-            };
-
-        storage.set('auth_token', dummyToken);
-        storage.set('active_user', userObj);
-        set({ token: dummyToken, user: userObj, isAuthenticated: true });
-
-        // Auto-sync new password to backend in background
-        fetch('/api/auth/change-password', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ targetRole: role, newPassword: password }),
-        }).catch(() => {});
-
-        return { success: true };
-      }
-
       return { success: false, error: data.message || 'Invalid credentials' };
     } catch {
-      // Offline fallback
-      if (isLocalAdminMatch) {
-        const dummyToken = 'local_jwt_token_admin_' + Date.now();
-        const adminUser = {
-          id: 'user_admin',
-          name: 'John Holland',
-          username: 'admin',
-          email: 'admin@spicehub.pk',
-          role: 'Admin Cashier',
-          avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
-        };
-        storage.set('auth_token', dummyToken);
-        storage.set('active_user', adminUser);
-        set({ token: dummyToken, user: adminUser, isAuthenticated: true });
-        return { success: true };
-      }
-      if (isLocalCashierMatch) {
-        const dummyToken = 'local_jwt_token_cashier_' + Date.now();
-        const cashierUser = {
-          id: 'user_cashier',
-          name: 'Cashier 1',
-          username: 'cashier',
-          email: 'cashier@spicehub.pk',
-          role: 'Cashier',
-          avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80',
-        };
-        storage.set('auth_token', dummyToken);
-        storage.set('active_user', cashierUser);
-        set({ token: dummyToken, user: cashierUser, isAuthenticated: true });
-        return { success: true };
-      }
       return { success: false, error: 'Invalid username/email or password' };
     }
   },
