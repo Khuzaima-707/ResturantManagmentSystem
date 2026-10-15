@@ -27,8 +27,8 @@ export async function getAllCategories(req, res, next) {
     if (!isDbConnected()) {
       return res.status(200).json({
         success: true,
-        count: defaultCategories.length,
-        data: defaultCategories,
+        count: 0,
+        data: [],
         offline: true,
       });
     }

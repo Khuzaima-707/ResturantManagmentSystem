@@ -5,7 +5,6 @@
  */
 import { api } from '../adapters/apiClient';
 import { storage } from '../persistence/storage';
-import { seedMenuItems } from '../mock/demoData';
 
 const STORAGE_KEY = 'menu_items';
 
@@ -25,9 +24,7 @@ export const ItemRepository = {
     if (saved && Array.isArray(saved)) {
       return saved;
     }
-    // Seed initial menu items
-    storage.set(STORAGE_KEY, seedMenuItems);
-    return seedMenuItems;
+    return [];
   },
 
   getById: async (id) => {

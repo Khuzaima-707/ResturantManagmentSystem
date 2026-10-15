@@ -14,8 +14,8 @@ export async function getAllItems(req, res, next) {
     if (!isDbConnected()) {
       return res.status(200).json({
         success: true,
-        count: defaultItems.length,
-        data: defaultItems,
+        count: 0,
+        data: [],
         offline: true,
       });
     }

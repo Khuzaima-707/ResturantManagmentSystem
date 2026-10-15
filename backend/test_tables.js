@@ -130,6 +130,9 @@ async function runTableTests() {
     console.error('❌ Test failed with error:', err);
     process.exitCode = 1;
   } finally {
+    try {
+      await Table.deleteMany({});
+    } catch {}
     server.close();
     await mongoose.disconnect();
     console.log('🔌 Connections closed cleanly.');

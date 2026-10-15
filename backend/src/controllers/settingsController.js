@@ -4,6 +4,9 @@ import { Reversal } from '../models/Reversal.js';
 import { Category } from '../models/Category.js';
 import { MenuItem as Item } from '../models/Item.js';
 import { Addon } from '../models/Addon.js';
+import { Expense } from '../models/Expense.js';
+import { Table } from '../models/Table.js';
+import { Shift } from '../models/Shift.js';
 
 /**
  * GET /api/settings
@@ -75,11 +78,14 @@ export async function deleteAllData(req, res, next) {
       deleteTasks.push(
         Category.deleteMany({}).catch(() => ({ deletedCount: 0 })),
         Item.deleteMany({}).catch(() => ({ deletedCount: 0 })),
-        Addon.deleteMany({}).catch(() => ({ deletedCount: 0 }))
+        Addon.deleteMany({}).catch(() => ({ deletedCount: 0 })),
+        Expense.deleteMany({}).catch(() => ({ deletedCount: 0 })),
+        Table.deleteMany({}).catch(() => ({ deletedCount: 0 })),
+        Shift.deleteMany({}).catch(() => ({ deletedCount: 0 }))
       );
     }
 
-    const [ordersResult, reversalsResult, cRes, iRes, aRes] = await Promise.all(deleteTasks);
+    const [ordersResult, reversalsResult, cRes, iRes, aRes, expRes, tblRes, shfRes] = await Promise.all(deleteTasks);
 
     return res.status(200).json({
       success: true,
@@ -90,6 +96,9 @@ export async function deleteAllData(req, res, next) {
         categoriesDeleted: cRes?.deletedCount || 0,
         itemsDeleted: iRes?.deletedCount || 0,
         addonsDeleted: aRes?.deletedCount || 0,
+        expensesDeleted: expRes?.deletedCount || 0,
+        tablesDeleted: tblRes?.deletedCount || 0,
+        shiftsDeleted: shfRes?.deletedCount || 0,
       },
     });
   } catch (error) {

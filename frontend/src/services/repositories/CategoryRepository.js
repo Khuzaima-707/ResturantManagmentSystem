@@ -5,7 +5,6 @@
  */
 import { api } from '../adapters/apiClient';
 import { storage } from '../persistence/storage';
-import { seedCategories } from '../mock/demoData';
 
 const STORAGE_KEY = 'categories';
 
@@ -25,9 +24,7 @@ export const CategoryRepository = {
     if (saved && Array.isArray(saved)) {
       return saved;
     }
-    // Seed initial categories
-    storage.set(STORAGE_KEY, seedCategories);
-    return seedCategories;
+    return [];
   },
 
   getById: async (id) => {

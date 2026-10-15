@@ -395,10 +395,7 @@ export const useAppStore = create((set, get) => ({
       storage.set('orders', enriched);
       return enriched;
     }
-    // Initialize default seed data
-    const enrichedSeed = enrichOrderLines(defaultSeedData.orders);
-    storage.set('orders', enrichedSeed);
-    return enrichedSeed;
+    return [];
   })(),
 
   reversals: (() => {
@@ -419,109 +416,37 @@ export const useAppStore = create((set, get) => ({
       storage.set('reversals', deduped);
       return deduped;
     }
-    // Initialize default seed data
-    storage.set('reversals', defaultSeedData.reversals);
-    return defaultSeedData.reversals;
+    return [];
   })(),
 
   // Menu State: Categories, Menu Items & Add-ons
   categories: (() => {
     const saved = storage.get('categories', null);
     if (saved && Array.isArray(saved)) return saved;
-    storage.set('categories', seedCategories);
-    return seedCategories;
+    return [];
   })(),
 
   items: (() => {
     const saved = storage.get('menu_items', null);
     if (saved && Array.isArray(saved)) {
-      const enriched = saved.map((it) => {
-        if (it.costPrice !== undefined && it.costPrice !== null && !isNaN(it.costPrice) && Number(it.costPrice) > 0) {
-          return it;
-        }
-        const seedMatch = seedMenuItems.find(
-          (sm) => sm.id === it.id || (sm.name && it.name && sm.name.trim().toLowerCase() === it.name.trim().toLowerCase())
-        );
-        const fallbackCost = seedMatch?.costPrice || Math.round((Number(it.basePrice) || 0) * 0.55);
-        return { ...it, costPrice: fallbackCost };
-      });
-      storage.set('menu_items', enriched);
-      return enriched;
+      return saved;
     }
-    storage.set('menu_items', seedMenuItems);
-    return seedMenuItems;
+    return [];
   })(),
 
   addons: (() => {
     const saved = storage.get('addons', null);
     if (saved && Array.isArray(saved)) {
-      const sanitized = saved.map((a) => {
-        let cost = a.costPrice;
-        if (cost === undefined || cost === null || isNaN(cost) || Number(cost) <= 0) {
-          const seedMatch = seedAddons.find(
-            (sa) => sa.id === a.id || (sa.name && a.name && sa.name.trim().toLowerCase() === a.name.trim().toLowerCase())
-          );
-          cost = seedMatch?.costPrice || Math.round((Number(a.price) || 0) * 0.45);
-        }
-        return {
-          ...a,
-          costPrice: cost,
-          categoryIds: Array.isArray(a.categoryIds)
-            ? a.categoryIds.filter((cid) => cid !== 'cat-biryani' && !String(cid).toLowerCase().includes('rice'))
-            : [],
-        };
-      });
-      storage.set('addons', sanitized);
-      return sanitized;
+      return saved;
     }
-    storage.set('addons', seedAddons);
-    return seedAddons;
+    return [];
   })(),
 
   // Expenses & Accounting Ledger
   expenses: (() => {
     const saved = storage.get('expenses', null);
     if (saved && Array.isArray(saved)) return saved;
-    const defaultSeedExpenses = [
-      {
-        id: 'exp-seed-1',
-        title: 'Cooking Oil, Basmati Rice & Masala Spices',
-        category: 'Raw Materials / Meat & Groceries',
-        amount: 12000,
-        paymentMethod: 'Cash',
-        paidTo: 'Al-Madina Wholesale Grain Market',
-        date: new Date().toISOString(),
-      },
-      {
-        id: 'exp-seed-2',
-        title: 'Fresh Boneless Chicken & Mutton Ribs',
-        category: 'Raw Materials / Meat & Groceries',
-        amount: 16500,
-        paymentMethod: 'Cash',
-        paidTo: 'Punjab Poultry & Meat Suppliers',
-        date: new Date().toISOString(),
-      },
-      {
-        id: 'exp-seed-3',
-        title: 'Commercial Kitchen Gas Cylinder Refill (x2)',
-        category: 'Utilities (Gas, Electricity, Water)',
-        amount: 8500,
-        paymentMethod: 'Bank',
-        paidTo: 'Sui Northern / Shell Gas Station',
-        date: new Date().toISOString(),
-      },
-      {
-        id: 'exp-seed-4',
-        title: 'Custom Printed Takeaway Boxes & Foil Rolls',
-        category: 'Kitchen Supplies & Packaging',
-        amount: 4200,
-        paymentMethod: 'Cash',
-        paidTo: 'EcoPack Printers',
-        date: new Date().toISOString(),
-      },
-    ];
-    storage.set('expenses', defaultSeedExpenses);
-    return defaultSeedExpenses;
+    return [];
   })(),
 
   addExpense: (expense) => {
@@ -545,23 +470,8 @@ export const useAppStore = create((set, get) => ({
   // Dining Floorplan Tables
   tables: (() => {
     const saved = storage.get('tables', null);
-    if (saved && Array.isArray(saved) && saved.length > 0) return saved;
-    const defaultTables = [
-      { id: 'tbl-1', tableNumber: '1', zone: 'Main Dining Hall', capacity: 2, status: 'available' },
-      { id: 'tbl-2', tableNumber: '2', zone: 'Main Dining Hall', capacity: 4, status: 'available' },
-      { id: 'tbl-3', tableNumber: '3', zone: 'Main Dining Hall', capacity: 4, status: 'available' },
-      { id: 'tbl-4', tableNumber: '4', zone: 'Main Dining Hall', capacity: 6, status: 'available' },
-      { id: 'tbl-5', tableNumber: '5', zone: 'Main Dining Hall', capacity: 8, status: 'available' },
-      { id: 'tbl-6', tableNumber: '6', zone: 'Family Section', capacity: 4, status: 'available' },
-      { id: 'tbl-7', tableNumber: '7', zone: 'Family Section', capacity: 6, status: 'available' },
-      { id: 'tbl-8', tableNumber: '8', zone: 'Family Section', capacity: 6, status: 'available' },
-      { id: 'tbl-9', tableNumber: '9', zone: 'Outdoor Terrace', capacity: 2, status: 'available' },
-      { id: 'tbl-10', tableNumber: '10', zone: 'Outdoor Terrace', capacity: 4, status: 'available' },
-      { id: 'tbl-11', tableNumber: '11', zone: 'Outdoor Terrace', capacity: 4, status: 'available' },
-      { id: 'tbl-12', tableNumber: 'VIP-1', zone: 'Executive Lounge', capacity: 10, status: 'available' },
-    ];
-    storage.set('tables', defaultTables);
-    return defaultTables;
+    if (saved && Array.isArray(saved)) return saved;
+    return [];
   })(),
 
   updateTableStatus: (tableId, status, details = {}) => {
@@ -1102,13 +1012,17 @@ export const useAppStore = create((set, get) => ({
     set({ addons: updatedAddons, items: updatedItems, categories: updatedCategories });
   },
 
-  // Complete wipe of all restaurant data (categories, items, addons, orders, reversals)
+  // Complete wipe of all restaurant data (categories, items, addons, orders, reversals, expenses, tables)
   clearAllData: async () => {
     storage.set('categories', []);
     storage.set('menu_items', []);
     storage.set('addons', []);
     storage.set('orders', []);
     storage.set('reversals', []);
+    storage.set('expenses', []);
+    storage.set('tables', []);
+    storage.set('shifts', []);
+    storage.set('current_shift', null);
     storage.set('pos_cart', []);
     storage.set('notifications', []);
     const safeDefaults = getDefaultSettings();
@@ -1116,12 +1030,17 @@ export const useAppStore = create((set, get) => ({
     try {
       await clearAllImages();
     } catch {}
+    try {
+      await SettingsRepository.dangerZoneReset({ confirmationPhrase: 'DELETE ALL DATA', resetType: 'all' });
+    } catch {}
     set({
       categories: [],
       items: [],
       addons: [],
       orders: [],
       reversals: [],
+      expenses: [],
+      tables: [],
       cart: [],
       notifications: [],
       orderType: safeDefaults?.pos?.defaultOrderType || 'Dine-In',
@@ -1174,10 +1093,19 @@ export const useAppStore = create((set, get) => ({
       ]);
 
       const updates = {};
-      if (Array.isArray(cats) && cats.length > 0) updates.categories = cats;
-      if (Array.isArray(its) && its.length > 0) updates.items = its;
-      if (Array.isArray(adds) && adds.length > 0) updates.addons = adds;
-      if (Array.isArray(ords) && ords.length > 0) {
+      if (Array.isArray(cats)) {
+        updates.categories = cats;
+        storage.set('categories', cats);
+      }
+      if (Array.isArray(its)) {
+        updates.items = its;
+        storage.set('menu_items', its);
+      }
+      if (Array.isArray(adds)) {
+        updates.addons = adds;
+        storage.set('addons', adds);
+      }
+      if (Array.isArray(ords)) {
         const seenOrd = new Set();
         const dedupedOrds = [];
         for (const o of ords) {
@@ -1190,8 +1118,9 @@ export const useAppStore = create((set, get) => ({
           }
         }
         updates.orders = dedupedOrds;
+        storage.set('orders', dedupedOrds);
       }
-      if (Array.isArray(revs) && revs.length > 0) {
+      if (Array.isArray(revs)) {
         const seenRev = new Set();
         const dedupedRevs = [];
         for (const r of revs) {
@@ -1204,10 +1133,19 @@ export const useAppStore = create((set, get) => ({
           }
         }
         updates.reversals = dedupedRevs;
+        storage.set('reversals', dedupedRevs);
       }
-      if (Array.isArray(exps) && exps.length > 0) updates.expenses = exps;
-      if (Array.isArray(tbls) && tbls.length > 0) updates.tables = tbls;
-      if (curShift) updates.currentShift = curShift;
+      if (Array.isArray(exps)) {
+        updates.expenses = exps;
+        storage.set('expenses', exps);
+      }
+      if (Array.isArray(tbls)) {
+        updates.tables = tbls;
+        storage.set('tables', tbls);
+      }
+      if (curShift !== undefined) {
+        updates.currentShift = curShift;
+      }
 
       if (Object.keys(updates).length > 0) {
         set(updates);

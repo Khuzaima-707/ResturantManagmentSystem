@@ -3,7 +3,7 @@
  * Safe localStorage wrapper with memory fallback for SSR / Node / Vitest
  */
 
-const STORAGE_PREFIX = 'rms_pos_v1_';
+const STORAGE_PREFIX = 'rms_pos_v2_';
 const memoryStore = new Map();
 
 function isLocalStorageAvailable() {
@@ -12,6 +12,17 @@ function isLocalStorageAvailable() {
       const testKey = '__storage_test__';
       window.localStorage.setItem(testKey, testKey);
       window.localStorage.removeItem(testKey);
+
+      // One-time automatic cleanup of legacy demo data (v1)
+      try {
+        const keys = Object.keys(window.localStorage);
+        for (const k of keys) {
+          if (k.startsWith('rms_pos_v1_')) {
+            window.localStorage.removeItem(k);
+          }
+        }
+      } catch {}
+
       return true;
     }
     return false;

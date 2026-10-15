@@ -5,7 +5,6 @@
  */
 import { api } from '../adapters/apiClient';
 import { storage } from '../persistence/storage';
-import { seedAddons } from '../mock/demoData';
 
 const STORAGE_KEY = 'addons';
 
@@ -38,9 +37,7 @@ export const AddonRepository = {
       storage.set(STORAGE_KEY, sanitized);
       return sanitized;
     }
-    // Seed initial add-ons
-    storage.set(STORAGE_KEY, seedAddons);
-    return seedAddons;
+    return [];
   },
 
   getById: async (id) => {

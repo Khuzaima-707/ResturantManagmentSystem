@@ -38,9 +38,8 @@ export const TableRepository = {
     }
 
     const saved = storage.get(STORAGE_KEY, null);
-    if (saved && Array.isArray(saved) && saved.length > 0) return saved;
-    storage.set(STORAGE_KEY, DEFAULT_TABLES);
-    return DEFAULT_TABLES;
+    if (saved && Array.isArray(saved)) return saved;
+    return [];
   },
 
   getStats: async () => {

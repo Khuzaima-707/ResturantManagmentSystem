@@ -5,7 +5,6 @@
  */
 import { api } from '../adapters/apiClient';
 import { storage } from '../persistence/storage';
-import { defaultSeedData } from '../mock/demoData';
 
 const STORAGE_KEY = 'reversals';
 
@@ -25,7 +24,7 @@ export const ReversalRepository = {
 
     const saved = storage.get(STORAGE_KEY, null);
     if (saved && Array.isArray(saved)) return saved;
-    return defaultSeedData.reversals || [];
+    return [];
   },
 
   getById: async (id) => {

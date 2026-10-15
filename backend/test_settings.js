@@ -78,13 +78,7 @@ async function runSettingsTests() {
     console.log(`   Wipe Summary:`, validResetData.deletedSummary);
     console.log('   ✅ Danger zone reset executed cleanly without errors!');
 
-    // 6. Restore healthy sample data
-    console.log('\n6. Restoring baseline starter data for live system...');
-    await fetch(`${baseUrl}/api/categories/seed`, { method: 'POST' });
-    await fetch(`${baseUrl}/api/items/seed`, { method: 'POST' });
-    await fetch(`${baseUrl}/api/addons/seed`, { method: 'POST' });
-    await fetch(`${baseUrl}/api/orders/seed?force=true`, { method: 'POST' });
-    console.log('   ✅ Starter data refreshed in Atlas DB.');
+    console.log('   ✅ Danger zone reset executed cleanly without errors!');
 
     console.log('\n🎉 ========================================================');
     console.log('🎉 ALL MODULE 7 (SETTINGS & DANGER ZONE) TESTS PASSED 100%!');

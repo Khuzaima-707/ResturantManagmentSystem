@@ -5,7 +5,6 @@
  */
 import { api } from '../adapters/apiClient';
 import { storage } from '../persistence/storage';
-import { defaultSeedData } from '../mock/demoData';
 
 const STORAGE_KEY = 'orders';
 
@@ -25,7 +24,7 @@ export const OrderRepository = {
 
     const saved = storage.get(STORAGE_KEY, null);
     if (saved && Array.isArray(saved)) return saved;
-    return defaultSeedData.orders || [];
+    return [];
   },
 
   getById: async (id) => {

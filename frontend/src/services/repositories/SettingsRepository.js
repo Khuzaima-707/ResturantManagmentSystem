@@ -67,6 +67,15 @@ export class SettingsRepository {
   static resetSettings() {
     return new SettingsRepository(storage).resetSettings();
   }
+
+  static async dangerZoneReset({ confirmationPhrase = 'DELETE ALL DATA', resetType = 'all' } = {}) {
+    try {
+      return await api.post('/settings/danger-zone/reset', { confirmationPhrase, resetType });
+    } catch (err) {
+      console.warn('[SettingsRepository] Danger zone API reset warning:', err.message);
+      return null;
+    }
+  }
 }
 
 export default SettingsRepository;

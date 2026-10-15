@@ -76,6 +76,10 @@ export async function resetApplicationData(store = null) {
     storage.set('addons', []);
     storage.set('orders', []);
     storage.set('reversals', []);
+    storage.set('expenses', []);
+    storage.set('tables', []);
+    storage.set('shifts', []);
+    storage.set('current_shift', null);
     storage.set('pos_cart', []);
     storage.set('notifications', []);
 
@@ -93,7 +97,7 @@ export async function resetApplicationData(store = null) {
     // 4. Reset settings to safe application defaults
     const safeDefaultSettings = await SettingsRepository.resetSettings();
 
-    // 4. If Zustand store instance or setter is provided, synchronize in-memory state
+    // 5. If Zustand store instance or setter is provided, synchronize in-memory state
     if (store && typeof store.setState === 'function') {
       store.setState({
         categories: [],
@@ -101,6 +105,8 @@ export async function resetApplicationData(store = null) {
         addons: [],
         orders: [],
         reversals: [],
+        expenses: [],
+        tables: [],
         cart: [],
         notifications: [],
         settings: safeDefaultSettings,
