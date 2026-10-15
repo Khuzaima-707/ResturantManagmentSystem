@@ -14,6 +14,7 @@ export const CategoriesList = ({ isAddModalOpen: externalAddModalOpen, onAddModa
 
   const [newCategoryName, setNewCategoryName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All Status');
   const [internalModalOpen, setInternalModalOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(null);
 
@@ -28,6 +29,15 @@ export const CategoriesList = ({ isAddModalOpen: externalAddModalOpen, onAddModa
   const filteredCategories = useMemo(() => {
     return (categories || []).filter((cat) => {
       if (!cat) return false;
+
+      // Status filter
+      if (statusFilter !== 'All Status') {
+        if (String(cat.status || '').toLowerCase() !== statusFilter.toLowerCase()) {
+          return false;
+        }
+      }
+
+      // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchesName = String(cat.name || '').toLowerCase().includes(q);
@@ -38,7 +48,7 @@ export const CategoriesList = ({ isAddModalOpen: externalAddModalOpen, onAddModa
       }
       return true;
     });
-  }, [categories, searchQuery]);
+  }, [categories, searchQuery, statusFilter]);
 
   const handleOpenEdit = (cat) => {
     if (isCashier) return;
@@ -187,9 +197,9 @@ export const CategoriesList = ({ isAddModalOpen: externalAddModalOpen, onAddModa
   return (
     <div className="space-y-4">
       {/* Top Action & Search Bar */}
-      <div className={cn("flex flex-col sm:flex-row items-stretch sm:items-center gap-3", isCashier ? "justify-end" : "justify-between")}>
-        {/* Quick Add Input matching Screenshot 1 (Admin only) */}
-        {!isCashier && (
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        {/* Left Side: Quick Add for Admin, Pill Search Input for Cashier */}
+        {!isCashier ? (
           <form onSubmit={handleQuickAdd} className="flex items-center gap-2.5 flex-1 max-w-md">
             <input
               type="text"
@@ -206,18 +216,43 @@ export const CategoriesList = ({ isAddModalOpen: externalAddModalOpen, onAddModa
               <span>Add Category</span>
             </button>
           </form>
+        ) : (
+          <div className="relative w-full sm:w-72">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search categories..."
+              className="w-full pl-9.5 pr-4 py-2 bg-white border border-slate-200 rounded-full text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#FF5C28] transition-colors"
+            />
+          </div>
         )}
 
-        {/* Filter / Search by name or keyword */}
-        <div className={cn("relative", isCashier ? "w-full sm:w-72" : "w-full sm:w-64")}>
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search categories..."
-            className="w-full pl-9.5 pr-4 py-2 bg-white border border-slate-200 rounded-full text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#FF5C28] transition-colors"
-          />
+        {/* Right Side: Status Filter for Cashier, Search & Status Filter for Admin */}
+        <div className="flex items-center gap-2.5 self-end sm:self-auto">
+          {!isCashier && (
+            <div className="relative w-full sm:w-64">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search categories..."
+                className="w-full pl-9.5 pr-4 py-2 bg-white border border-slate-200 rounded-full text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#FF5C28] transition-colors"
+              />
+            </div>
+          )}
+
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-4 py-2 bg-white border border-slate-200 rounded-full text-xs font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer"
+          >
+            <option value="All Status">All Status</option>
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+          </select>
         </div>
       </div>
 

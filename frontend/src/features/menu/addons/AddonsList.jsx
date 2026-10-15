@@ -272,9 +272,9 @@ export const AddonsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClo
   return (
     <div className="space-y-4">
       {/* Top Action & Search Bar */}
-      <div className={cn("flex flex-col sm:flex-row items-stretch sm:items-center gap-3", isCashier ? "justify-end" : "justify-between")}>
-        {/* Quick Add Form (Admin only) */}
-        {!isCashier && (
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        {/* Left Side: Quick Add Form (Admin only) or Pill Search Input (Cashier) */}
+        {!isCashier ? (
           <form onSubmit={handleQuickAdd} noValidate className="flex flex-wrap items-center gap-2 flex-1 max-w-2xl">
             <input
               type="text"
@@ -337,11 +337,8 @@ export const AddonsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClo
               </span>
             )}
           </form>
-        )}
-
-        {/* Filter / Search + Type Filter + Status Filter */}
-        <div className="flex items-center gap-2 flex-wrap self-end sm:self-auto">
-          <div className="relative w-40 sm:w-52">
+        ) : (
+          <div className="relative w-full sm:w-72">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
@@ -351,6 +348,22 @@ export const AddonsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClo
               className="w-full pl-9.5 pr-4 py-2 bg-white border border-slate-200 rounded-full text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#FF5C28] transition-colors"
             />
           </div>
+        )}
+
+        {/* Right Side: Status Filter (for Cashier) / Search & Status Filter (for Admin) */}
+        <div className="flex items-center gap-2 flex-wrap self-end sm:self-auto">
+          {!isCashier && (
+            <div className="relative w-40 sm:w-52">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search add-ons..."
+                className="w-full pl-9.5 pr-4 py-2 bg-white border border-slate-200 rounded-full text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#FF5C28] transition-colors"
+              />
+            </div>
+          )}
 
           <select
             value={statusFilter}
