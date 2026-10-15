@@ -5,6 +5,68 @@ import { defaultItems } from '../data/defaultItems.js';
 import cloudinary from '../config/cloudinary.js';
 import { isDbConnected } from '../config/db.js';
 
+export function getItemTier(item) {
+  const combined = `${item?.categoryName || ''} ${item?.name || ''} ${item?.description || ''}`.toLowerCase();
+
+  const isDessert =
+    combined.includes('desert') ||
+    combined.includes('dessert') ||
+    combined.includes('sweet') ||
+    combined.includes('ice cream') ||
+    combined.includes('icecream') ||
+    combined.includes('kheer') ||
+    combined.includes('halwa') ||
+    combined.includes('gulab jamun') ||
+    combined.includes('jalebi') ||
+    combined.includes('rasmalai') ||
+    combined.includes('mithai') ||
+    combined.includes('meetha') ||
+    combined.includes('falooda') ||
+    combined.includes('custard') ||
+    combined.includes('pudding') ||
+    combined.includes('cake') ||
+    combined.includes('pastry') ||
+    combined.includes('brownie');
+
+  if (isDessert) return 2;
+
+  const isDrink =
+    combined.includes('drink') ||
+    combined.includes('coldrink') ||
+    combined.includes('cold drink') ||
+    combined.includes('softdrink') ||
+    combined.includes('soft drink') ||
+    combined.includes('beverage') ||
+    combined.includes('water') ||
+    combined.includes('juice') ||
+    combined.includes('soda') ||
+    combined.includes('shake') ||
+    combined.includes('smoothie') ||
+    combined.includes('dew') ||
+    combined.includes('coke') ||
+    combined.includes('pepsi') ||
+    combined.includes('fanta') ||
+    combined.includes('sprite') ||
+    combined.includes('marinda') ||
+    combined.includes('mirinda') ||
+    combined.includes('7up') ||
+    combined.includes('sting') ||
+    combined.includes('red bull') ||
+    combined.includes('monster') ||
+    combined.includes('lemonade') ||
+    combined.includes('lassi') ||
+    combined.includes('mineral water') ||
+    combined.includes('cold item') ||
+    combined.includes('tea') ||
+    combined.includes('coffee') ||
+    combined.includes('chai') ||
+    combined.includes('bottle');
+
+  if (isDrink) return 3;
+
+  return 1;
+}
+
 /**
  * GET /api/items
  * Retrieve items with category, status, search, and sorting support
@@ -47,7 +109,17 @@ export async function getAllItems(req, res, next) {
     else if (sort === '-createdAt') sortOption.createdAt = -1;
     else sortOption.createdAt = 1;
 
-    const items = await MenuItem.find(filter).sort(sortOption);
+    let items = await MenuItem.find(filter).sort(sortOption);
+
+    // Default natural sorting: Food first, Desserts next, Drinks/Water last
+    if (sort === 'createdAt') {
+      items = [...items].sort((a, b) => {
+        const tierA = getItemTier(a);
+        const tierB = getItemTier(b);
+        if (tierA !== tierB) return tierA - tierB;
+        return String(a?.name || '').localeCompare(String(b?.name || ''));
+      });
+    }
 
     return res.status(200).json({
       success: true,

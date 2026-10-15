@@ -67,6 +67,12 @@ const CategorySchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    sortOrder: {
+      type: Number,
+      min: [1, 'Sort order must be a positive integer'],
+      default: null,
+      index: true,
+    },
   },
   {
     timestamps: true,

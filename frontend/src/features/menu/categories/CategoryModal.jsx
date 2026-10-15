@@ -16,6 +16,9 @@ const CategoryModalForm = ({
   const isEdit = Boolean(category?.id);
 
   const [name, setName] = useState(category?.name || '');
+  const [sortOrder, setSortOrder] = useState(
+    category?.sortOrder !== undefined && category?.sortOrder !== null ? String(category.sortOrder) : ''
+  );
   const [errors, setErrors] = useState({});
 
   const validate = () => {
@@ -25,6 +28,14 @@ const CategoryModalForm = ({
     } else if (isDuplicateCategoryName(name, categories, category?.id)) {
       errs.name = 'A category with this name already exists';
     }
+
+    if (sortOrder && sortOrder.trim()) {
+      const num = Number(sortOrder.trim());
+      if (!Number.isInteger(num) || num <= 0) {
+        errs.sortOrder = 'Display order must be a positive whole number (e.g. 1, 2, 3)';
+      }
+    }
+
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -38,16 +49,19 @@ const CategoryModalForm = ({
       .toLowerCase()
       .replace(/\s+/g, '-')
       .replace(/[^a-z0-9-]/g, '');
+    const cleanSortOrder = sortOrder && sortOrder.trim() ? parseInt(sortOrder.trim(), 10) : null;
 
     if (isEdit) {
       updateCategory(category.id, {
         name: trimmed,
         slug,
+        sortOrder: cleanSortOrder,
       });
     } else {
       addCategory({
         name: trimmed,
         slug,
+        sortOrder: cleanSortOrder,
         status: 'active',
         defaultUnitType: 'piece',
         baseUnit: 'piece',
@@ -88,6 +102,20 @@ const CategoryModalForm = ({
             }}
             placeholder="Enter category name..."
             autoFocus
+          />
+        </FormField>
+
+        <FormField label="Display Order" error={errors.sortOrder}>
+          <Input
+            type="number"
+            min="1"
+            step="1"
+            value={sortOrder}
+            onChange={(e) => {
+              setSortOrder(e.target.value);
+              if (errors.sortOrder) setErrors({ ...errors, sortOrder: null });
+            }}
+            placeholder="e.g. 1, 2, 3... (Optional)"
           />
         </FormField>
       </form>

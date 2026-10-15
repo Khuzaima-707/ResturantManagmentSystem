@@ -24,6 +24,14 @@ function createCartLineId() {
   return `line_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
 }
 
+function formatUnitDisplay(rawUnit) {
+  const u = (rawUnit || 'Piece').trim();
+  if (/^\d/.test(u) || ['half', 'full'].includes(u.toLowerCase())) {
+    return u;
+  }
+  return `1 ${u}`;
+}
+
 /**
  * ItemConfigModalContent Component
  * Form state for configuring an individual item.
@@ -528,7 +536,7 @@ const ItemConfigModalContent = ({ item, isOpen, onClose, onAddToCart }) => {
           <div className="flex items-center justify-between p-2 bg-slate-50 rounded-lg border border-slate-100 text-xs">
             <span className="text-slate-500 font-medium">Portion / Unit:</span>
             <span className="font-bold text-slate-800">
-              1 {item.unit || item.baseUnit || 'Piece'} ({formatCurrency(item.basePrice || 0)})
+              {formatUnitDisplay(item.unit || item.baseUnit || 'Piece')} ({formatCurrency(item.basePrice || 0)})
             </span>
           </div>
         ) : null}

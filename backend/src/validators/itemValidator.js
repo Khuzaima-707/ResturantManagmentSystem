@@ -21,7 +21,7 @@ export const createItemSchema = z.object({
   unit: z.string().trim().max(50).default('Piece').optional(),
   portionOptions: z.array(portionSchema).default([]).optional(),
   addonIds: z.array(z.string().trim()).default([]).optional(),
-});
+}).passthrough();
 
 export const updateItemSchema = z.object({
   name: z.string().trim().min(1).max(150).optional(),
@@ -37,7 +37,7 @@ export const updateItemSchema = z.object({
   unit: z.string().trim().max(50).optional(),
   portionOptions: z.array(portionSchema).optional(),
   addonIds: z.array(z.string().trim()).optional(),
-});
+}).passthrough();
 
 /**
  * Express middleware to validate request bodies against a Zod schema

@@ -13,8 +13,19 @@ export const ItemRepository = {
     try {
       const res = await api.get('/items');
       if (res && res.success && Array.isArray(res.data)) {
-        storage.set(STORAGE_KEY, res.data);
-        return res.data;
+        const local = storage.get(STORAGE_KEY, []) || [];
+        if (res.data.length > 0) {
+          const backendIds = new Set(res.data.map((i) => i.id));
+          const unsynced = local.filter((loc) => loc?.id && !backendIds.has(loc.id));
+          const merged = [...res.data, ...unsynced];
+          storage.set(STORAGE_KEY, merged);
+          return merged;
+        } else if (local.length > 0) {
+          return local;
+        } else {
+          storage.set(STORAGE_KEY, []);
+          return [];
+        }
       }
     } catch {
       // Backend offline fallback
@@ -40,8 +51,7 @@ export const ItemRepository = {
     } catch {
       // Fallback
     }
-    const all = await ItemRepository.getAll();
-    return all.find((item) => item.id === id) || null;
+    return null;
   },
 
   create: async (item) => {
@@ -49,21 +59,23 @@ export const ItemRepository = {
       const res = await api.post('/items', item);
       if (res && res.success && res.data) {
         const all = storage.get(STORAGE_KEY, []) || [];
-        storage.set(STORAGE_KEY, [res.data, ...all.filter((i) => i.id !== res.data.id)]);
+        const filtered = all.filter((i) => i.id !== res.data.id && i.id !== item.id);
+        const updated = [res.data, ...filtered];
+        storage.set(STORAGE_KEY, updated);
         return res.data;
       }
     } catch (err) {
       console.warn('[ItemRepository] API create failed, using local storage:', err.message);
     }
 
-    const all = await ItemRepository.getAll();
+    const all = storage.get(STORAGE_KEY, []) || [];
     const newRecord = {
       ...item,
       id: item.id || `item-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       createdAt: item.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    const updated = [newRecord, ...all];
+    const updated = [newRecord, ...all.filter((i) => i.id !== newRecord.id)];
     storage.set(STORAGE_KEY, updated);
     return newRecord;
   },
@@ -73,7 +85,7 @@ export const ItemRepository = {
       const res = await api.put(`/items/${id}`, data);
       if (res && res.success && res.data) {
         const all = storage.get(STORAGE_KEY, []) || [];
-        const updated = all.map((item) => (item.id === id ? res.data : item));
+        const updated = all.map((item) => (item.id === id || item.id === res.data.id ? res.data : item));
         storage.set(STORAGE_KEY, updated);
         return res.data;
       }
@@ -81,7 +93,7 @@ export const ItemRepository = {
       console.warn('[ItemRepository] API update failed, using local storage:', err.message);
     }
 
-    const all = await ItemRepository.getAll();
+    const all = storage.get(STORAGE_KEY, []) || [];
     const updated = all.map((item) =>
       item.id === id ? { ...item, ...data, updatedAt: new Date().toISOString() } : item
     );
@@ -96,7 +108,7 @@ export const ItemRepository = {
       console.warn('[ItemRepository] API delete failed, using local storage:', err.message);
     }
 
-    const all = await ItemRepository.getAll();
+    const all = storage.get(STORAGE_KEY, []) || [];
     const filtered = all.filter((item) => item.id !== id);
     storage.set(STORAGE_KEY, filtered);
     return true;

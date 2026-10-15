@@ -4,6 +4,7 @@ import { DataTable } from '../../../components/ui/DataTable';
 import { CategoryModal } from './CategoryModal';
 import { useAppStore } from '../../../store';
 import { cn } from '../../../utils/cn';
+import { sortCategories } from '../../../domain/rules';
 
 export const CategoriesList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClose }) => {
   const { categories, items, addCategory, setCategoryStatus, deleteCategory, user } = useAppStore();
@@ -25,9 +26,9 @@ export const CategoriesList = ({ isAddModalOpen: externalAddModalOpen, onAddModa
     onAddModalClose?.();
   };
 
-  // Filtered categories
+  // Filtered categories sorted by sortOrder
   const filteredCategories = useMemo(() => {
-    return (categories || []).filter((cat) => {
+    const list = (categories || []).filter((cat) => {
       if (!cat) return false;
 
       // Status filter
@@ -48,6 +49,7 @@ export const CategoriesList = ({ isAddModalOpen: externalAddModalOpen, onAddModa
       }
       return true;
     });
+    return sortCategories(list);
   }, [categories, searchQuery, statusFilter]);
 
   const handleOpenEdit = (cat) => {
@@ -106,6 +108,17 @@ export const CategoriesList = ({ isAddModalOpen: externalAddModalOpen, onAddModa
       render: (val) => (
         <span className="font-bold text-xs text-slate-800">
           {val}
+        </span>
+      ),
+    },
+    {
+      key: 'sortOrder',
+      title: 'Display Order',
+      headerClassName: 'w-28 text-center',
+      align: 'center',
+      render: (val) => (
+        <span className="inline-flex items-center justify-center min-w-[28px] px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200/80">
+          {val !== undefined && val !== null && val !== '' ? val : '—'}
         </span>
       ),
     },

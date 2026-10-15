@@ -717,6 +717,220 @@ export function isDuplicateCategoryName(name, categories = [], excludeId = null)
 }
 
 /**
+ * Safely parses and validates a sortOrder value.
+ * Must be a positive integer (> 0).
+ * Returns null if missing, empty, invalid, non-integer, negative, or NaN.
+ */
+export function parseSortOrder(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0 || !Number.isInteger(num)) {
+    return null;
+  }
+  return num;
+}
+
+/**
+ * Detects if a text represents cold drinks, soft drinks, beverages, water, juices, etc.
+ */
+export function isDrinkOrColdItem(text = '') {
+  const norm = String(text || '').toLowerCase();
+  return (
+    norm.includes('drink') ||
+    norm.includes('coldrink') ||
+    norm.includes('cold drink') ||
+    norm.includes('softdrink') ||
+    norm.includes('soft drink') ||
+    norm.includes('beverage') ||
+    norm.includes('water') ||
+    norm.includes('juice') ||
+    norm.includes('soda') ||
+    norm.includes('shake') ||
+    norm.includes('smoothie') ||
+    norm.includes('dew') ||
+    norm.includes('coke') ||
+    norm.includes('pepsi') ||
+    norm.includes('fanta') ||
+    norm.includes('sprite') ||
+    norm.includes('marinda') ||
+    norm.includes('mirinda') ||
+    norm.includes('7up') ||
+    norm.includes('sting') ||
+    norm.includes('red bull') ||
+    norm.includes('monster') ||
+    norm.includes('lemonade') ||
+    norm.includes('lassi') ||
+    norm.includes('mineral water') ||
+    norm.includes('cold item') ||
+    norm.includes('tea') ||
+    norm.includes('coffee') ||
+    norm.includes('chai') ||
+    norm.includes('bottle')
+  );
+}
+
+/**
+ * Detects if a text represents desserts, sweet dishes, ice creams, meetha, etc.
+ */
+export function isDessertOrSweetItem(text = '') {
+  const norm = String(text || '').toLowerCase();
+  return (
+    norm.includes('desert') ||
+    norm.includes('dessert') ||
+    norm.includes('sweet') ||
+    norm.includes('ice cream') ||
+    norm.includes('icecream') ||
+    norm.includes('kheer') ||
+    norm.includes('halwa') ||
+    norm.includes('gulab jamun') ||
+    norm.includes('jalebi') ||
+    norm.includes('rasmalai') ||
+    norm.includes('mithai') ||
+    norm.includes('meetha') ||
+    norm.includes('falooda') ||
+    norm.includes('custard') ||
+    norm.includes('pudding') ||
+    norm.includes('cake') ||
+    norm.includes('pastry') ||
+    norm.includes('brownie')
+  );
+}
+
+/**
+ * Categorizes a category into display tiers:
+ * Tier 1: Main food categories (Rice, Biryani, Karahi, Roll, BBQ, Burger, Pizza, etc.)
+ * Tier 2: End-of-menu categories: Desserts & Sweets (Sweet items)
+ * Tier 3: End-of-menu categories: Cold Drinks, Beverages, Water, Cold items
+ */
+export function getCategoryTier(category) {
+  const name = String(category?.name || category?.slug || category || '').toLowerCase().trim();
+  const keywords = Array.isArray(category?.keywords) ? category.keywords.join(' ').toLowerCase() : '';
+  const combined = `${name} ${keywords}`;
+
+  if (isDessertOrSweetItem(combined)) {
+    return 2;
+  }
+  if (isDrinkOrColdItem(combined)) {
+    return 3;
+  }
+  return 1;
+}
+
+/**
+ * Categorizes an individual menu item into display tiers
+ */
+export function getItemTier(item, categories = []) {
+  const cat = Array.isArray(categories)
+    ? categories.find(
+        (c) =>
+          c.id === item?.categoryId ||
+          (item?.categoryName && c.name?.toLowerCase() === item.categoryName?.toLowerCase())
+      )
+    : null;
+  const catName = cat?.name || item?.categoryName || '';
+  const itemName = item?.name || '';
+  const desc = item?.description || '';
+  const combined = `${catName} ${itemName} ${desc}`;
+
+  if (isDessertOrSweetItem(combined)) {
+    return 2;
+  }
+  if (isDrinkOrColdItem(combined)) {
+    return 3;
+  }
+  return 1;
+}
+
+/**
+ * Sorts menu items:
+ * 1. Food items first (Tier 1)
+ * 2. Sweet items & desserts next (Tier 2)
+ * 3. Cold drinks, beverages & water last (Tier 3)
+ * Within each tier, items are sorted by their category sortOrder then alphabetically by name.
+ */
+export function sortMenuItems(items = [], categories = []) {
+  if (!Array.isArray(items)) return [];
+  return [...items].sort((a, b) => {
+    const tierA = getItemTier(a, categories);
+    const tierB = getItemTier(b, categories);
+
+    if (tierA !== tierB) {
+      return tierA - tierB;
+    }
+
+    if (a?.categoryId && b?.categoryId && a.categoryId !== b.categoryId && Array.isArray(categories)) {
+      const catA = categories.find((c) => c.id === a.categoryId);
+      const catB = categories.find((c) => c.id === b.categoryId);
+      if (catA && catB) {
+        const orderA = parseSortOrder(catA.sortOrder);
+        const orderB = parseSortOrder(catB.sortOrder);
+        if (orderA !== null && orderB !== null && orderA !== orderB) {
+          return orderA - orderB;
+        }
+        if (orderA !== null && orderB === null) return -1;
+        if (orderA === null && orderB !== null) return 1;
+      }
+    }
+
+    return String(a?.name || '').localeCompare(String(b?.name || ''), undefined, {
+      sensitivity: 'base',
+      numeric: true,
+    });
+  });
+}
+
+/**
+ * Sorts an array of category objects deterministically:
+ * 1. Primary natural tier: Main Food (Tier 1) -> Desserts & Sweets (Tier 2) -> Cold Drinks & Water (Tier 3)
+ * 2. Within each tier, ascending by numeric sortOrder (1, 2, 3...)
+ * 3. Missing/null/invalid sortOrders follow valid ones within the tier, sorted alphabetically A-Z.
+ * 4. Duplicate sortOrders are broken deterministically by name A-Z, then id.
+ * Does not mutate the original array.
+ */
+export function sortCategories(categories = []) {
+  if (!Array.isArray(categories)) return [];
+  return [...categories].sort((a, b) => {
+    // 1. Natural tier: Food comes first, Desserts next, Cold Drinks / Water last
+    const tierA = getCategoryTier(a);
+    const tierB = getCategoryTier(b);
+
+    if (tierA !== tierB) {
+      return tierA - tierB;
+    }
+
+    // 2. Within the same tier, sort ascending by numeric sortOrder (1, 2, 3...)
+    const orderA = parseSortOrder(a?.sortOrder);
+    const orderB = parseSortOrder(b?.sortOrder);
+
+    const hasOrderA = orderA !== null;
+    const hasOrderB = orderB !== null;
+
+    if (hasOrderA && hasOrderB) {
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+      const nameCompare = String(a?.name || '').localeCompare(String(b?.name || ''), undefined, {
+        sensitivity: 'base',
+        numeric: true,
+      });
+      if (nameCompare !== 0) return nameCompare;
+      return String(a?.id || '').localeCompare(String(b?.id || ''));
+    }
+
+    if (hasOrderA && !hasOrderB) return -1;
+    if (!hasOrderA && hasOrderB) return 1;
+
+    // 3. Stable alphabetical tie-breaker within the same tier
+    const nameCompare = String(a?.name || '').localeCompare(String(b?.name || ''), undefined, {
+      sensitivity: 'base',
+      numeric: true,
+    });
+    if (nameCompare !== 0) return nameCompare;
+    return String(a?.id || '').localeCompare(String(b?.id || ''));
+  });
+}
+
+/**
  * Checks if an add-on name is duplicate (case-insensitive)
  */
 export function isDuplicateAddonName(name, addons = [], excludeId = null) {
@@ -1072,9 +1286,32 @@ export function getAvailableUnitsForFood(foodItemName = '', foodCategoryName = '
     combined.includes('drink') ||
     combined.includes('beverage') ||
     combined.includes('soda') ||
-    combined.includes('water')
+    combined.includes('water') ||
+    combined.includes('pepsi') ||
+    combined.includes('coke') ||
+    combined.includes('dew') ||
+    combined.includes('sprite') ||
+    combined.includes('7up') ||
+    combined.includes('fanta') ||
+    combined.includes('mirinda') ||
+    combined.includes('sting')
   ) {
-    units.push('Bottle', 'Can', 'Glass', '1.5L', 'Custom');
+    units.push(
+      'Bottle',
+      'Can',
+      'Glass',
+      '300ml',
+      '250ml',
+      '345ml',
+      '500ml',
+      '1 Litre',
+      '1.5 Litre',
+      '2 Litre',
+      '2.25 Litre',
+      'Tin',
+      '1.5L',
+      'Custom'
+    );
   } else if (
     combined.includes('tea') ||
     combined.includes('chai') ||
@@ -1114,6 +1351,83 @@ export function getAvailableUnitsForFood(foodItemName = '', foodCategoryName = '
 
   return Array.from(new Set(cleanUnits));
 }
+
+/**
+ * Comprehensive Cold Drink & Beverage Serving Units (A to Z)
+ * Covers cans, tins, standard bottles, glasses, and portion sizes used across restaurants.
+ */
+export const COLD_DRINK_UNITS = [
+  '250ml',
+  '250ml Bottle',
+  '250ml Can',
+  '300ml',
+  '300ml Bottle',
+  '300ml Can',
+  '330ml Can',
+  '345ml',
+  '345ml Bottle',
+  '500ml',
+  '500ml Bottle',
+  '500ml Can',
+  '750ml',
+  '750ml Bottle',
+  '1 Litre',
+  '1 Litre Bottle',
+  '1.5 Litre',
+  '1.5 Litre Bottle',
+  '2 Litre',
+  '2 Litre Bottle',
+  '2.25 Litre',
+  '2.25 Litre Bottle',
+  'Bottle',
+  'Can',
+  'Cup',
+  'Diet Can',
+  'Dispenser Glass',
+  'Glass',
+  'Glass Bottle',
+  'Large Bottle',
+  'Large Glass',
+  'Medium Glass',
+  'Mini Can (150ml)',
+  'PET Bottle',
+  'Pack',
+  'Regular Bottle',
+  'Regular Can',
+  'Regular Glass',
+  'Single Can',
+  'Small Bottle',
+  'Small Glass',
+  'Tin',
+  'Tin Pack',
+];
+
+/**
+ * Standard Food & Meal Units
+ */
+export const FOOD_UNITS = [
+  'Piece',
+  'Plate',
+  'Half Plate',
+  'Full Plate',
+  'Portion',
+  'Half',
+  'Full',
+  'Slice',
+  'Scoop',
+  'Bowl',
+  '1 Kg',
+  '2 Kg',
+  '500g',
+  '250g',
+  'Box',
+  'Pack',
+];
+
+/**
+ * Master Standard Units collection (Deduplicated)
+ */
+export const ALL_STANDARD_UNITS = Array.from(new Set([...COLD_DRINK_UNITS, ...FOOD_UNITS]));
 
 export * from './settingsRules';
 

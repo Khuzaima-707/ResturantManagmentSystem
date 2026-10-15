@@ -3,12 +3,24 @@ import { Plus, ChevronDown } from 'lucide-react';
 import { Modal } from '../../../components/ui/Modal';
 import { ImageUploader } from '../components/ImageUploader';
 import { useAppStore } from '../../../store';
+import { sortCategories } from '../../../domain/rules';
 
 const STANDARD_UNITS = [
   'Piece',
   'Cup',
   'Glass',
   'Bottle',
+  'Can',
+  'Tin',
+  '250ml',
+  '300ml',
+  '345ml',
+  '500ml',
+  '750ml',
+  '1 Litre',
+  '1.5 Litre',
+  '2 Litre',
+  '2.25 Litre',
   'Plate',
   'Portion',
   'Half',
@@ -31,10 +43,10 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
 
   const existingCat = categories.find((c) => c.id === item?.categoryId);
 
-  // Available categories: ONLY categories entered by the user in the Categories section!
-  const availableCategories = (categories || [])
-    .filter((c) => c && c.name && c.status !== 'archived')
-    .map((c) => c.name);
+  // Available categories: ONLY categories entered by the user in the Categories section sorted by display order!
+  const availableCategories = sortCategories(
+    (categories || []).filter((c) => c && c.name && c.status !== 'archived')
+  ).map((c) => c.name);
 
   // Form states
   const [name, setName] = useState(item?.name || '');

@@ -23,6 +23,8 @@ function isTestEnvironment() {
   );
 }
 
+import { storage } from '../persistence/storage';
+
 export async function apiRequest(endpoint, options = {}) {
   if (isTestEnvironment()) {
     throw new Error('Live API disabled in Vitest unit test environment');
@@ -31,9 +33,14 @@ export async function apiRequest(endpoint, options = {}) {
   const baseUrl = getBaseUrl();
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   const url = `${baseUrl}${cleanEndpoint}`;
+
+  const token = storage.get('auth_token', null);
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
   const config = {
     headers: {
       'Content-Type': 'application/json',
+      ...authHeaders,
       ...options.headers,
     },
     ...options,

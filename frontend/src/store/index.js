@@ -899,6 +899,23 @@ export const useAppStore = create((set, get) => ({
     const updated = [newRecord, ...get().categories];
     storage.set('categories', updated);
     set({ categories: updated });
+
+    // Live sync to MongoDB Atlas via CategoryRepository
+    CategoryRepository.create(newRecord)
+      .then((synced) => {
+        if (synced && synced.id) {
+          const liveCats = get().categories || [];
+          const replaced = liveCats.map((c) =>
+            c.id === newRecord.id || c.id === synced.id ? { ...c, ...synced } : c
+          );
+          storage.set('categories', replaced);
+          set({ categories: replaced });
+        }
+      })
+      .catch((err) => {
+        console.warn('[Store] Category Atlas sync warning:', err.message);
+      });
+
     return newRecord;
   },
 
@@ -908,6 +925,22 @@ export const useAppStore = create((set, get) => ({
     );
     storage.set('categories', updated);
     set({ categories: updated });
+
+    // Live sync to MongoDB Atlas via CategoryRepository
+    CategoryRepository.update(id, updates)
+      .then((synced) => {
+        if (synced && synced.id) {
+          const liveCats = get().categories || [];
+          const replaced = liveCats.map((c) =>
+            c.id === id || c.id === synced.id ? { ...c, ...synced } : c
+          );
+          storage.set('categories', replaced);
+          set({ categories: replaced });
+        }
+      })
+      .catch((err) => {
+        console.warn('[Store] Category update Atlas sync warning:', err.message);
+      });
   },
 
   setCategoryStatus: (id, status) => {
@@ -918,6 +951,11 @@ export const useAppStore = create((set, get) => ({
     const updated = get().categories.filter((c) => c.id !== id);
     storage.set('categories', updated);
     set({ categories: updated });
+
+    // Live sync to MongoDB Atlas via CategoryRepository
+    CategoryRepository.delete(id).catch((err) => {
+      console.warn('[Store] Category delete Atlas sync warning:', err.message);
+    });
   },
 
   // ================= MENU ITEM ACTIONS =================
@@ -931,6 +969,23 @@ export const useAppStore = create((set, get) => ({
     const updated = [newRecord, ...get().items];
     storage.set('menu_items', updated);
     set({ items: updated });
+
+    // Live sync to MongoDB Atlas via ItemRepository
+    ItemRepository.create(newRecord)
+      .then((synced) => {
+        if (synced && synced.id) {
+          const liveItems = get().items || [];
+          const replaced = liveItems.map((i) =>
+            i.id === newRecord.id || i.id === synced.id ? { ...i, ...synced } : i
+          );
+          storage.set('menu_items', replaced);
+          set({ items: replaced });
+        }
+      })
+      .catch((err) => {
+        console.warn('[Store] Item Atlas sync warning:', err.message);
+      });
+
     return newRecord;
   },
 
@@ -940,6 +995,22 @@ export const useAppStore = create((set, get) => ({
     );
     storage.set('menu_items', updated);
     set({ items: updated });
+
+    // Live sync to MongoDB Atlas via ItemRepository
+    ItemRepository.update(id, updates)
+      .then((synced) => {
+        if (synced && synced.id) {
+          const liveItems = get().items || [];
+          const replaced = liveItems.map((i) =>
+            i.id === id || i.id === synced.id ? { ...i, ...synced } : i
+          );
+          storage.set('menu_items', replaced);
+          set({ items: replaced });
+        }
+      })
+      .catch((err) => {
+        console.warn('[Store] Item update Atlas sync warning:', err.message);
+      });
   },
 
   setItemStatus: (id, status) => {
@@ -950,6 +1021,11 @@ export const useAppStore = create((set, get) => ({
     const updated = get().items.filter((item) => item.id !== id);
     storage.set('menu_items', updated);
     set({ items: updated });
+
+    // Live sync to MongoDB Atlas via ItemRepository
+    ItemRepository.delete(id).catch((err) => {
+      console.warn('[Store] Item delete Atlas sync warning:', err.message);
+    });
   },
 
   // ================= ADD-ON ACTIONS =================
@@ -970,6 +1046,23 @@ export const useAppStore = create((set, get) => ({
     const updated = [newRecord, ...remaining];
     storage.set('addons', updated);
     set({ addons: updated });
+
+    // Live sync to MongoDB Atlas via AddonRepository
+    AddonRepository.create(newRecord)
+      .then((synced) => {
+        if (synced && synced.id) {
+          const liveAdds = get().addons || [];
+          const replaced = liveAdds.map((a) =>
+            a.id === newRecord.id || a.id === synced.id ? { ...a, ...synced } : a
+          );
+          storage.set('addons', replaced);
+          set({ addons: replaced });
+        }
+      })
+      .catch((err) => {
+        console.warn('[Store] Addon Atlas sync warning:', err.message);
+      });
+
     return newRecord;
   },
 
@@ -981,6 +1074,11 @@ export const useAppStore = create((set, get) => ({
     const updated = [updatedRecord, ...remaining];
     storage.set('addons', updated);
     set({ addons: updated });
+
+    // Live sync to MongoDB Atlas via AddonRepository
+    AddonRepository.update(id, updates).catch((err) => {
+      console.warn('[Store] Addon update Atlas sync warning:', err.message);
+    });
   },
 
   setAddonStatus: (id, status) => {
@@ -1010,6 +1108,11 @@ export const useAppStore = create((set, get) => ({
     storage.set('categories', updatedCategories);
 
     set({ addons: updatedAddons, items: updatedItems, categories: updatedCategories });
+
+    // Live sync to MongoDB Atlas via AddonRepository
+    AddonRepository.delete(id).catch((err) => {
+      console.warn('[Store] Addon delete Atlas sync warning:', err.message);
+    });
   },
 
   // Complete wipe of all restaurant data (categories, items, addons, orders, reversals, expenses, tables)
@@ -1093,56 +1196,111 @@ export const useAppStore = create((set, get) => ({
       ]);
 
       const updates = {};
+
+      // 1. Categories
       if (Array.isArray(cats)) {
-        updates.categories = cats;
-        storage.set('categories', cats);
+        const localCats = get().categories || [];
+        const backendCatMap = new Map((cats || []).map((c) => [c.id, c]));
+        const unsyncedCats = localCats.filter((c) => c?.id && !backendCatMap.has(c.id));
+        unsyncedCats.forEach((c) => {
+          CategoryRepository.create(c).catch(() => {});
+        });
+        const mergedCats = [...cats, ...unsyncedCats];
+        updates.categories = mergedCats;
+        storage.set('categories', mergedCats);
       }
+
+      // 2. Menu Items
       if (Array.isArray(its)) {
-        updates.items = its;
-        storage.set('menu_items', its);
+        const localItems = get().items || [];
+        const backendItemMap = new Map((its || []).map((i) => [i.id, i]));
+        const unsyncedItems = localItems.filter((i) => i?.id && !backendItemMap.has(i.id));
+        unsyncedItems.forEach((i) => {
+          ItemRepository.create(i).catch(() => {});
+        });
+        const mergedItems = [...its, ...unsyncedItems];
+        updates.items = mergedItems;
+        storage.set('menu_items', mergedItems);
       }
+
+      // 3. Add-ons
       if (Array.isArray(adds)) {
-        updates.addons = adds;
-        storage.set('addons', adds);
+        const localAdds = get().addons || [];
+        const backendAddMap = new Map((adds || []).map((a) => [a.id, a]));
+        const unsyncedAdds = localAdds.filter((a) => a?.id && !backendAddMap.has(a.id));
+        unsyncedAdds.forEach((a) => {
+          AddonRepository.create(a).catch(() => {});
+        });
+        const mergedAdds = [...adds, ...unsyncedAdds];
+        updates.addons = mergedAdds;
+        storage.set('addons', mergedAdds);
       }
+
+      // 4. Orders
       if (Array.isArray(ords)) {
+        const localOrds = get().orders || [];
         const seenOrd = new Set();
-        const dedupedOrds = [];
+        const mergedOrds = [];
         for (const o of ords) {
           const key = o.id || o.invoiceNumber;
           if (key && !seenOrd.has(key)) {
             seenOrd.add(key);
-            dedupedOrds.push(o);
+            mergedOrds.push(o);
           } else if (!key) {
-            dedupedOrds.push(o);
+            mergedOrds.push(o);
           }
         }
-        updates.orders = dedupedOrds;
-        storage.set('orders', dedupedOrds);
+        for (const loc of localOrds) {
+          const key = loc?.id || loc?.invoiceNumber;
+          if (key && !seenOrd.has(key)) {
+            seenOrd.add(key);
+            mergedOrds.push(loc);
+            OrderRepository.create(loc).catch(() => {});
+          }
+        }
+        updates.orders = mergedOrds;
+        storage.set('orders', mergedOrds);
       }
+
+      // 5. Reversals
       if (Array.isArray(revs)) {
+        const localRevs = get().reversals || [];
         const seenRev = new Set();
-        const dedupedRevs = [];
+        const mergedRevs = [];
         for (const r of revs) {
           const key = r.originalOrderId || r.originalInvoiceNumber || r.id;
           if (key && !seenRev.has(key)) {
             seenRev.add(key);
-            dedupedRevs.push(r);
+            mergedRevs.push(r);
           } else if (!key) {
-            dedupedRevs.push(r);
+            mergedRevs.push(r);
           }
         }
-        updates.reversals = dedupedRevs;
-        storage.set('reversals', dedupedRevs);
+        for (const loc of localRevs) {
+          const key = loc?.originalOrderId || loc?.originalInvoiceNumber || loc?.id;
+          if (key && !seenRev.has(key)) {
+            seenRev.add(key);
+            mergedRevs.push(loc);
+            ReversalRepository.create(loc).catch(() => {});
+          }
+        }
+        updates.reversals = mergedRevs;
+        storage.set('reversals', mergedRevs);
       }
+
+      // 6. Expenses
       if (Array.isArray(exps)) {
         updates.expenses = exps;
         storage.set('expenses', exps);
       }
+
+      // 7. Tables
       if (Array.isArray(tbls)) {
         updates.tables = tbls;
         storage.set('tables', tbls);
       }
+
+      // 8. Shift
       if (curShift !== undefined) {
         updates.currentShift = curShift;
       }

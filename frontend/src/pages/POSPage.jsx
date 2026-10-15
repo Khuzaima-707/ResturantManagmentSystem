@@ -21,6 +21,7 @@ import {
   calculateTax,
   calculateGrandTotal,
 } from '../domain/calculations';
+import { sortCategories, sortMenuItems } from '../domain/rules';
 
 /**
  * POSPage Component
@@ -62,20 +63,31 @@ export const POSPage = ({ defaultTab = 'register' }) => {
     setSelectedItemForConfig(item);
   };
 
-  // Dynamic category filter list based on active categories
-  const categoryTabs = useMemo(() => {
+  // Dynamic category filter list based on active categories sorted strictly by sortOrder
+  const sortedCategories = useMemo(() => {
     const activeCats = (categories || []).filter((c) => c.status === 'active');
-    return ['All', ...activeCats.map((c) => c.name)];
+    return sortCategories(activeCats);
   }, [categories]);
+
+  const categoryTabs = useMemo(() => {
+    return ['All', ...sortedCategories.map((c) => c.name)];
+  }, [sortedCategories]);
+
+  // Preserve filter selection safely if an active category is renamed or removed
+  React.useEffect(() => {
+    if (activeCategory !== 'All' && !categoryTabs.includes(activeCategory)) {
+      setActiveCategory('All');
+    }
+  }, [activeCategory, categoryTabs]);
 
   // Only sellable active menu items
   const activeMenuItems = useMemo(() => {
     return (items || []).filter((item) => item.status === 'active');
   }, [items]);
 
-  // Filter items by category and search query
+  // Filter items by category and search query, sorted with Food first, Desserts next, Drinks/Water last
   const filteredProducts = useMemo(() => {
-    return activeMenuItems.filter((product) => {
+    const list = activeMenuItems.filter((product) => {
       const category = categories.find((c) => c.id === product.categoryId);
 
       const matchesCategory =
@@ -92,6 +104,8 @@ export const POSPage = ({ defaultTab = 'register' }) => {
 
       return matchesCategory && matchesSearch;
     });
+
+    return sortMenuItems(list, categories);
   }, [activeMenuItems, categories, activeCategory, searchQuery]);
 
   // Real-time Cart Financials for Top Order Button

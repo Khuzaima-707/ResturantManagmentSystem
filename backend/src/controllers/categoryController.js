@@ -19,9 +19,119 @@ function slugify(text) {
 }
 
 /**
+ * Categorizes a category into display tiers:
+ * Tier 1: Main food categories (Rice, Biryani, Karahi, Roll, BBQ, Burger, Pizza, etc.)
+ * Tier 2: End-of-menu categories: Desserts & Sweets (Sweet items)
+ * Tier 3: End-of-menu categories: Cold Drinks, Beverages, Water, Cold items
+ */
+export function getCategoryTier(category) {
+  const name = String(category?.name || category?.slug || category || '').toLowerCase().trim();
+  const keywords = Array.isArray(category?.keywords) ? category.keywords.join(' ').toLowerCase() : '';
+  const combined = `${name} ${keywords}`;
+
+  const isDessert =
+    combined.includes('desert') ||
+    combined.includes('dessert') ||
+    combined.includes('sweet') ||
+    combined.includes('ice cream') ||
+    combined.includes('icecream') ||
+    combined.includes('kheer') ||
+    combined.includes('halwa') ||
+    combined.includes('gulab jamun') ||
+    combined.includes('jalebi') ||
+    combined.includes('rasmalai') ||
+    combined.includes('mithai') ||
+    combined.includes('meetha') ||
+    combined.includes('falooda') ||
+    combined.includes('custard') ||
+    combined.includes('pudding') ||
+    combined.includes('cake') ||
+    combined.includes('pastry') ||
+    combined.includes('brownie');
+
+  if (isDessert) return 2;
+
+  const isDrink =
+    combined.includes('drink') ||
+    combined.includes('coldrink') ||
+    combined.includes('cold drink') ||
+    combined.includes('softdrink') ||
+    combined.includes('soft drink') ||
+    combined.includes('beverage') ||
+    combined.includes('water') ||
+    combined.includes('juice') ||
+    combined.includes('soda') ||
+    combined.includes('shake') ||
+    combined.includes('smoothie') ||
+    combined.includes('dew') ||
+    combined.includes('coke') ||
+    combined.includes('pepsi') ||
+    combined.includes('fanta') ||
+    combined.includes('sprite') ||
+    combined.includes('marinda') ||
+    combined.includes('mirinda') ||
+    combined.includes('7up') ||
+    combined.includes('sting') ||
+    combined.includes('red bull') ||
+    combined.includes('monster') ||
+    combined.includes('lemonade') ||
+    combined.includes('lassi') ||
+    combined.includes('mineral water') ||
+    combined.includes('cold item') ||
+    combined.includes('tea') ||
+    combined.includes('coffee') ||
+    combined.includes('chai') ||
+    combined.includes('bottle');
+
+  if (isDrink) return 3;
+
+  return 1;
+}
+
+/**
  * GET /api/categories
  * Retrieve all categories with optional search and status filtering
  */
+export function sortCategoriesList(categories = []) {
+  const parseOrder = (v) => {
+    if (v === undefined || v === null || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 && Number.isInteger(n) ? n : null;
+  };
+
+  return [...categories].sort((a, b) => {
+    const tierA = getCategoryTier(a);
+    const tierB = getCategoryTier(b);
+
+    if (tierA !== tierB) {
+      return tierA - tierB;
+    }
+
+    const orderA = parseOrder(a?.sortOrder);
+    const orderB = parseOrder(b?.sortOrder);
+
+    if (orderA !== null && orderB !== null) {
+      if (orderA !== orderB) return orderA - orderB;
+      const cmp = String(a?.name || '').localeCompare(String(b?.name || ''), undefined, {
+        sensitivity: 'base',
+        numeric: true,
+      });
+      if (cmp !== 0) return cmp;
+      return String(a?.id || '').localeCompare(String(b?.id || ''));
+    }
+
+    if (orderA !== null && orderB === null) return -1;
+    if (orderA === null && orderB !== null) return 1;
+
+    const cmp = String(a?.name || '').localeCompare(String(b?.name || ''), undefined, {
+      sensitivity: 'base',
+      numeric: true,
+    });
+    if (cmp !== 0) return cmp;
+    return String(a?.id || '').localeCompare(String(b?.id || ''));
+  });
+}
+
 export async function getAllCategories(req, res, next) {
   try {
     if (!isDbConnected()) {
@@ -33,7 +143,7 @@ export async function getAllCategories(req, res, next) {
       });
     }
 
-    const { status, search, sort = 'createdAt' } = req.query;
+    const { status, search } = req.query;
     const filter = {};
 
     if (status && ['active', 'inactive'].includes(status)) {
@@ -49,13 +159,8 @@ export async function getAllCategories(req, res, next) {
       ];
     }
 
-    const sortOption = {};
-    if (sort === 'name') sortOption.name = 1;
-    else if (sort === '-name') sortOption.name = -1;
-    else if (sort === '-createdAt') sortOption.createdAt = -1;
-    else sortOption.createdAt = 1;
-
-    const categories = await Category.find(filter).sort(sortOption);
+    const rawCategories = await Category.find(filter);
+    const categories = sortCategoriesList(rawCategories);
 
     return res.status(200).json({
       success: true,

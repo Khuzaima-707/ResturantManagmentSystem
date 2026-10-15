@@ -18,6 +18,14 @@ import {
   ADDON_TYPES,
   detectAddonType,
   isAddonRecommended,
+  parseSortOrder,
+  sortCategories,
+  sortMenuItems,
+  getCategoryTier,
+  getItemTier,
+  COLD_DRINK_UNITS,
+  FOOD_UNITS,
+  ALL_STANDARD_UNITS,
 } from './index';
 import { CategoryRepository } from '../../services/repositories/CategoryRepository';
 import { ItemRepository } from '../../services/repositories/ItemRepository';
@@ -1098,5 +1106,185 @@ describe('Batch 3: Menu Domain Rules & Intelligence', () => {
     expect(adminResult.basePrice).toBe(200);
     expect(adminResult.costPrice).toBe(100);
   });
+
+  // 33. parseSortOrder validation
+  it('33. parseSortOrder strictly validates positive whole numbers and rejects invalid values', () => {
+    // Valid positive integers
+    expect(parseSortOrder(1)).toBe(1);
+    expect(parseSortOrder(2)).toBe(2);
+    expect(parseSortOrder(100)).toBe(100);
+    expect(parseSortOrder('1')).toBe(1);
+    expect(parseSortOrder(' 5 ')).toBe(5);
+
+    // Invalid / missing values return null (no NaN / null crashes)
+    expect(parseSortOrder(null)).toBeNull();
+    expect(parseSortOrder(undefined)).toBeNull();
+    expect(parseSortOrder('')).toBeNull();
+    expect(parseSortOrder('   ')).toBeNull();
+    expect(parseSortOrder(0)).toBeNull();
+    expect(parseSortOrder(-1)).toBeNull();
+    expect(parseSortOrder(-99)).toBeNull();
+    expect(parseSortOrder(1.5)).toBeNull();
+    expect(parseSortOrder('2.7')).toBeNull();
+    expect(parseSortOrder('abc')).toBeNull();
+    expect(parseSortOrder(NaN)).toBeNull();
+    expect(parseSortOrder(Infinity)).toBeNull();
+  });
+
+  // 34. sortCategories ascending order by sortOrder
+  it('34. sortCategories orders categories ascending by numeric sortOrder (Rice = 1, Roll = 2, Soft Drink = 3)', () => {
+    // Input is intentionally in random / creation order
+    const categories = [
+      { id: 'cat-drink', name: 'Soft Drink', sortOrder: 3 },
+      { id: 'cat-rice', name: 'Rice', sortOrder: 1 },
+      { id: 'cat-roll', name: 'Roll', sortOrder: 2 },
+    ];
+
+    const sorted = sortCategories(categories);
+    expect(sorted.map((c) => c.name)).toEqual(['Rice', 'Roll', 'Soft Drink']);
+
+    // Original array must NOT be mutated
+    expect(categories[0].name).toBe('Soft Drink');
+  });
+
+  // 35. sortCategories natural tiering: Food categories first, then Desserts, then Cold Drinks
+  it('35. sortCategories groups food categories first and places sweet items, desserts, and cold drinks last', () => {
+    const categories = [
+      { id: 'cat-z', name: 'Zinger Meals' }, // no sortOrder
+      { id: 'cat-drink', name: 'Soft Drink', sortOrder: 3 },
+      { id: 'cat-a', name: 'Appetizers', sortOrder: null }, // null sortOrder
+      { id: 'cat-rice', name: 'Rice', sortOrder: 1 },
+      { id: 'cat-inv', name: 'Desserts', sortOrder: -5 }, // invalid sortOrder
+      { id: 'cat-roll', name: 'Roll', sortOrder: 2 },
+    ];
+
+    const sorted = sortCategories(categories);
+    const sortedNames = sorted.map((c) => c.name);
+
+    // Food categories first: Rice (1), Roll (2), Appetizers (null), Zinger Meals (null)
+    // Then Desserts (Tier 2), then Soft Drink (Tier 3)
+    expect(sortedNames).toEqual([
+      'Rice',
+      'Roll',
+      'Appetizers',
+      'Zinger Meals',
+      'Desserts',
+      'Soft Drink',
+    ]);
+  });
+
+  // 36. sortCategories duplicate sortOrder deterministic tie-breaker
+  it('36. sortCategories breaks duplicate sortOrder ties deterministically by category name A-Z', () => {
+    const categories = [
+      { id: 'cat-roll', name: 'Roll', sortOrder: 2 },
+      { id: 'cat-bbq', name: 'BBQ', sortOrder: 2 },
+      { id: 'cat-rice', name: 'Rice', sortOrder: 1 },
+      { id: 'cat-burger', name: 'Burger', sortOrder: 2 },
+    ];
+
+    const sorted = sortCategories(categories);
+    const sortedNames = sorted.map((c) => c.name);
+
+    // Rice (1) is first
+    // BBQ (2), Burger (2), Roll (2) all have sortOrder 2, sorted alphabetically
+    expect(sortedNames).toEqual(['Rice', 'BBQ', 'Burger', 'Roll']);
+  });
+
+  // 37. POS category tabs format: "All" must always remain the first filter
+  it('37. POS category tabs format retains "All" first followed by sorted categories', () => {
+    const categories = [
+      { id: 'cat-drink', name: 'Soft Drink', sortOrder: 3, status: 'active' },
+      { id: 'cat-rice', name: 'Rice', sortOrder: 1, status: 'active' },
+      { id: 'cat-roll', name: 'Roll', sortOrder: 2, status: 'active' },
+      { id: 'cat-inactive', name: 'Old Specials', sortOrder: 0.5, status: 'inactive' },
+    ];
+
+    // Filter active categories like POSPage does
+    const activeCategories = categories.filter((c) => c.status === 'active');
+    const sortedActive = sortCategories(activeCategories);
+    const categoryTabs = ['All', ...sortedActive.map((c) => c.name)];
+
+    // Exact expected rendering
+    expect(categoryTabs).toEqual(['All', 'Rice', 'Roll', 'Soft Drink']);
+
+    // Preserves active selection if user had selected 'Roll'
+    const activeCategory = 'Roll';
+    expect(categoryTabs.includes(activeCategory)).toBe(true);
+  });
+
+  // 38. Comprehensive Cold Drink Units (A to Z)
+  it('38. provides comprehensive cold drink units covering cans, tins, millilitres, litres, and bottles', () => {
+    // Exact sizes commonly used in restaurant POS (e.g. Mountain Dew 300ml, Pepsi 1.5L)
+    expect(COLD_DRINK_UNITS).toContain('300ml');
+    expect(COLD_DRINK_UNITS).toContain('300ml Bottle');
+    expect(COLD_DRINK_UNITS).toContain('300ml Can');
+    expect(COLD_DRINK_UNITS).toContain('250ml');
+    expect(COLD_DRINK_UNITS).toContain('250ml Bottle');
+    expect(COLD_DRINK_UNITS).toContain('250ml Can');
+    expect(COLD_DRINK_UNITS).toContain('330ml Can');
+    expect(COLD_DRINK_UNITS).toContain('345ml');
+    expect(COLD_DRINK_UNITS).toContain('345ml Bottle');
+    expect(COLD_DRINK_UNITS).toContain('500ml');
+    expect(COLD_DRINK_UNITS).toContain('500ml Bottle');
+    expect(COLD_DRINK_UNITS).toContain('750ml');
+    expect(COLD_DRINK_UNITS).toContain('1 Litre');
+    expect(COLD_DRINK_UNITS).toContain('1.5 Litre');
+    expect(COLD_DRINK_UNITS).toContain('2 Litre');
+    expect(COLD_DRINK_UNITS).toContain('2.25 Litre');
+    expect(COLD_DRINK_UNITS).toContain('Can');
+    expect(COLD_DRINK_UNITS).toContain('Bottle');
+    expect(COLD_DRINK_UNITS).toContain('Tin');
+    expect(COLD_DRINK_UNITS).toContain('Glass');
+
+    // Ensure all standard units contains both cold drinks and food units
+    expect(ALL_STANDARD_UNITS.length).toBeGreaterThanOrEqual(COLD_DRINK_UNITS.length + FOOD_UNITS.length - 2);
+    expect(ALL_STANDARD_UNITS).toContain('300ml');
+    expect(ALL_STANDARD_UNITS).toContain('Piece');
+    expect(ALL_STANDARD_UNITS).toContain('1 Kg');
+  });
+
+  // 39. Sweet items, desserts, beverages, and water bottles always render at the very end
+  it('39. sortCategories and sortMenuItems ensure sweet items, desserts, beverages, and water bottles always render at the end', () => {
+    const categories = [
+      { id: 'cat-water', name: 'Water Bottle' },
+      { id: 'cat-sweet', name: 'Gulab Jamun & Sweets' },
+      { id: 'cat-karahi', name: 'Chicken Karahi' },
+      { id: 'cat-cold', name: 'Cold Drink & Juices' },
+      { id: 'cat-ice', name: 'Ice Cream' },
+      { id: 'cat-bbq', name: 'BBQ Specials' },
+    ];
+
+    const sorted = sortCategories(categories);
+    const sortedNames = sorted.map((c) => c.name);
+
+    // Food first (BBQ Specials, Chicken Karahi), then Desserts (Gulab Jamun, Ice Cream), then Drinks (Cold Drink, Water Bottle)
+    expect(sortedNames).toEqual([
+      'BBQ Specials',
+      'Chicken Karahi',
+      'Gulab Jamun & Sweets',
+      'Ice Cream',
+      'Cold Drink & Juices',
+      'Water Bottle',
+    ]);
+
+    // Test item sorting
+    const items = [
+      { id: 'i1', name: 'Mineral Water 500ml', categoryName: 'Water Bottle' },
+      { id: 'i2', name: 'Chicken Biryani', categoryName: 'Rice' },
+      { id: 'i3', name: 'Gulab Jamun (2 Pcs)', categoryName: 'Sweets' },
+      { id: 'i4', name: 'Dew 300ml', categoryName: 'Cold Drinks' },
+      { id: 'i5', name: 'Chicken Roll', categoryName: 'Roll' },
+    ];
+
+    const sortedItems = sortMenuItems(items, categories);
+    expect(sortedItems.map((i) => i.name)).toEqual([
+      'Chicken Biryani',
+      'Chicken Roll',
+      'Gulab Jamun (2 Pcs)',
+      'Dew 300ml',
+      'Mineral Water 500ml',
+    ]);
+  });
 });
+
 

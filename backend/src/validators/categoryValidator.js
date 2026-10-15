@@ -15,6 +15,10 @@ export const createCategorySchema = z.object({
   keywords: z.array(z.string().trim()).default([]).optional(),
   defaultPortions: z.array(portionSchema).default([]).optional(),
   defaultAddonIds: z.array(z.string().trim()).default([]).optional(),
+  sortOrder: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined ? null : Number(val)),
+    z.number().int('Sort order must be an integer').positive('Sort order must be a positive integer').nullable().optional()
+  ),
 });
 
 export const updateCategorySchema = z.object({
@@ -26,6 +30,10 @@ export const updateCategorySchema = z.object({
   keywords: z.array(z.string().trim()).optional(),
   defaultPortions: z.array(portionSchema).optional(),
   defaultAddonIds: z.array(z.string().trim()).optional(),
+  sortOrder: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined ? null : Number(val)),
+    z.number().int('Sort order must be an integer').positive('Sort order must be a positive integer').nullable().optional()
+  ),
 });
 
 /**

@@ -72,7 +72,7 @@ export const PortionEditor = ({
 
       {portions.length === 0 ? (
         <p className="text-[11px] text-slate-400 italic py-1">
-          No custom portions configured. Item will be sold at standard 1 {baseUnit}.
+          No custom portions configured. Item will be sold at standard {/^\d/.test((baseUnit || '').trim()) || ['half', 'full'].includes((baseUnit || '').trim().toLowerCase()) ? baseUnit : `1 ${baseUnit}`}.
         </p>
       ) : (
         <div className="space-y-2 mt-1">

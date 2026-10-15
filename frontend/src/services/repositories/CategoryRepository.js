@@ -13,8 +13,19 @@ export const CategoryRepository = {
     try {
       const res = await api.get('/categories');
       if (res && res.success && Array.isArray(res.data)) {
-        storage.set(STORAGE_KEY, res.data);
-        return res.data;
+        const local = storage.get(STORAGE_KEY, []) || [];
+        if (res.data.length > 0) {
+          const backendIds = new Set(res.data.map((c) => c.id));
+          const unsynced = local.filter((loc) => loc?.id && !backendIds.has(loc.id));
+          const merged = [...res.data, ...unsynced];
+          storage.set(STORAGE_KEY, merged);
+          return merged;
+        } else if (local.length > 0) {
+          return local;
+        } else {
+          storage.set(STORAGE_KEY, []);
+          return [];
+        }
       }
     } catch {
       // Backend offline fallback
@@ -40,8 +51,7 @@ export const CategoryRepository = {
     } catch {
       // Fallback
     }
-    const all = await CategoryRepository.getAll();
-    return all.find((c) => c.id === id) || null;
+    return null;
   },
 
   create: async (category) => {
@@ -49,21 +59,23 @@ export const CategoryRepository = {
       const res = await api.post('/categories', category);
       if (res && res.success && res.data) {
         const all = storage.get(STORAGE_KEY, []) || [];
-        storage.set(STORAGE_KEY, [res.data, ...all.filter((c) => c.id !== res.data.id)]);
+        const filtered = all.filter((c) => c.id !== res.data.id && c.id !== category.id);
+        const updated = [res.data, ...filtered];
+        storage.set(STORAGE_KEY, updated);
         return res.data;
       }
     } catch (err) {
       console.warn('[CategoryRepository] API create failed, using local storage:', err.message);
     }
 
-    const all = await CategoryRepository.getAll();
+    const all = storage.get(STORAGE_KEY, []) || [];
     const newRecord = {
       ...category,
       id: category.id || `cat-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       createdAt: category.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    const updated = [newRecord, ...all];
+    const updated = [newRecord, ...all.filter((c) => c.id !== newRecord.id)];
     storage.set(STORAGE_KEY, updated);
     return newRecord;
   },
@@ -73,7 +85,7 @@ export const CategoryRepository = {
       const res = await api.put(`/categories/${id}`, data);
       if (res && res.success && res.data) {
         const all = storage.get(STORAGE_KEY, []) || [];
-        const updated = all.map((c) => (c.id === id ? res.data : c));
+        const updated = all.map((c) => (c.id === id || c.id === res.data.id ? res.data : c));
         storage.set(STORAGE_KEY, updated);
         return res.data;
       }
@@ -81,7 +93,7 @@ export const CategoryRepository = {
       console.warn('[CategoryRepository] API update failed, using local storage:', err.message);
     }
 
-    const all = await CategoryRepository.getAll();
+    const all = storage.get(STORAGE_KEY, []) || [];
     const updated = all.map((c) =>
       c.id === id ? { ...c, ...data, updatedAt: new Date().toISOString() } : c
     );
@@ -96,7 +108,7 @@ export const CategoryRepository = {
       console.warn('[CategoryRepository] API delete failed, using local storage:', err.message);
     }
 
-    const all = await CategoryRepository.getAll();
+    const all = storage.get(STORAGE_KEY, []) || [];
     const filtered = all.filter((c) => c.id !== id);
     storage.set(STORAGE_KEY, filtered);
     return true;

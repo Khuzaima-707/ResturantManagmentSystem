@@ -3,6 +3,7 @@ import { Pencil, Trash2, Utensils, Search } from 'lucide-react';
 import { DataTable } from '../../../components/ui/DataTable';
 import { ItemModal } from './ItemModal';
 import { useAppStore } from '../../../store';
+import { sortCategories, sortMenuItems } from '../../../domain/rules';
 
 export const ItemsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClose }) => {
   const { items, categories, deleteItem, user } = useAppStore();
@@ -33,9 +34,9 @@ export const ItemsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClos
     return map;
   }, [categories]);
 
-  // Filtered items
+  // Filtered items (Food items first, Desserts next, Drinks/Water last)
   const filteredItems = useMemo(() => {
-    return (items || []).filter((item) => {
+    const list = (items || []).filter((item) => {
       if (!item) return false;
       // 1. Search query
       if (searchQuery.trim()) {
@@ -58,7 +59,9 @@ export const ItemsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClos
 
       return true;
     });
-  }, [items, searchQuery, categoryFilter, statusFilter, categoryMap]);
+
+    return sortMenuItems(list, categories);
+  }, [items, searchQuery, categoryFilter, statusFilter, categoryMap, categories]);
 
   const handleOpenEdit = (item) => {
     if (isCashier) return;
@@ -69,7 +72,7 @@ export const ItemsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClos
   const categoryFilterOptions = useMemo(() => {
     return [
       { value: 'All Categories', label: 'All Categories' },
-      ...(categories || []).map((c) => ({ value: c.id, label: c.name || 'Category' })),
+      ...sortCategories(categories || []).map((c) => ({ value: c.id, label: c.name || 'Category' })),
     ];
   }, [categories]);
 
