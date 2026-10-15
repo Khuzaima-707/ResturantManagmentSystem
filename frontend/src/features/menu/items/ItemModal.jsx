@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Plus, ChevronDown, Lock } from 'lucide-react';
+import { Plus, ChevronDown } from 'lucide-react';
 import { Modal } from '../../../components/ui/Modal';
 import { ImageUploader } from '../components/ImageUploader';
 import { useAppStore } from '../../../store';
@@ -167,6 +167,7 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
 
   const handleSubmit = (e) => {
     e?.preventDefault();
+    if (isCashier) return;
     if (!validate()) return;
 
     const trimmedCatName = categoryName.trim();
@@ -705,7 +706,12 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
 };
 
 export const ItemModal = ({ isOpen, onClose, item = null }) => {
-  if (!isOpen) return null;
+  const { user } = useAppStore();
+  const isCashier = Boolean(
+    (user?.role?.toLowerCase().includes('cashier') && !user?.role?.toLowerCase().includes('admin')) ||
+    (user?.username?.toLowerCase() === 'cashier' && user?.username?.toLowerCase() !== 'admin')
+  );
+  if (!isOpen || isCashier) return null;
   return (
     <ItemModalForm
       key={item?.id || 'new_item'}

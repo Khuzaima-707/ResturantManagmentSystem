@@ -96,7 +96,12 @@ const CategoryModalForm = ({
 };
 
 export const CategoryModal = ({ isOpen, onClose, category = null }) => {
-  if (!isOpen) return null;
+  const { user } = useAppStore();
+  const isCashier = Boolean(
+    (user?.role?.toLowerCase().includes('cashier') && !user?.role?.toLowerCase().includes('admin')) ||
+    (user?.username?.toLowerCase() === 'cashier' && user?.username?.toLowerCase() !== 'admin')
+  );
+  if (!isOpen || isCashier) return null;
   return (
     <CategoryModalForm
       key={category?.id || 'new_category'}

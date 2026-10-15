@@ -15,7 +15,12 @@ import { SecuritySettingsTab } from '../features/settings/components/SecuritySet
  */
 export const SettingsPage = () => {
   const [activeTab, setActiveTab] = useState('profile');
-  const { settings, updateSettings } = useAppStore();
+  const { settings, updateSettings, user } = useAppStore();
+
+  const isCashier = Boolean(
+    (user?.role?.toLowerCase().includes('cashier') && !user?.role?.toLowerCase().includes('admin')) ||
+    (user?.username?.toLowerCase() === 'cashier' && user?.username?.toLowerCase() !== 'admin')
+  );
 
   const tabs = [
     { id: 'profile', label: 'Business Profile' },
@@ -24,8 +29,15 @@ export const SettingsPage = () => {
     { id: 'pos', label: 'POS Settings' },
     { id: 'invoice', label: 'Invoice Settings' },
     { id: 'data', label: 'Data Management' },
-    { id: 'history', label: 'Deletion History' },
+    ...(!isCashier ? [{ id: 'history', label: 'Deletion History' }] : []),
   ];
+
+  // If cashier tries to stay on history tab, fallback to profile
+  React.useEffect(() => {
+    if (isCashier && activeTab === 'history') {
+      setActiveTab('profile');
+    }
+  }, [isCashier, activeTab]);
 
   const handleSaveSettings = async (updates) => {
     updateSettings(updates);
@@ -90,7 +102,7 @@ export const SettingsPage = () => {
         <DataManagementTab />
       )}
 
-      {activeTab === 'history' && (
+      {!isCashier && activeTab === 'history' && (
         <DeletionHistoryTab />
       )}
     </div>

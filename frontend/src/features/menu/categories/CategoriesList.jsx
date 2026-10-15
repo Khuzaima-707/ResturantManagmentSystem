@@ -6,14 +6,18 @@ import { useAppStore } from '../../../store';
 import { cn } from '../../../utils/cn';
 
 export const CategoriesList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClose }) => {
-  const { categories, items, addCategory, setCategoryStatus, deleteCategory } = useAppStore();
+  const { categories, items, addCategory, setCategoryStatus, deleteCategory, user } = useAppStore();
+  const isCashier = Boolean(
+    (user?.role?.toLowerCase().includes('cashier') && !user?.role?.toLowerCase().includes('admin')) ||
+    (user?.username?.toLowerCase() === 'cashier' && user?.username?.toLowerCase() !== 'admin')
+  );
 
   const [newCategoryName, setNewCategoryName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [internalModalOpen, setInternalModalOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(null);
 
-  const isModalOpen = Boolean(externalAddModalOpen || internalModalOpen);
+  const isModalOpen = Boolean(!isCashier && (externalAddModalOpen || internalModalOpen));
   const closeModal = () => {
     setInternalModalOpen(false);
     setSelectedCategory(null);
@@ -37,17 +41,20 @@ export const CategoriesList = ({ isAddModalOpen: externalAddModalOpen, onAddModa
   }, [categories, searchQuery]);
 
   const handleOpenEdit = (cat) => {
+    if (isCashier) return;
     setSelectedCategory(cat);
     setInternalModalOpen(true);
   };
 
   const handleToggleStatus = (cat) => {
+    if (isCashier) return;
     const nextStatus = cat.status === 'active' ? 'inactive' : 'active';
     setCategoryStatus(cat.id, nextStatus);
   };
 
   const handleQuickAdd = (e) => {
     e?.preventDefault();
+    if (isCashier) return;
     const trimmed = newCategoryName.trim();
     if (!trimmed) {
       // Do NOT open form/modal when empty; simply ignore
@@ -124,79 +131,85 @@ export const CategoriesList = ({ isAddModalOpen: externalAddModalOpen, onAddModa
           </span>
         ),
     },
-    {
-      key: 'actions',
-      title: 'Actions',
-      align: 'right',
-      headerClassName: 'text-right pr-4',
-      render: (_, row) => (
-        <div className="flex items-center justify-end gap-1.5 pr-2 text-slate-400">
-          {/* Edit */}
-          <button
-            type="button"
-            onClick={() => handleOpenEdit(row)}
-            className="p-1 rounded-md hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-            title="Edit Category"
-            aria-label="Edit Category"
-          >
-            <Pencil className="w-3.5 h-3.5" />
-          </button>
+    ...(!isCashier
+      ? [
+          {
+            key: 'actions',
+            title: 'Actions',
+            align: 'right',
+            headerClassName: 'text-right pr-4',
+            render: (_, row) => (
+              <div className="flex items-center justify-end gap-1.5 pr-2 text-slate-400">
+                {/* Edit */}
+                <button
+                  type="button"
+                  onClick={() => handleOpenEdit(row)}
+                  className="p-1 rounded-md hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                  title="Edit Category"
+                  aria-label="Edit Category"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
 
-          {/* Toggle Active / Inactive */}
-          <button
-            type="button"
-            onClick={() => handleToggleStatus(row)}
-            className={cn(
-              'p-1 rounded-md transition-colors cursor-pointer',
-              row.status === 'active'
-                ? 'hover:text-emerald-600 hover:bg-emerald-50'
-                : 'hover:text-slate-700 hover:bg-slate-100'
-            )}
-            title={row.status === 'active' ? 'Deactivate Category' : 'Activate Category'}
-            aria-label="Toggle Category Status"
-          >
-            <Power className="w-3.5 h-3.5" />
-          </button>
+                {/* Toggle Active / Inactive */}
+                <button
+                  type="button"
+                  onClick={() => handleToggleStatus(row)}
+                  className={cn(
+                    'p-1 rounded-md transition-colors cursor-pointer',
+                    row.status === 'active'
+                      ? 'hover:text-emerald-600 hover:bg-emerald-50'
+                      : 'hover:text-slate-700 hover:bg-slate-100'
+                  )}
+                  title={row.status === 'active' ? 'Deactivate Category' : 'Activate Category'}
+                  aria-label="Toggle Category Status"
+                >
+                  <Power className="w-3.5 h-3.5" />
+                </button>
 
-          {/* Delete Category */}
-          <button
-            type="button"
-            onClick={() => deleteCategory(row.id)}
-            className="p-1 rounded-md text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer"
-            title="Delete Category"
-            aria-label="Delete Category"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      ),
-    },
+                {/* Delete Category */}
+                <button
+                  type="button"
+                  onClick={() => deleteCategory(row.id)}
+                  className="p-1 rounded-md text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer"
+                  title="Delete Category"
+                  aria-label="Delete Category"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ),
+          },
+        ]
+      : []),
   ];
 
   return (
     <div className="space-y-4">
       {/* Top Action & Search Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        {/* Quick Add Input matching Screenshot 1 */}
-        <form onSubmit={handleQuickAdd} className="flex items-center gap-2.5 flex-1 max-w-md">
-          <input
-            type="text"
-            value={newCategoryName}
-            onChange={(e) => setNewCategoryName(e.target.value)}
-            placeholder="Enter new category name..."
-            className="flex-1 min-w-[200px] px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#FF5C28] transition-colors"
-          />
-          <button
-            type="submit"
-            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#FF5C28] hover:bg-[#E04D1D] text-white text-xs font-semibold rounded-full shadow-xs transition-colors cursor-pointer shrink-0"
-          >
-            <FolderPlus className="w-3.5 h-3.5 stroke-[2]" />
-            <span>Add Category</span>
-          </button>
-        </form>
+      <div className={cn("flex flex-col sm:flex-row items-stretch sm:items-center gap-3", isCashier ? "justify-end" : "justify-between")}>
+        {/* Quick Add Input matching Screenshot 1 (Admin only) */}
+        {!isCashier && (
+          <form onSubmit={handleQuickAdd} className="flex items-center gap-2.5 flex-1 max-w-md">
+            <input
+              type="text"
+              value={newCategoryName}
+              onChange={(e) => setNewCategoryName(e.target.value)}
+              placeholder="Enter new category name..."
+              className="flex-1 min-w-[200px] px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#FF5C28] transition-colors"
+            />
+            <button
+              type="submit"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#FF5C28] hover:bg-[#E04D1D] text-white text-xs font-semibold rounded-full shadow-xs transition-colors cursor-pointer shrink-0"
+            >
+              <FolderPlus className="w-3.5 h-3.5 stroke-[2]" />
+              <span>Add Category</span>
+            </button>
+          </form>
+        )}
 
         {/* Filter / Search by name or keyword */}
-        <div className="relative w-full sm:w-64">
+        <div className={cn("relative", isCashier ? "w-full sm:w-72" : "w-full sm:w-64")}>
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
@@ -215,6 +228,8 @@ export const CategoriesList = ({ isAddModalOpen: externalAddModalOpen, onAddModa
         emptyMessage={
           searchQuery
             ? 'No categories match the active search criteria.'
+            : isCashier
+            ? 'No menu categories created yet.'
             : 'No menu categories created yet. Enter category name above to start.'
         }
       />

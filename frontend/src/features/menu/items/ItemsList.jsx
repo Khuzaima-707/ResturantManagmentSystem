@@ -17,7 +17,7 @@ export const ItemsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClos
   const [internalModalOpen, setInternalModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
 
-  const isModalOpen = Boolean(externalAddModalOpen || internalModalOpen);
+  const isModalOpen = Boolean(!isCashier && (externalAddModalOpen || internalModalOpen));
   const closeModal = () => {
     setInternalModalOpen(false);
     setSelectedItem(null);
@@ -61,6 +61,7 @@ export const ItemsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClos
   }, [items, searchQuery, categoryFilter, statusFilter, categoryMap]);
 
   const handleOpenEdit = (item) => {
+    if (isCashier) return;
     setSelectedItem(item);
     setInternalModalOpen(true);
   };
@@ -181,38 +182,42 @@ export const ItemsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClos
           </span>
         ),
     },
-    {
-      key: 'actions',
-      title: 'Actions',
-      align: 'right',
-      headerClassName: 'w-16 text-right pr-4',
-      cellClassName: 'text-right pr-4',
-      render: (_, row) => (
-        <div className="flex items-center justify-end gap-1.5">
-          {/* Edit */}
-          <button
-            type="button"
-            onClick={() => handleOpenEdit(row)}
-            className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-            title="Edit Item"
-            aria-label="Edit Item"
-          >
-            <Pencil className="w-3.5 h-3.5" />
-          </button>
+    ...(!isCashier
+      ? [
+          {
+            key: 'actions',
+            title: 'Actions',
+            align: 'right',
+            headerClassName: 'w-16 text-right pr-4',
+            cellClassName: 'text-right pr-4',
+            render: (_, row) => (
+              <div className="flex items-center justify-end gap-1.5">
+                {/* Edit */}
+                <button
+                  type="button"
+                  onClick={() => handleOpenEdit(row)}
+                  className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                  title="Edit Item"
+                  aria-label="Edit Item"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
 
-          {/* Delete Item */}
-          <button
-            type="button"
-            onClick={() => deleteItem(row.id)}
-            className="p-1 rounded-md text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer"
-            title="Delete Item"
-            aria-label="Delete Item"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      ),
-    },
+                {/* Delete Item */}
+                <button
+                  type="button"
+                  onClick={() => deleteItem(row.id)}
+                  className="p-1 rounded-md text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer"
+                  title="Delete Item"
+                  aria-label="Delete Item"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ),
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -264,6 +269,8 @@ export const ItemsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClos
         emptyMessage={
           searchQuery || categoryFilter !== 'All Categories' || statusFilter !== 'All Status'
             ? 'No food items match the active search and filter criteria.'
+            : isCashier
+            ? 'No menu items in catalog yet.'
             : 'No menu items in catalog yet. Click "+ Add Item" to add your first dish.'
         }
       />

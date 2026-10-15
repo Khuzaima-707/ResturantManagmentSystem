@@ -7,7 +7,6 @@ import { Button } from '../../../components/ui/Button';
 import { useAppStore } from '../../../store';
 import {
   isDuplicateAddonName,
-  detectAddonCategories,
   ADDON_TYPES,
   detectAddonType,
 } from '../../../domain/rules';
@@ -17,7 +16,7 @@ const AddonModalForm = ({
   onClose,
   addon = null,
 }) => {
-  const { addons, categories, addAddon, updateAddon, user } = useAppStore();
+  const { addons, addAddon, updateAddon, user } = useAppStore();
   const isCashier = Boolean(
     (user?.role?.toLowerCase().includes('cashier') && !user?.role?.toLowerCase().includes('admin')) ||
     (user?.username?.toLowerCase() === 'cashier' && user?.username?.toLowerCase() !== 'admin')
@@ -210,7 +209,12 @@ const AddonModalForm = ({
 };
 
 export const AddonModal = ({ isOpen, onClose, addon = null }) => {
-  if (!isOpen) return null;
+  const { user } = useAppStore();
+  const isCashier = Boolean(
+    (user?.role?.toLowerCase().includes('cashier') && !user?.role?.toLowerCase().includes('admin')) ||
+    (user?.username?.toLowerCase() === 'cashier' && user?.username?.toLowerCase() !== 'admin')
+  );
+  if (!isOpen || isCashier) return null;
   return <AddonModalForm key={addon?.id || 'new_addon'} isOpen={isOpen} onClose={onClose} addon={addon} />;
 };
 

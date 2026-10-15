@@ -31,7 +31,11 @@ import { ReversalModal } from './ReversalModal';
  * Supports viewing details, print, PDF download, full reversal, and deletion.
  */
 export const InvoiceHistoryList = () => {
-  const { orders, reversals, settings, deleteInvoice } = useAppStore();
+  const { orders, reversals, settings, deleteInvoice, user } = useAppStore();
+  const isCashier = Boolean(
+    (user?.role?.toLowerCase().includes('cashier') && !user?.role?.toLowerCase().includes('admin')) ||
+    (user?.username?.toLowerCase() === 'cashier' && user?.username?.toLowerCase() !== 'admin')
+  );
   const [invoiceToDelete, setInvoiceToDelete] = useState(null);
 
   // Filter States
@@ -231,16 +235,18 @@ export const InvoiceHistoryList = () => {
               </button>
             ) : null}
 
-            {/* Delete Invoice */}
-            <button
-              type="button"
-              onClick={() => setInvoiceToDelete(row)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-              title="Delete Invoice"
-              aria-label="Delete Invoice"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+            {/* Delete Invoice (Admin only) */}
+            {!isCashier && (
+              <button
+                type="button"
+                onClick={() => setInvoiceToDelete(row)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                title="Delete Invoice"
+                aria-label="Delete Invoice"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         );
       },
@@ -381,8 +387,8 @@ export const InvoiceHistoryList = () => {
         />
       )}
 
-      {/* Delete Invoice Confirmation Modal */}
-      {invoiceToDelete && (
+      {/* Delete Invoice Confirmation Modal (Admin only) */}
+      {!isCashier && invoiceToDelete && (
         <Modal
           isOpen={Boolean(invoiceToDelete)}
           onClose={() => setInvoiceToDelete(null)}
@@ -407,6 +413,7 @@ export const InvoiceHistoryList = () => {
               <button
                 type="button"
                 onClick={() => {
+                  if (isCashier) return;
                   deleteInvoice(invoiceToDelete.id, 'Manually deleted from Invoice History');
                   setInvoiceToDelete(null);
                 }}

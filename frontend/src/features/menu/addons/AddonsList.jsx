@@ -7,7 +7,11 @@ import { detectAddonCategories, ADDON_TYPES, detectAddonType } from '../../../do
 import { cn } from '../../../utils/cn';
 
 export const AddonsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClose }) => {
-  const { addons, categories, addAddon, setAddonStatus, deleteAddon } = useAppStore();
+  const { addons, categories, addAddon, setAddonStatus, deleteAddon, user } = useAppStore();
+  const isCashier = Boolean(
+    (user?.role?.toLowerCase().includes('cashier') && !user?.role?.toLowerCase().includes('admin')) ||
+    (user?.username?.toLowerCase() === 'cashier' && user?.username?.toLowerCase() !== 'admin')
+  );
 
   const [newAddonName, setNewAddonName] = useState('');
   const [newAddonCostPrice, setNewAddonCostPrice] = useState('');
@@ -18,7 +22,7 @@ export const AddonsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClo
   const [internalModalOpen, setInternalModalOpen] = useState(false);
   const [selectedAddon, setSelectedAddon] = useState(null);
 
-  const isModalOpen = Boolean(externalAddModalOpen || internalModalOpen);
+  const isModalOpen = Boolean(!isCashier && (externalAddModalOpen || internalModalOpen));
   const closeModal = () => {
     setInternalModalOpen(false);
     setSelectedAddon(null);
@@ -62,17 +66,20 @@ export const AddonsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClo
   }, [addons, searchQuery, statusFilter]);
 
   const handleOpenEdit = (addon) => {
+    if (isCashier) return;
     setSelectedAddon(addon);
     setInternalModalOpen(true);
   };
 
   const handleToggleStatus = (addon) => {
+    if (isCashier) return;
     const next = addon.status === 'active' ? 'inactive' : 'active';
     setAddonStatus(addon.id, next);
   };
 
   const handleQuickAdd = (e) => {
     e?.preventDefault();
+    if (isCashier) return;
     const trimmedName = newAddonName.trim();
     const trimmedPrice = String(newAddonPrice).trim();
     const trimmedCost = String(newAddonCostPrice).trim();
@@ -209,122 +216,128 @@ export const AddonsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClo
           </span>
         ),
     },
-    {
-      key: 'actions',
-      title: 'Actions',
-      align: 'center',
-      headerClassName: 'text-center w-24',
-      render: (_, row) => (
-        <div className="flex items-center justify-center gap-1 text-slate-400">
-          {/* Edit */}
-          <button
-            type="button"
-            onClick={() => handleOpenEdit(row)}
-            className="p-1 rounded-md hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-            title="Edit Add-on"
-            aria-label="Edit Add-on"
-          >
-            <Pencil className="w-3.5 h-3.5" />
-          </button>
+    ...(!isCashier
+      ? [
+          {
+            key: 'actions',
+            title: 'Actions',
+            align: 'center',
+            headerClassName: 'text-center w-24',
+            render: (_, row) => (
+              <div className="flex items-center justify-center gap-1 text-slate-400">
+                {/* Edit */}
+                <button
+                  type="button"
+                  onClick={() => handleOpenEdit(row)}
+                  className="p-1 rounded-md hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                  title="Edit Add-on"
+                  aria-label="Edit Add-on"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
 
-          {/* Toggle Active / Inactive */}
-          <button
-            type="button"
-            onClick={() => handleToggleStatus(row)}
-            className={cn(
-              'p-1 rounded-md transition-colors cursor-pointer',
-              row.status === 'active'
-                ? 'hover:text-emerald-600 hover:bg-emerald-50'
-                : 'hover:text-slate-700 hover:bg-slate-100'
-            )}
-            title={row.status === 'active' ? 'Deactivate Add-on' : 'Activate Add-on'}
-            aria-label="Toggle Status"
-          >
-            <Power className="w-3.5 h-3.5" />
-          </button>
+                {/* Toggle Active / Inactive */}
+                <button
+                  type="button"
+                  onClick={() => handleToggleStatus(row)}
+                  className={cn(
+                    'p-1 rounded-md transition-colors cursor-pointer',
+                    row.status === 'active'
+                      ? 'hover:text-emerald-600 hover:bg-emerald-50'
+                      : 'hover:text-slate-700 hover:bg-slate-100'
+                  )}
+                  title={row.status === 'active' ? 'Deactivate Add-on' : 'Activate Add-on'}
+                  aria-label="Toggle Status"
+                >
+                  <Power className="w-3.5 h-3.5" />
+                </button>
 
-          {/* Delete Add-on */}
-          <button
-            type="button"
-            onClick={() => deleteAddon(row.id)}
-            className="p-1 rounded-md text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer"
-            title="Delete Add-on"
-            aria-label="Delete Add-on"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      ),
-    },
+                {/* Delete Add-on */}
+                <button
+                  type="button"
+                  onClick={() => deleteAddon(row.id)}
+                  className="p-1 rounded-md text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer"
+                  title="Delete Add-on"
+                  aria-label="Delete Add-on"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ),
+          },
+        ]
+      : []),
   ];
 
   return (
     <div className="space-y-4">
       {/* Top Action & Search Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        {/* Quick Add Form */}
-        <form onSubmit={handleQuickAdd} noValidate className="flex flex-wrap items-center gap-2 flex-1 max-w-2xl">
-          <input
-            type="text"
-            value={newAddonName}
-            onChange={(e) => {
-              const val = e.target.value;
-              setNewAddonName(val);
-              if (quickError) setQuickError('');
-            }}
-            placeholder="Addon name (e.g. Extra Boti, Cold Drink)"
-            className={cn(
-              'flex-1 min-w-[160px] px-3.5 py-1.5 bg-white border rounded-full text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none transition-colors',
-              quickError && !newAddonName.trim()
-                ? 'border-rose-400 focus:border-rose-500 ring-1 ring-rose-200'
-                : 'border-slate-200 focus:border-[#FF5C28]'
+      <div className={cn("flex flex-col sm:flex-row items-stretch sm:items-center gap-3", isCashier ? "justify-end" : "justify-between")}>
+        {/* Quick Add Form (Admin only) */}
+        {!isCashier && (
+          <form onSubmit={handleQuickAdd} noValidate className="flex flex-wrap items-center gap-2 flex-1 max-w-2xl">
+            <input
+              type="text"
+              value={newAddonName}
+              onChange={(e) => {
+                const val = e.target.value;
+                setNewAddonName(val);
+                if (quickError) setQuickError('');
+              }}
+              placeholder="Addon name (e.g. Extra Boti, Cold Drink)"
+              className={cn(
+                'flex-1 min-w-[160px] px-3.5 py-1.5 bg-white border rounded-full text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none transition-colors',
+                quickError && !newAddonName.trim()
+                  ? 'border-rose-400 focus:border-rose-500 ring-1 ring-rose-200'
+                  : 'border-slate-200 focus:border-[#FF5C28]'
+              )}
+            />
+
+            <input
+              type="number"
+              min="0"
+              step="any"
+              value={newAddonCostPrice}
+              onChange={(e) => {
+                setNewAddonCostPrice(e.target.value);
+                if (quickError) setQuickError('');
+              }}
+              placeholder="Cost Price"
+              className="w-28 px-3.5 py-1.5 bg-white border border-slate-200 focus:border-[#FF5C28] rounded-full text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none transition-colors"
+            />
+
+            <input
+              type="number"
+              min="0"
+              step="any"
+              value={newAddonPrice}
+              onChange={(e) => {
+                setNewAddonPrice(e.target.value);
+                if (quickError) setQuickError('');
+              }}
+              placeholder="Sell Price"
+              className={cn(
+                'w-28 px-3.5 py-1.5 bg-white border rounded-full text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none transition-colors',
+                quickError && (!newAddonPrice.trim() || parseFloat(newAddonPrice) <= 0)
+                  ? 'border-rose-400 focus:border-rose-500 ring-1 ring-rose-200'
+                  : 'border-slate-200 focus:border-[#FF5C28]'
+              )}
+            />
+            <button
+              type="submit"
+              className="flex items-center gap-1 px-3.5 py-1.5 bg-[#FF5C28] hover:bg-[#E04D1D] active:bg-[#D83F0E] text-white text-xs font-semibold rounded-full shadow-xs transition-colors cursor-pointer shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>Add</span>
+            </button>
+
+            {quickError && (
+              <span className="text-[11px] font-bold text-rose-500 w-full sm:w-auto px-1 animate-fadeIn">
+                * {quickError}
+              </span>
             )}
-          />
-
-          <input
-            type="number"
-            min="0"
-            step="any"
-            value={newAddonCostPrice}
-            onChange={(e) => {
-              setNewAddonCostPrice(e.target.value);
-              if (quickError) setQuickError('');
-            }}
-            placeholder="Cost Price"
-            className="w-28 px-3.5 py-1.5 bg-white border border-slate-200 focus:border-[#FF5C28] rounded-full text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none transition-colors"
-          />
-
-          <input
-            type="number"
-            min="0"
-            step="any"
-            value={newAddonPrice}
-            onChange={(e) => {
-              setNewAddonPrice(e.target.value);
-              if (quickError) setQuickError('');
-            }}
-            placeholder="Sell Price"
-            className={cn(
-              'w-28 px-3.5 py-1.5 bg-white border rounded-full text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none transition-colors',
-              quickError && (!newAddonPrice.trim() || parseFloat(newAddonPrice) <= 0)
-                ? 'border-rose-400 focus:border-rose-500 ring-1 ring-rose-200'
-                : 'border-slate-200 focus:border-[#FF5C28]'
-            )}
-          />
-          <button
-            type="submit"
-            className="flex items-center gap-1 px-3.5 py-1.5 bg-[#FF5C28] hover:bg-[#E04D1D] active:bg-[#D83F0E] text-white text-xs font-semibold rounded-full shadow-xs transition-colors cursor-pointer shrink-0"
-          >
-            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>Add</span>
-          </button>
-
-          {quickError && (
-            <span className="text-[11px] font-bold text-rose-500 w-full sm:w-auto px-1 animate-fadeIn">
-              * {quickError}
-            </span>
-          )}
-        </form>
+          </form>
+        )}
 
         {/* Filter / Search + Type Filter + Status Filter */}
         <div className="flex items-center gap-2 flex-wrap self-end sm:self-auto">
@@ -358,6 +371,8 @@ export const AddonsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClo
         emptyMessage={
           searchQuery || statusFilter !== 'All Status'
             ? 'No add-ons match the active filter criteria.'
+            : isCashier
+            ? 'No menu add-ons configured yet.'
             : 'No menu add-ons configured yet. Enter add-on name above to create one.'
         }
       />

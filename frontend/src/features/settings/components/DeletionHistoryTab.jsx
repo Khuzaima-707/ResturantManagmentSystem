@@ -33,7 +33,12 @@ function formatTimestamp(iso) {
  * Audit trail of all deleted invoices, reversals, and cleared items with exact timestamps.
  */
 export const DeletionHistoryTab = () => {
-  const { deletionHistory = [], clearDeletionHistory } = useAppStore();
+  const { deletionHistory = [], clearDeletionHistory, user } = useAppStore();
+  const isCashier = Boolean(
+    (user?.role?.toLowerCase().includes('cashier') && !user?.role?.toLowerCase().includes('admin')) ||
+    (user?.username?.toLowerCase() === 'cashier' && user?.username?.toLowerCase() !== 'admin')
+  );
+
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedId, setExpandedId] = useState(null);
   const [isConfirmingClear, setIsConfirmingClear] = useState(false);
@@ -53,6 +58,8 @@ export const DeletionHistoryTab = () => {
       return matchTitle || matchReason || matchInvoice;
     });
   }, [deletionHistory, searchQuery]);
+
+  if (isCashier) return null;
 
   // Aggregate metrics
   const totalEvents = deletionHistory.length;

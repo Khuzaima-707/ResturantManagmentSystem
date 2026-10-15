@@ -20,8 +20,6 @@ export const MenuPage = () => {
 
   const [activeTab, setActiveTab] = useState('All Items');
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
-  const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] = useState(false);
-  const [isAddAddonModalOpen, setIsAddAddonModalOpen] = useState(false);
 
   const tabs = [
     {
@@ -52,7 +50,7 @@ export const MenuPage = () => {
             className="border-b-0"
           />
 
-          {activeTab === 'All Items' && (
+          {!isCashier && activeTab === 'All Items' && (
             <button
               type="button"
               onClick={() => setIsAddItemModalOpen(true)}
@@ -60,28 +58,6 @@ export const MenuPage = () => {
             >
               <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>Add Item</span>
-            </button>
-          )}
-
-          {activeTab === 'Categories' && (
-            <button
-              type="button"
-              onClick={() => setIsAddCategoryModalOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#FF5C28] hover:bg-[#E04D1D] text-white text-xs font-semibold rounded-full shadow-xs transition-colors cursor-pointer self-start sm:self-center shrink-0 mb-2 sm:mb-0"
-            >
-              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>Add Category</span>
-            </button>
-          )}
-
-          {activeTab === 'Add-ons' && (
-            <button
-              type="button"
-              onClick={() => setIsAddAddonModalOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#FF5C28] hover:bg-[#E04D1D] text-white text-xs font-semibold rounded-full shadow-xs transition-colors cursor-pointer self-start sm:self-center shrink-0 mb-2 sm:mb-0"
-            >
-              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>Add Add-on</span>
             </button>
           )}
         </div>
@@ -94,18 +70,8 @@ export const MenuPage = () => {
               onAddModalClose={() => setIsAddItemModalOpen(false)}
             />
           )}
-          {activeTab === 'Categories' && (
-            <CategoriesList
-              isAddModalOpen={isAddCategoryModalOpen}
-              onAddModalClose={() => setIsAddCategoryModalOpen(false)}
-            />
-          )}
-          {activeTab === 'Add-ons' && (
-            <AddonsList
-              isAddModalOpen={isAddAddonModalOpen}
-              onAddModalClose={() => setIsAddAddonModalOpen(false)}
-            />
-          )}
+          {activeTab === 'Categories' && <CategoriesList />}
+          {activeTab === 'Add-ons' && <AddonsList />}
         </div>
       </div>
     </div>
