@@ -26,6 +26,8 @@ import {
   COLD_DRINK_UNITS,
   FOOD_UNITS,
   ALL_STANDARD_UNITS,
+  resolveItemEffectiveCategory,
+  healMiscategorizedItems,
 } from './index';
 import { CategoryRepository } from '../../services/repositories/CategoryRepository';
 import { ItemRepository } from '../../services/repositories/ItemRepository';
@@ -1284,6 +1286,54 @@ describe('Batch 3: Menu Domain Rules & Intelligence', () => {
       'Dew 300ml',
       'Mineral Water 500ml',
     ]);
+  });
+
+  it('40. resolveItemEffectiveCategory prevents miscategorized Chicken Roll from appearing as Burger when Roll category exists', () => {
+    const testCategories = [
+      { id: 'cat-burger', name: 'Burger', keywords: ['burger', 'zinger'] },
+      { id: 'cat-roll', name: 'Roll', keywords: ['roll', 'paratha roll', 'shawarma'] },
+      { id: 'cat-rice', name: 'Rice', keywords: ['biryani', 'pulao'] },
+    ];
+
+    // Case A: Chicken Roll mistakenly stored with categoryId: 'cat-burger' and categoryName: 'Burger'
+    const miscategorizedRoll = {
+      id: 'item-101',
+      name: 'Chicken Roll',
+      categoryId: 'cat-burger',
+      categoryName: 'Burger',
+    };
+
+    const resolvedRoll = resolveItemEffectiveCategory(miscategorizedRoll, testCategories);
+    expect(resolvedRoll.id).toBe('cat-roll');
+    expect(resolvedRoll.name).toBe('Roll');
+
+    // Case B: Zinger Burger correctly matches Burger
+    const zingerBurger = {
+      id: 'item-102',
+      name: 'Zinger Burger',
+      categoryId: 'cat-burger',
+      categoryName: 'Burger',
+    };
+    const resolvedBurger = resolveItemEffectiveCategory(zingerBurger, testCategories);
+    expect(resolvedBurger.id).toBe('cat-burger');
+    expect(resolvedBurger.name).toBe('Burger');
+  });
+
+  it('41. healMiscategorizedItems repairs miscategorized items across full inventory', () => {
+    const testCategories = [
+      { id: 'cat-burger', name: 'Burger' },
+      { id: 'cat-roll', name: 'Roll' },
+    ];
+    const rawItems = [
+      { id: 'r1', name: 'Chicken Roll', categoryId: 'cat-burger', categoryName: 'Burger' },
+      { id: 'b1', name: 'Zinger Burger', categoryId: 'cat-burger', categoryName: 'Burger' },
+    ];
+
+    const healed = healMiscategorizedItems(rawItems, testCategories);
+    expect(healed[0].categoryId).toBe('cat-roll');
+    expect(healed[0].categoryName).toBe('Roll');
+    expect(healed[1].categoryId).toBe('cat-burger');
+    expect(healed[1].categoryName).toBe('Burger');
   });
 });
 

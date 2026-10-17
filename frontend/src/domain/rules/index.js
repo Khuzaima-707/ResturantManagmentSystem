@@ -143,6 +143,67 @@ export function suggestCategory(itemName, categories = []) {
 }
 
 /**
+ * Resolves the effective category for a menu item, auto-detecting and correcting
+ * blatant miscategorization (e.g. an item named "Chicken Roll" mistakenly assigned
+ * to "Burger" when a "Roll" category exists).
+ */
+export function resolveItemEffectiveCategory(product, categories = []) {
+  if (!product) return { id: null, name: '' };
+
+  const matchedCat = (categories || []).find(
+    (c) =>
+      c &&
+      (c.id === product.categoryId ||
+        (product.categoryId && String(c.id).toLowerCase() === String(product.categoryId).toLowerCase()))
+  );
+  let resolvedId = matchedCat?.id || product.categoryId || null;
+  let resolvedName = product.categoryName || matchedCat?.name || '';
+
+  if (product.name && Array.isArray(categories) && categories.length > 0) {
+    const suggested = suggestCategory(product.name, categories);
+    if (suggested && suggested.name) {
+      const pNameLower = product.name.toLowerCase();
+      const currentCatLower = resolvedName.toLowerCase();
+      const suggestedCatLower = suggested.name.toLowerCase();
+
+      // Check whether current assigned category has any semantic connection with product name
+      const currentWords = currentCatLower.split(/[\s/\-_,&]+/).filter((w) => w.length > 2);
+      const suggestedWords = suggestedCatLower.split(/[\s/\-_,&]+/).filter((w) => w.length > 2);
+
+      const currentMatches = currentWords.some((w) => pNameLower.includes(w));
+      const suggestedMatches = suggestedWords.some((w) => pNameLower.includes(w));
+
+      // If current category does NOT match item name at all, but suggested category strongly matches
+      if (!currentMatches && suggestedMatches) {
+        resolvedId = suggested.id;
+        resolvedName = suggested.name;
+      }
+    }
+  }
+
+  return { id: resolvedId, name: resolvedName };
+}
+
+/**
+ * Sanitizes and repairs an array of menu items to heal miscategorized records.
+ */
+export function healMiscategorizedItems(items = [], categories = []) {
+  if (!Array.isArray(items) || !Array.isArray(categories) || categories.length === 0) return items;
+  return items.map((item) => {
+    if (!item?.name) return item;
+    const resolved = resolveItemEffectiveCategory(item, categories);
+    if (resolved.name && (resolved.name !== item.categoryName || (resolved.id && resolved.id !== item.categoryId))) {
+      return {
+        ...item,
+        categoryId: resolved.id || item.categoryId,
+        categoryName: resolved.name,
+      };
+    }
+    return item;
+  });
+}
+
+/**
  * Returns default unit and unit type configured on a Category object
  */
 export function getCategoryDefaultUnit(category) {

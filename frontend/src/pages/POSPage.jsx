@@ -21,7 +21,7 @@ import {
   calculateTax,
   calculateGrandTotal,
 } from '../domain/calculations';
-import { sortCategories, sortMenuItems } from '../domain/rules';
+import { sortCategories, sortMenuItems, resolveItemEffectiveCategory } from '../domain/rules';
 import { filterOrdersByOwnership } from '../domain/selectors/invoiceSelectors';
 
 /**
@@ -74,14 +74,16 @@ export const POSPage = ({ defaultTab = 'register' }) => {
       : item.basePrice || 0;
     const portionLabel = defaultPortion?.label || item.unit || item.baseUnit || 'Piece';
 
+    const effectiveCat = resolveItemEffectiveCategory(item, categories);
+
     // Direct 1-click Add to Cart without opening configuration form modal
     const cartLineSnapshot = {
       id: `line_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       itemId: item.id,
       itemNameSnapshot: item.name,
       itemImageSnapshot: item.imageRef || null,
-      categoryIdSnapshot: item.categoryId || null,
-      categoryNameSnapshot: item.categoryName || 'Specialty',
+      categoryIdSnapshot: effectiveCat.id || item.categoryId || null,
+      categoryNameSnapshot: effectiveCat.name || item.categoryName || 'Specialty',
       pricingMode: defaultPortion ? 'portion' : 'piece',
       basePriceSnapshot: item.basePrice || 0,
       costPriceSnapshot: item.costPrice !== undefined ? item.costPrice : null,
@@ -155,19 +157,27 @@ export const POSPage = ({ defaultTab = 'register' }) => {
       return [];
     }
 
+    const normActive = activeCategory.trim().toLowerCase();
+    const normActiveNoS = normActive.replace(/s$/, '');
+
     const list = activeMenuItems.filter((product) => {
-      const category = categories.find((c) => c.id === product.categoryId);
+      const resolved = resolveItemEffectiveCategory(product, categories);
+      const effectiveCategoryName = resolved.name || '';
+      const normEffective = effectiveCategoryName.trim().toLowerCase();
+      const normEffectiveNoS = normEffective.replace(/s$/, '');
 
       const matchesCategory =
         activeCategory === 'All' ||
         product.categoryId === activeCategory ||
-        category?.name?.toLowerCase() === activeCategory.toLowerCase();
+        resolved.id === activeCategory ||
+        normEffective === normActive ||
+        (normEffectiveNoS.length >= 3 && normEffectiveNoS === normActiveNoS);
 
       const query = searchQuery.trim().toLowerCase();
       const matchesSearch =
         !query ||
         product.name.toLowerCase().includes(query) ||
-        (category?.name && category.name.toLowerCase().includes(query)) ||
+        (effectiveCategoryName && effectiveCategoryName.toLowerCase().includes(query)) ||
         (product.description && product.description.toLowerCase().includes(query));
 
       return matchesCategory && matchesSearch;

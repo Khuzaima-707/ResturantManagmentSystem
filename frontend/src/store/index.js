@@ -12,6 +12,7 @@ import {
   normalizeSettings,
   mergeSettings,
 } from '../domain/rules/settingsRules';
+import { healMiscategorizedItems } from '../domain/rules';
 import {
   CategoryRepository,
   ItemRepository,
@@ -792,7 +793,11 @@ export const useAppStore = create((set, get) => ({
 
   items: (() => {
     const saved = storage.get('menu_items', null);
+    const cats = storage.get('categories', null);
     if (saved && Array.isArray(saved)) {
+      if (Array.isArray(cats) && cats.length > 0) {
+        return healMiscategorizedItems(saved, cats);
+      }
       return saved;
     }
     return [];
@@ -1668,8 +1673,9 @@ export const useAppStore = create((set, get) => ({
           ItemRepository.create(i).catch(() => {});
         });
         const mergedItems = [...its, ...unsyncedItems];
-        updates.items = mergedItems;
-        storage.set('menu_items', mergedItems);
+        const healedItems = healMiscategorizedItems(mergedItems, get().categories || []);
+        updates.items = healedItems;
+        storage.set('menu_items', healedItems);
       }
 
       // 3. Add-ons
