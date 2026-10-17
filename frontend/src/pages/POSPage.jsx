@@ -13,7 +13,6 @@ import { Tabs } from '../components/ui/Tabs';
 import { useAppStore } from '../store';
 import { ProductCard } from '../features/pos/components/ProductCard';
 import { DealCard } from '../features/pos/components/DealCard';
-import { ItemConfigModal } from '../features/pos/components/ItemConfigModal';
 import { OrderCartPanel } from '../features/pos/components/OrderCartPanel';
 import { InvoiceModal } from '../features/pos/components/InvoiceModal';
 import { InvoiceHistoryList } from '../features/pos/components/InvoiceHistoryList';
@@ -58,7 +57,6 @@ export const POSPage = ({ defaultTab = 'register' }) => {
   const [activeCategory, setActiveCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [isOrderDrawerOpen, setIsOrderDrawerOpen] = useState(false);
-  const [selectedItemForConfig, setSelectedItemForConfig] = useState(null);
   const [completedOrderForInvoice, setCompletedOrderForInvoice] = useState(null);
 
   const handleOrderCompleted = (order) => {
@@ -320,7 +318,10 @@ export const POSPage = ({ defaultTab = 'register' }) => {
                   key={`deal-${deal.id}`}
                   deal={deal}
                   showImage={settings?.pos?.showItemImages !== false}
-                  onAddToCart={addToCart}
+                  onAddToCart={(dealLine) => {
+                    addToCart(dealLine);
+                    setIsOrderDrawerOpen(true);
+                  }}
                 />
               ))}
               {filteredProducts.map((product) => (
@@ -360,17 +361,6 @@ export const POSPage = ({ defaultTab = 'register' }) => {
           </div>
         </div>
       )}
-
-      {/* Product Configuration Modal */}
-      <ItemConfigModal
-        item={selectedItemForConfig}
-        isOpen={Boolean(selectedItemForConfig)}
-        onClose={() => setSelectedItemForConfig(null)}
-        onAddToCart={(cartLine) => {
-          addToCart(cartLine);
-          setSelectedItemForConfig(null);
-        }}
-      />
 
       {/* Sale Success & Invoice Confirmation Preview */}
       <InvoiceModal
