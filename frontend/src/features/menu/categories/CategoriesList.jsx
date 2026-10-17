@@ -4,7 +4,7 @@ import { DataTable } from '../../../components/ui/DataTable';
 import { CategoryModal } from './CategoryModal';
 import { useAppStore } from '../../../store';
 import { cn } from '../../../utils/cn';
-import { sortCategories } from '../../../domain/rules';
+import { sortCategories, parseSortOrder } from '../../../domain/rules';
 
 export const CategoriesList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClose }) => {
   const { categories, items, addCategory, setCategoryStatus, deleteCategory, user } = useAppStore();
@@ -26,7 +26,7 @@ export const CategoriesList = ({ isAddModalOpen: externalAddModalOpen, onAddModa
     onAddModalClose?.();
   };
 
-  // Filtered categories sorted by sortOrder
+  // Filtered categories: explicit Display Order first, otherwise Newest First (most recently added at the top)
   const filteredCategories = useMemo(() => {
     const list = (categories || []).filter((cat) => {
       if (!cat) return false;
@@ -49,7 +49,31 @@ export const CategoriesList = ({ isAddModalOpen: externalAddModalOpen, onAddModa
       }
       return true;
     });
-    return sortCategories(list);
+
+    return [...list].sort((a, b) => {
+      const orderA = parseSortOrder(a?.sortOrder);
+      const orderB = parseSortOrder(b?.sortOrder);
+
+      // 1. Explicit numeric Display Order (1, 2, 3...) takes precedence
+      if (orderA !== null && orderB !== null) {
+        if (orderA !== orderB) return orderA - orderB;
+      } else if (orderA !== null && orderB === null) {
+        return -1;
+      } else if (orderA === null && orderB !== null) {
+        return 1;
+      }
+
+      // 2. Newest First: Most recently added/updated category appears at the top (#1)
+      const timeA = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+      if (timeA !== timeB) return timeB - timeA;
+
+      const updA = a?.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const updB = b?.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      if (updA !== updB) return updB - updA;
+
+      return String(a?.name || '').localeCompare(String(b?.name || ''));
+    });
   }, [categories, searchQuery, statusFilter]);
 
   const handleOpenEdit = (cat) => {

@@ -65,6 +65,7 @@ export function getCategoryTier(category) {
     combined.includes('smoothie') ||
     combined.includes('dew') ||
     combined.includes('coke') ||
+    combined.includes('cola') ||
     combined.includes('pepsi') ||
     combined.includes('fanta') ||
     combined.includes('sprite') ||
@@ -122,6 +123,10 @@ export function sortCategoriesList(categories = []) {
 
     if (orderA !== null && orderB === null) return -1;
     if (orderA === null && orderB !== null) return 1;
+
+    const timeA = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const timeB = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+    if (timeB !== timeA) return timeB - timeA;
 
     const cmp = String(a?.name || '').localeCompare(String(b?.name || ''), undefined, {
       sensitivity: 'base',

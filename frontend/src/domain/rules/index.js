@@ -749,6 +749,7 @@ export function isDrinkOrColdItem(text = '') {
     norm.includes('smoothie') ||
     norm.includes('dew') ||
     norm.includes('coke') ||
+    norm.includes('cola') ||
     norm.includes('pepsi') ||
     norm.includes('fanta') ||
     norm.includes('sprite') ||

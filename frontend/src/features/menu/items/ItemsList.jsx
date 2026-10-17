@@ -58,7 +58,16 @@ export const ItemsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClos
       return true;
     });
 
-    return sortMenuItems(list, categories);
+    // In admin list: newly added/updated items appear at the top
+    return [...list].sort((a, b) => {
+      const timeA = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+      if (timeA !== timeB) return timeB - timeA;
+      const updA = a?.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const updB = b?.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      if (updA !== updB) return updB - updA;
+      return String(a?.name || '').localeCompare(String(b?.name || ''));
+    });
   }, [items, searchQuery, categoryFilter, statusFilter, categoryMap, categories]);
 
   const handleOpenEdit = (item) => {
