@@ -164,7 +164,15 @@ export const useAppStore = create((set, get) => ({
   updateCartLinePortion: (lineId, portion) => {
     const updated = get().cart.map((item) => {
       if (item.id === lineId) {
-        const newPortionPrice = Number(portion.price) || item.basePriceSnapshot || 0;
+        let newPortionPrice = 0;
+        if (portion.price !== undefined && portion.price !== null) {
+          newPortionPrice = Number(portion.price) || 0;
+        } else if (portion.grams && item.basePriceSnapshot) {
+          newPortionPrice = Math.round((Number(item.basePriceSnapshot) * Number(portion.grams)) / 1000);
+        } else {
+          newPortionPrice = Number(item.basePriceSnapshot) || 0;
+        }
+
         const itemAddonTotal = Array.isArray(item.addonSnapshots)
           ? item.addonSnapshots.reduce(
               (sum, a) => sum + (Number(a.price) || 0) * (Number(a.quantity) || 1),
@@ -178,11 +186,51 @@ export const useAppStore = create((set, get) => ({
 
         return {
           ...item,
-          pricingMode: 'portion',
+          pricingMode: portion.pricingMode || (portion.grams ? 'weight' : item.pricingMode || 'portion'),
           selectedPortionLabel: portion.label,
           selectedWeightGrams: portion.grams || null,
+          requiresPortionSelection: false,
           portionPrice: newPortionPrice,
           unitPrice: newPortionPrice,
+          lineSubtotal,
+        };
+      }
+      return item;
+    });
+    const currentUser = get().user || storage.get('active_user', null);
+    const cartKey = getUserCartStorageKey(currentUser);
+    const uid = currentUser?.id || (currentUser?.username ? `user_${currentUser.username}` : 'guest');
+    storage.set(cartKey, updated);
+    storage.set(`currentOrder_${uid}`, updated);
+    set({ cart: updated });
+  },
+
+  updateCartLineCustomAmount: (lineId, enteredAmount) => {
+    const updated = get().cart.map((item) => {
+      if (item.id === lineId) {
+        const amount = Math.max(0, Math.round(Number(enteredAmount) || 0));
+        const basePrice = Number(item.basePriceSnapshot) || 0;
+        const grams = basePrice > 0 ? Math.round((amount / basePrice) * 1000) : 0;
+
+        const itemAddonTotal = Array.isArray(item.addonSnapshots)
+          ? item.addonSnapshots.reduce(
+              (sum, a) => sum + (Number(a.price) || 0) * (Number(a.quantity) || 1),
+              0
+            )
+          : Number(item.addonsTotal) || 0;
+        const isFlat = item.addonsAreFlat !== false;
+        const lineSubtotal = isFlat
+          ? (amount * item.quantity) + itemAddonTotal
+          : (amount + itemAddonTotal) * item.quantity;
+
+        return {
+          ...item,
+          pricingMode: 'amount',
+          selectedPortionLabel: `Custom Rs ${amount} (${grams}g)`,
+          selectedWeightGrams: grams,
+          requiresPortionSelection: false,
+          portionPrice: amount,
+          unitPrice: amount,
           lineSubtotal,
         };
       }

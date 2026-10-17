@@ -48,6 +48,7 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
     updateCartQuantity,
     updateCartLineAddons,
     updateCartLinePortion,
+    updateCartLineCustomAmount,
     removeCartLine,
     clearCart,
     orderType,
@@ -59,6 +60,9 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
     items,
     addons,
   } = useAppStore();
+
+  const [customRsEditingLineId, setCustomRsEditingLineId] = useState(null);
+  const [customRsInputVal, setCustomRsInputVal] = useState('');
 
   // Discount states
   const [discountType, setDiscountType] = useState('percentage'); // 'percentage' | 'fixed'
@@ -247,6 +251,15 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
       }
     }
 
+    // Require valid portion selection before completing sale
+    const unselectedPortionLine = cart.find(
+      (l) => l.requiresPortionSelection || l.selectedPortionLabel === 'Select Portion' || (l.pricingMode === 'weight' && !l.portionPrice)
+    );
+    if (unselectedPortionLine) {
+      setValidationError(`Please select a portion for "${unselectedPortionLine.itemNameSnapshot}" before completing sale.`);
+      return;
+    }
+
     isSubmittingRef.current = true;
     setIsSubmitting(true);
 
@@ -384,9 +397,9 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
         {/* Table Header: # Item Qty Price (Matches Screenshot 2) */}
         <div className="grid grid-cols-12 text-[11px] font-bold text-slate-400 px-3 py-1.5 border-b border-slate-100 shrink-0 bg-white">
           <span className="col-span-1">#</span>
-          <span className="col-span-6">Item</span>
+          <span className="col-span-5">Item</span>
           <span className="col-span-3 text-center">Qty</span>
-          <span className="col-span-2 text-right">Price</span>
+          <span className="col-span-3 text-right">Price</span>
         </div>
 
         {/* Cart Items List or Compact Empty State */}
@@ -419,7 +432,7 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
                   <div className="grid grid-cols-12 items-center gap-1.5">
                     <span className="col-span-1 font-semibold text-slate-400">{idx + 1}</span>
 
-                    <div className="col-span-6 flex items-center gap-2 min-w-0">
+                    <div className="col-span-5 flex items-center gap-2 min-w-0">
                       <div className="w-7 h-7 rounded-lg bg-slate-100 border border-slate-200/60 overflow-hidden shrink-0 flex items-center justify-center">
                         {line.itemImageSnapshot ? (
                           <img
@@ -433,7 +446,7 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
                           <Utensils className="w-3.5 h-3.5 text-slate-400" />
                         )}
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <h4 className="font-bold text-slate-900 truncate text-[11px] leading-tight flex items-center gap-1">
                           {line.isDeal && (
                             <span className="px-1 py-0.2 rounded-xs bg-[#FF5C28] text-white text-[8px] font-black shrink-0">
@@ -457,30 +470,154 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
                           </div>
                         )}
 
-                        {masterItem?.portionOptions?.length > 1 && !line.isDeal ? (
+                        {/* Portion & Custom Weight Controls */}
+                        {!line.isDeal && (
                           <div className="mt-0.5">
-                            <select
-                              value={line.selectedPortionLabel || masterItem.portionOptions[0]?.label}
-                              onChange={(e) => {
-                                const selected = masterItem.portionOptions.find((p) => p.label === e.target.value);
-                                if (selected) {
-                                  updateCartLinePortion(line.id, selected);
-                                }
-                              }}
-                              className="text-[10px] font-bold text-[#FF5C28] bg-orange-50 border border-orange-200 rounded px-1.5 py-0.5 cursor-pointer outline-none"
-                            >
-                              {masterItem.portionOptions.map((opt) => (
-                                <option key={opt.label} value={opt.label}>
-                                  {opt.label} (Rs {opt.price})
-                                </option>
-                              ))}
-                            </select>
+                            {((Array.isArray(masterItem?.portionOptions) && masterItem.portionOptions.length > 0) ||
+                              (masterItem?.unitType || '').toLowerCase() === 'weight' ||
+                              (masterItem?.unit || '').toLowerCase().includes('kg') ||
+                              (line.baseUnitSnapshot || '').toLowerCase().includes('kg')) ? (
+                              <div className="space-y-0.5">
+                                {customRsEditingLineId === line.id ? (
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[10px] font-bold text-slate-600">Rs</span>
+                                    <input
+                                      type="number"
+                                      min="10"
+                                      step="10"
+                                      autoFocus
+                                      value={customRsInputVal}
+                                      onChange={(e) => setCustomRsInputVal(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          e.preventDefault();
+                                          const entered = Number(customRsInputVal) || 0;
+                                          if (entered > 0) {
+                                            updateCartLineCustomAmount?.(line.id, entered);
+                                          }
+                                          setCustomRsEditingLineId(null);
+                                        } else if (e.key === 'Escape') {
+                                          setCustomRsEditingLineId(null);
+                                        }
+                                      }}
+                                      onBlur={() => {
+                                        const entered = Number(customRsInputVal) || 0;
+                                        if (entered > 0) {
+                                          updateCartLineCustomAmount?.(line.id, entered);
+                                        }
+                                        setCustomRsEditingLineId(null);
+                                      }}
+                                      placeholder="Amount"
+                                      className="w-16 h-5 px-1 text-[10px] font-bold text-slate-800 bg-white border border-orange-300 rounded outline-none focus:ring-1 focus:ring-[#FF5C28]"
+                                    />
+                                    {Number(line.basePriceSnapshot || masterItem?.basePrice) > 0 ? (
+                                      <span className="text-[9px] font-semibold text-slate-400">
+                                        ≈ {Math.round((Number(customRsInputVal || 0) / Number(line.basePriceSnapshot || masterItem?.basePrice)) * 1000)}g
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    <select
+                                      value={line.requiresPortionSelection ? '' : (line.pricingMode === 'amount' ? 'custom_rs' : (line.selectedPortionLabel || ''))}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        if (val === 'custom_rs') {
+                                          setCustomRsInputVal(line.pricingMode === 'amount' ? String(line.portionPrice || 100) : '100');
+                                          setCustomRsEditingLineId(line.id);
+                                        } else if (val) {
+                                          const isWeight = (masterItem?.unitType || '').toLowerCase() === 'weight' || (masterItem?.unit || '').toLowerCase().includes('kg') || (line.baseUnitSnapshot || '').toLowerCase().includes('kg');
+                                          const basePr = Number(line.basePriceSnapshot || masterItem?.basePrice || 0);
+
+                                          let found = (masterItem?.portionOptions || []).find((p) => (p.label || p.name) === val);
+                                          if (!found && isWeight) {
+                                            const std = [
+                                              { label: '250g', grams: 250, price: Math.round(basePr * 0.25) },
+                                              { label: '500g', grams: 500, price: Math.round(basePr * 0.5) },
+                                              { label: '750g', grams: 750, price: Math.round(basePr * 0.75) },
+                                              { label: '1kg', grams: 1000, price: Math.round(basePr) },
+                                            ].find((s) => s.label === val);
+                                            if (std) found = std;
+                                          }
+                                          if (found) {
+                                            const grams = found.grams || (found.quantityInBaseUnit ? Math.round(Number(found.quantityInBaseUnit) * 1000) : null);
+                                            const price = found.price !== undefined
+                                              ? Number(found.price)
+                                              : (isWeight && grams && basePr ? Math.round((basePr * grams) / 1000) : basePr);
+                                            updateCartLinePortion(line.id, {
+                                              label: found.label || found.name,
+                                              grams,
+                                              price,
+                                              pricingMode: isWeight ? 'weight' : 'portion',
+                                            });
+                                          }
+                                        }
+                                      }}
+                                      className={`text-[10px] font-bold rounded px-1.5 py-0.5 cursor-pointer outline-none border ${
+                                        line.requiresPortionSelection || line.selectedPortionLabel === 'Select Portion'
+                                          ? 'bg-rose-50 border-rose-300 text-rose-700 animate-pulse'
+                                          : 'text-[#FF5C28] bg-orange-50 border-orange-200'
+                                      }`}
+                                    >
+                                      {(line.requiresPortionSelection || line.selectedPortionLabel === 'Select Portion') && (
+                                        <option value="">⚠️ Select Portion</option>
+                                      )}
+                                      {(() => {
+                                        const isWeight = (masterItem?.unitType || '').toLowerCase() === 'weight' || (masterItem?.unit || '').toLowerCase().includes('kg') || (line.baseUnitSnapshot || '').toLowerCase().includes('kg');
+                                        const basePr = Number(line.basePriceSnapshot || masterItem?.basePrice || 0);
+                                        const opts = (Array.isArray(masterItem?.portionOptions) && masterItem.portionOptions.length > 0)
+                                          ? masterItem.portionOptions.map((opt) => {
+                                              const g = opt.grams || (opt.quantityInBaseUnit ? Math.round(Number(opt.quantityInBaseUnit) * 1000) : null);
+                                              const pr = opt.price !== undefined ? Number(opt.price) : (isWeight && g && basePr ? Math.round((basePr * g) / 1000) : basePr);
+                                              return { label: opt.label || opt.name, price: pr };
+                                            })
+                                          : isWeight
+                                          ? [
+                                              { label: '250g', price: Math.round(basePr * 0.25) },
+                                              { label: '500g', price: Math.round(basePr * 0.5) },
+                                              { label: '750g', price: Math.round(basePr * 0.75) },
+                                              { label: '1kg', price: Math.round(basePr) },
+                                            ]
+                                          : [];
+                                        return (
+                                          <>
+                                            {opts.map((opt) => (
+                                              <option key={opt.label} value={opt.label}>
+                                                {opt.label} (Rs {opt.price})
+                                              </option>
+                                            ))}
+                                            {isWeight && (
+                                              <option value="custom_rs">
+                                                {line.pricingMode === 'amount' ? line.selectedPortionLabel : 'Custom Rs Amount...'}
+                                              </option>
+                                            )}
+                                          </>
+                                        );
+                                      })()}
+                                    </select>
+                                    {line.pricingMode === 'amount' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setCustomRsInputVal(String(line.portionPrice || ''));
+                                          setCustomRsEditingLineId(line.id);
+                                        }}
+                                        className="text-[9.5px] font-bold text-slate-500 hover:text-[#FF5C28] underline cursor-pointer"
+                                        title="Edit custom rupee amount"
+                                      >
+                                        Edit Rs
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            ) : line.selectedPortionLabel ? (
+                              <span className="text-[9px] text-[#FF5C28] font-semibold block">
+                                {line.selectedPortionLabel}
+                              </span>
+                            ) : null}
                           </div>
-                        ) : line.selectedPortionLabel && !line.isDeal ? (
-                          <span className="text-[9px] text-[#FF5C28] font-semibold block">
-                            {line.selectedPortionLabel}
-                          </span>
-                        ) : null}
+                        )}
                       </div>
                     </div>
 
@@ -508,17 +645,17 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
                       </div>
                     </div>
 
-                    <div className="col-span-2 flex items-center justify-end gap-1">
-                      <span className="font-bold text-slate-900 text-xs">
+                    <div className="col-span-3 flex items-center justify-end gap-1.5">
+                      <span className="font-bold text-slate-900 text-xs whitespace-nowrap">
                         Rs {line.lineSubtotal}
                       </span>
                       <button
                         type="button"
                         onClick={() => removeCartLine(line.id)}
-                        className="p-0.5 text-slate-300 hover:text-rose-500 rounded transition-colors cursor-pointer"
+                        className="p-0.5 text-slate-300 hover:text-rose-500 rounded transition-colors cursor-pointer shrink-0"
                         title="Remove item"
                       >
-                        <Trash2 className="w-3 h-3" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>

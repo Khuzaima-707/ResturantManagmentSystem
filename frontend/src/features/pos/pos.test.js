@@ -483,4 +483,66 @@ describe('Batch 4 — POS & Billing Test Suite', () => {
     expect(useAppStore.getState().cart[0].quantity).toBe(3); // 1 + 2 = 3
     expect(useAppStore.getState().cart[0].lineSubtotal).toBe(900);
   });
+
+  // 28. inline portion change (250g -> 500g) recalculates line subtotal
+  it('28. inline portion change (250g -> 500g) recalculates line subtotal', () => {
+    const biryaniLine = {
+      id: 'line-b1',
+      itemId: 'item-1',
+      itemNameSnapshot: 'Special Chicken Biryani',
+      basePriceSnapshot: 900,
+      pricingMode: 'weight',
+      selectedPortionLabel: '250g',
+      selectedWeightGrams: 250,
+      portionPrice: 225,
+      quantity: 1,
+      unitPrice: 225,
+      lineSubtotal: 225,
+      addonSnapshots: [],
+      addonsTotal: 0,
+    };
+    useAppStore.getState().addToCart(biryaniLine);
+
+    // Update portion to 500g (Rs 450)
+    useAppStore.getState().updateCartLinePortion('line-b1', {
+      label: '500g',
+      grams: 500,
+      price: 450,
+    });
+
+    const updated = useAppStore.getState().cart[0];
+    expect(updated.selectedPortionLabel).toBe('500g');
+    expect(updated.selectedWeightGrams).toBe(500);
+    expect(updated.portionPrice).toBe(450);
+    expect(updated.lineSubtotal).toBe(450);
+  });
+
+  // 29. custom rupee amount sets calculated weight and subtotal
+  it('29. custom rupee amount sets calculated weight and subtotal', () => {
+    const biryaniLine = {
+      id: 'line-b2',
+      itemId: 'item-1',
+      itemNameSnapshot: 'Special Chicken Biryani',
+      basePriceSnapshot: 900,
+      pricingMode: 'weight',
+      selectedPortionLabel: '250g',
+      selectedWeightGrams: 250,
+      portionPrice: 225,
+      quantity: 1,
+      unitPrice: 225,
+      lineSubtotal: 225,
+      addonSnapshots: [],
+      addonsTotal: 0,
+    };
+    useAppStore.getState().addToCart(biryaniLine);
+
+    // Custom Rs 300
+    useAppStore.getState().updateCartLineCustomAmount('line-b2', 300);
+
+    const updated = useAppStore.getState().cart[0];
+    expect(updated.pricingMode).toBe('amount');
+    expect(updated.portionPrice).toBe(300);
+    expect(updated.lineSubtotal).toBe(300);
+    expect(updated.selectedWeightGrams).toBe(333); // 300 / 900 * 1000 = 333g
+  });
 });

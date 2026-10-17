@@ -66,13 +66,63 @@ export const POSPage = ({ defaultTab = 'register' }) => {
   };
 
   const handleItemSelect = (item) => {
-    const defaultPortion = Array.isArray(item.portionOptions) && item.portionOptions.length > 0
-      ? item.portionOptions[0]
-      : null;
-    const portionPrice = defaultPortion && defaultPortion.price !== undefined
-      ? Number(defaultPortion.price) || 0
-      : item.basePrice || 0;
-    const portionLabel = defaultPortion?.label || item.unit || item.baseUnit || 'Piece';
+    const isWeightBased =
+      (item.unitType || '').toLowerCase() === 'weight' ||
+      (item.unit || '').toLowerCase().includes('kg') ||
+      (item.baseUnit || '').toLowerCase().includes('kg');
+
+    let availablePortions = [];
+    if (Array.isArray(item.portionOptions) && item.portionOptions.length > 0) {
+      availablePortions = item.portionOptions.map((p) => {
+        const grams = p.grams || (p.quantityInBaseUnit ? Math.round(Number(p.quantityInBaseUnit) * 1000) : null);
+        const price = p.price !== undefined
+          ? Number(p.price)
+          : (isWeightBased && grams && item.basePrice ? Math.round((Number(item.basePrice) * grams) / 1000) : item.basePrice || 0);
+        return {
+          label: p.label || p.name,
+          grams,
+          price,
+          isDefault: p.isDefault,
+        };
+      });
+    } else if (isWeightBased) {
+      availablePortions = [
+        { label: '250g', grams: 250, price: Math.round(((Number(item.basePrice) || 0) * 250) / 1000) },
+        { label: '500g', grams: 500, price: Math.round(((Number(item.basePrice) || 0) * 500) / 1000) },
+        { label: '750g', grams: 750, price: Math.round(((Number(item.basePrice) || 0) * 750) / 1000) },
+        { label: '1kg', grams: 1000, price: Math.round(Number(item.basePrice) || 0) },
+      ];
+    }
+
+    const defaultPortion = availablePortions.find((p) => p.isDefault) || (availablePortions.length > 0 ? availablePortions[0] : null);
+
+    let portionPrice = 0;
+    let portionLabel = '';
+    let selectedWeightGrams = null;
+    let requiresPortionSelection = false;
+
+    if (isWeightBased) {
+      if (defaultPortion) {
+        portionPrice = defaultPortion.price;
+        portionLabel = defaultPortion.label;
+        selectedWeightGrams = defaultPortion.grams;
+      } else {
+        // No valid default portion exists: add as "Select Portion" and prevent complete sale until selected
+        portionPrice = 0;
+        portionLabel = 'Select Portion';
+        selectedWeightGrams = null;
+        requiresPortionSelection = true;
+      }
+    } else {
+      // Piece / unit based item
+      if (defaultPortion && defaultPortion.price !== undefined) {
+        portionPrice = defaultPortion.price;
+        portionLabel = defaultPortion.label;
+      } else {
+        portionPrice = Number(item.basePrice) || 0;
+        portionLabel = item.unit || item.baseUnit || 'Piece';
+      }
+    }
 
     const effectiveCat = resolveItemEffectiveCategory(item, categories);
 
@@ -84,12 +134,13 @@ export const POSPage = ({ defaultTab = 'register' }) => {
       itemImageSnapshot: item.imageRef || null,
       categoryIdSnapshot: effectiveCat.id || item.categoryId || null,
       categoryNameSnapshot: effectiveCat.name || item.categoryName || 'Specialty',
-      pricingMode: defaultPortion ? 'portion' : 'piece',
-      basePriceSnapshot: item.basePrice || 0,
+      pricingMode: isWeightBased ? 'weight' : (defaultPortion ? 'portion' : 'piece'),
+      basePriceSnapshot: Number(item.basePrice) || 0,
       costPriceSnapshot: item.costPrice !== undefined ? item.costPrice : null,
-      baseUnitSnapshot: item.unit || item.baseUnit || 'Piece',
-      selectedWeightGrams: defaultPortion?.grams || null,
+      baseUnitSnapshot: item.unit || item.baseUnit || (isWeightBased ? 'kg' : 'Piece'),
+      selectedWeightGrams: selectedWeightGrams,
       selectedPortionLabel: portionLabel,
+      requiresPortionSelection: requiresPortionSelection,
       portionPrice: portionPrice,
       addonSnapshots: [],
       addonsTotal: 0,
