@@ -152,7 +152,6 @@ export const POSPage = ({ defaultTab = 'register' }) => {
     };
 
     addToCart(cartLineSnapshot);
-    setIsOrderDrawerOpen(true);
   };
 
   // Only sellable active menu items
@@ -381,7 +380,6 @@ export const POSPage = ({ defaultTab = 'register' }) => {
                   showImage={settings?.pos?.showItemImages !== false}
                   onAddToCart={(dealLine) => {
                     addToCart(dealLine);
-                    setIsOrderDrawerOpen(true);
                   }}
                 />
               ))}
