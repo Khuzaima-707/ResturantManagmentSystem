@@ -47,6 +47,7 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
     cart,
     updateCartQuantity,
     updateCartLineAddons,
+    updateCartLinePortion,
     removeCartLine,
     clearCart,
     orderType,
@@ -456,11 +457,30 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
                           </div>
                         )}
 
-                        {line.selectedPortionLabel && !line.isDeal && (
+                        {masterItem?.portionOptions?.length > 1 && !line.isDeal ? (
+                          <div className="mt-0.5">
+                            <select
+                              value={line.selectedPortionLabel || masterItem.portionOptions[0]?.label}
+                              onChange={(e) => {
+                                const selected = masterItem.portionOptions.find((p) => p.label === e.target.value);
+                                if (selected) {
+                                  updateCartLinePortion(line.id, selected);
+                                }
+                              }}
+                              className="text-[10px] font-bold text-[#FF5C28] bg-orange-50 border border-orange-200 rounded px-1.5 py-0.5 cursor-pointer outline-none"
+                            >
+                              {masterItem.portionOptions.map((opt) => (
+                                <option key={opt.label} value={opt.label}>
+                                  {opt.label} (Rs {opt.price})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : line.selectedPortionLabel && !line.isDeal ? (
                           <span className="text-[9px] text-[#FF5C28] font-semibold block">
                             {line.selectedPortionLabel}
                           </span>
-                        )}
+                        ) : null}
                       </div>
                     </div>
 

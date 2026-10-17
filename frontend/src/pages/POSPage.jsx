@@ -68,18 +68,15 @@ export const POSPage = ({ defaultTab = 'register' }) => {
   };
 
   const handleItemSelect = (item) => {
-    // If weight based or has multiple portion options, open config modal
-    const isWeightBased = (item.unitType || '').toLowerCase() === 'weight' ||
-      (item.unit || item.baseUnit || '').toLowerCase().includes('kg') ||
-      (item.unit || item.baseUnit || '').toLowerCase().includes('gram');
-    const hasMultiplePortions = Array.isArray(item.portionOptions) && item.portionOptions.length > 1;
+    const defaultPortion = Array.isArray(item.portionOptions) && item.portionOptions.length > 0
+      ? item.portionOptions[0]
+      : null;
+    const portionPrice = defaultPortion && defaultPortion.price !== undefined
+      ? Number(defaultPortion.price) || 0
+      : item.basePrice || 0;
+    const portionLabel = defaultPortion?.label || item.unit || item.baseUnit || 'Piece';
 
-    if (isWeightBased || hasMultiplePortions) {
-      setSelectedItemForConfig(item);
-      return;
-    }
-
-    // Direct 1-click Add to Cart
+    // Direct 1-click Add to Cart without opening configuration form modal
     const cartLineSnapshot = {
       id: `line_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       itemId: item.id,
@@ -87,23 +84,24 @@ export const POSPage = ({ defaultTab = 'register' }) => {
       itemImageSnapshot: item.imageRef || null,
       categoryIdSnapshot: item.categoryId || null,
       categoryNameSnapshot: item.categoryName || 'Specialty',
-      pricingMode: 'piece',
+      pricingMode: defaultPortion ? 'portion' : 'piece',
       basePriceSnapshot: item.basePrice || 0,
       costPriceSnapshot: item.costPrice !== undefined ? item.costPrice : null,
       baseUnitSnapshot: item.unit || item.baseUnit || 'Piece',
-      selectedWeightGrams: null,
-      selectedPortionLabel: item.unit || item.baseUnit || 'Piece',
-      portionPrice: item.basePrice || 0,
+      selectedWeightGrams: defaultPortion?.grams || null,
+      selectedPortionLabel: portionLabel,
+      portionPrice: portionPrice,
       addonSnapshots: [],
       addonsTotal: 0,
       addonsAreFlat: true,
       quantity: 1,
-      unitPrice: item.basePrice || 0,
-      lineSubtotal: item.basePrice || 0,
+      unitPrice: portionPrice,
+      lineSubtotal: portionPrice,
       note: '',
     };
 
     addToCart(cartLineSnapshot);
+    setIsOrderDrawerOpen(true);
   };
 
   // Only sellable active menu items

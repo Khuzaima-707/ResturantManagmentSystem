@@ -160,6 +160,41 @@ export const useAppStore = create((set, get) => ({
     set({ cart: updated });
   },
 
+  updateCartLinePortion: (lineId, portion) => {
+    const updated = get().cart.map((item) => {
+      if (item.id === lineId) {
+        const newPortionPrice = Number(portion.price) || item.basePriceSnapshot || 0;
+        const itemAddonTotal = Array.isArray(item.addonSnapshots)
+          ? item.addonSnapshots.reduce(
+              (sum, a) => sum + (Number(a.price) || 0) * (Number(a.quantity) || 1),
+              0
+            )
+          : Number(item.addonsTotal) || 0;
+        const isFlat = item.addonsAreFlat !== false;
+        const lineSubtotal = isFlat
+          ? (newPortionPrice * item.quantity) + itemAddonTotal
+          : (newPortionPrice + itemAddonTotal) * item.quantity;
+
+        return {
+          ...item,
+          pricingMode: 'portion',
+          selectedPortionLabel: portion.label,
+          selectedWeightGrams: portion.grams || null,
+          portionPrice: newPortionPrice,
+          unitPrice: newPortionPrice,
+          lineSubtotal,
+        };
+      }
+      return item;
+    });
+    const currentUser = get().user || storage.get('active_user', null);
+    const cartKey = getUserCartStorageKey(currentUser);
+    const uid = currentUser?.id || (currentUser?.username ? `user_${currentUser.username}` : 'guest');
+    storage.set(cartKey, updated);
+    storage.set(`currentOrder_${uid}`, updated);
+    set({ cart: updated });
+  },
+
   updateCartQuantity: (lineId, delta) => {
     const updated = get().cart.map((item) => {
       if (item.id === lineId) {
