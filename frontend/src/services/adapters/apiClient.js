@@ -35,7 +35,11 @@ export async function apiRequest(endpoint, options = {}) {
   const url = `${baseUrl}${cleanEndpoint}`;
 
   const token = storage.get('auth_token', null);
-  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+  const currentUser = storage.get('rms_user', null);
+  const authHeaders = {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(currentUser?.role ? { 'x-user-role': currentUser.role } : {}),
+  };
 
   const config = {
     headers: {

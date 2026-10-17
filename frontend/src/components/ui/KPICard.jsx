@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowUpRight, TrendingUp, TrendingDown } from 'lucide-react';
+import { TrendingUp, TrendingDown } from 'lucide-react';
 import { cn } from '../../utils/cn';
 
 /**
@@ -13,7 +13,7 @@ export const KPICard = ({
   icon: Icon,
   color = 'orange', // 'orange' | 'green' | 'purple' | 'red' | 'blue' | 'amber'
   trend,            // e.g. { value: '47% Cleared', isPositive: true } or string
-  showArrow = true,
+  showArrow = false,
   onClick,
   className,
   size = 'md',      // 'sm' | 'md'
@@ -98,17 +98,6 @@ export const KPICard = ({
             </div>
           </div>
         </div>
-
-        {showArrow && (
-          <div
-            className={cn(
-              'border border-slate-100 bg-slate-50/50 flex items-center justify-center text-slate-400 group-hover:text-slate-600 transition-colors shrink-0 ml-1',
-              isSm ? 'w-5 h-5 rounded-md' : 'w-7 h-7 rounded-lg'
-            )}
-          >
-            <ArrowUpRight className={isSm ? 'w-3 h-3' : 'w-4 h-4'} />
-          </div>
-        )}
       </div>
 
       {(trend || subtitle) && (

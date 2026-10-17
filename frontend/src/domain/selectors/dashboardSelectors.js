@@ -31,6 +31,14 @@ import {
 export function getDateIntervalForPreset(datePreset, customRange = null, referenceDate = new Date()) {
   const ref = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
 
+  if (datePreset === 'All Dates' || datePreset === 'All Time') {
+    return {
+      start: new Date(0),
+      end: new Date(8640000000000000),
+      label: 'All Dates',
+    };
+  }
+
   if (datePreset === 'Today') {
     return {
       start: startOfDay(ref),

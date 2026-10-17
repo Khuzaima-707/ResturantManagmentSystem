@@ -74,6 +74,7 @@ export async function resetApplicationData(store = null) {
     storage.set('categories', []);
     storage.set('menu_items', []);
     storage.set('addons', []);
+    storage.set('deals', []);
     storage.set('orders', []);
     storage.set('reversals', []);
     storage.set('expenses', []);
@@ -81,6 +82,10 @@ export async function resetApplicationData(store = null) {
     storage.set('shifts', []);
     storage.set('current_shift', null);
     storage.set('pos_cart', []);
+    storage.set('cart_user_admin', []);
+    storage.set('cart_user_cashier', []);
+    storage.set('currentOrder_user_admin', []);
+    storage.set('currentOrder_user_cashier', []);
     storage.set('notifications', []);
 
     // 2. Clear application-owned IndexedDB image blobs and memory cache
@@ -103,6 +108,7 @@ export async function resetApplicationData(store = null) {
         categories: [],
         items: [],
         addons: [],
+        deals: [],
         orders: [],
         reversals: [],
         expenses: [],

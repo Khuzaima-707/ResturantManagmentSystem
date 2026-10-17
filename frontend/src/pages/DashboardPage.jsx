@@ -4,7 +4,6 @@ import {
   ShoppingCart,
   TrendingUp,
   RotateCcw,
-  ArrowUpRight,
   Calendar,
   ChevronDown,
   Users,
@@ -16,6 +15,7 @@ import { parseISO, formatDistanceToNow, format } from 'date-fns';
 import { useAppStore } from '../store';
 import { deriveDashboardData } from '../domain/selectors/dashboardSelectors';
 import { getProfitAndCostReportData } from '../domain/selectors/reportSelectors';
+import { filterOrdersByOwnership } from '../domain/selectors/invoiceSelectors';
 import { formatCurrency, formatNumber } from '../utils/formatters';
 
 /**
@@ -69,15 +69,29 @@ export const DashboardPage = () => {
   const [activeCandleKey, setActiveCandleKey] = useState(null);
   const [dropdownOpenCard, setDropdownOpenCard] = useState(null);
 
-  // Derive canonical calculations from active store orders (Cashier restricted to Today)
+  // Scope orders and reversals based on logged-in role ownership
+  const effectiveOrders = useMemo(() => {
+    return filterOrdersByOwnership(orders, user);
+  }, [orders, user]);
+
+  const effectiveReversals = useMemo(() => {
+    if (!isCashier) return reversals;
+    const allowedOrderIds = new Set(effectiveOrders.map((o) => o.id));
+    const allowedInvoiceNumbers = new Set(effectiveOrders.map((o) => o.invoiceNumber));
+    return (reversals || []).filter(
+      (r) => allowedOrderIds.has(r.originalOrderId) || allowedInvoiceNumbers.has(r.originalInvoiceNumber)
+    );
+  }, [reversals, effectiveOrders, isCashier]);
+
+  // Derive canonical calculations from active store orders (Cashier restricted to Today & Cashier-scoped orders)
   const { kpis, chartData, topSellingItems, recentActivities } = useMemo(() => {
     return deriveDashboardData(
-      orders,
-      reversals,
+      effectiveOrders,
+      effectiveReversals,
       effectiveDatePreset,
       isCashier ? null : customDateRange
     );
-  }, [orders, reversals, effectiveDatePreset, customDateRange, isCashier]);
+  }, [effectiveOrders, effectiveReversals, effectiveDatePreset, customDateRange, isCashier]);
 
   // Derive Gross Profit for management dashboard KPI indicator (Hidden for Cashier)
   const activeProfit = useMemo(() => {
@@ -295,13 +309,6 @@ export const DashboardPage = () => {
                 Total Sale
               </span>
             </div>
-            <button
-              type="button"
-              className="w-6 h-6 rounded-full border border-slate-200/80 flex items-center justify-center text-slate-400 hover:text-slate-800 transition-colors"
-              aria-label="View total sales"
-            >
-              <ArrowUpRight className="w-3.5 h-3.5" />
-            </button>
           </div>
 
           <div className="mt-3 flex items-baseline justify-between">
@@ -314,37 +321,7 @@ export const DashboardPage = () => {
           </div>
         </div>
 
-        {/* Card 2: Order */}
-        <div className="bg-white rounded-2xl p-3.5 sm:p-4 border border-slate-200/70 shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.04)] transition-all flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-orange-50 flex items-center justify-center text-[#FF5C28]">
-                <ShoppingCart className="w-3.5 h-3.5 stroke-[2]" />
-              </div>
-              <span className="text-xs font-semibold text-slate-700">
-                Order
-              </span>
-            </div>
-            <button
-              type="button"
-              className="w-6 h-6 rounded-full border border-slate-200/80 flex items-center justify-center text-slate-400 hover:text-slate-800 transition-colors"
-              aria-label="View orders"
-            >
-              <ArrowUpRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-xl sm:text-2xl font-bold text-slate-800 tracking-tight leading-none">
-              {formatNumber(kpis.activeOrdersCount !== undefined ? kpis.activeOrdersCount : kpis.completedOrders)}
-            </span>
-            <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full inline-flex items-center">
-              {kpis.reversalsCount > 0 ? `${kpis.activeOrdersCount} Active` : 'Completed'}
-            </span>
-          </div>
-        </div>
-
-        {/* Card 3: Revenue(Net) */}
+        {/* Card 2: Revenue(Net) */}
         <div className="bg-white rounded-2xl p-3.5 sm:p-4 border border-slate-200/70 shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.04)] transition-all flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -355,13 +332,6 @@ export const DashboardPage = () => {
                 Revenue(Net)
               </span>
             </div>
-            <button
-              type="button"
-              className="w-6 h-6 rounded-full border border-slate-200/80 flex items-center justify-center text-slate-400 hover:text-slate-800 transition-colors"
-              aria-label="View net revenue"
-            >
-              <ArrowUpRight className="w-3.5 h-3.5" />
-            </button>
           </div>
 
           <div className="mt-3 flex items-baseline justify-between">
@@ -396,6 +366,29 @@ export const DashboardPage = () => {
           )}
         </div>
 
+        {/* Card 3: Order */}
+        <div className="bg-white rounded-2xl p-3.5 sm:p-4 border border-slate-200/70 shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.04)] transition-all flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-orange-50 flex items-center justify-center text-[#FF5C28]">
+                <ShoppingCart className="w-3.5 h-3.5 stroke-[2]" />
+              </div>
+              <span className="text-xs font-semibold text-slate-700">
+                Order
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-baseline justify-between">
+            <span className="text-xl sm:text-2xl font-bold text-slate-800 tracking-tight leading-none">
+              {formatNumber(kpis.activeOrdersCount !== undefined ? kpis.activeOrdersCount : kpis.completedOrders)}
+            </span>
+            <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full inline-flex items-center">
+              {kpis.reversalsCount > 0 ? `${kpis.activeOrdersCount} Active` : 'Completed'}
+            </span>
+          </div>
+        </div>
+
         {/* Card 4: Reversal */}
         <div className="bg-white rounded-2xl p-3.5 sm:p-4 border border-slate-200/70 shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.04)] transition-all flex flex-col justify-between">
           <div className="flex items-center justify-between">
@@ -407,13 +400,6 @@ export const DashboardPage = () => {
                 Reversal
               </span>
             </div>
-            <button
-              type="button"
-              className="w-6 h-6 rounded-full border border-slate-200/80 flex items-center justify-center text-slate-400 hover:text-slate-800 transition-colors"
-              aria-label="View reversals"
-            >
-              <ArrowUpRight className="w-3.5 h-3.5" />
-            </button>
           </div>
 
           <div className="mt-3 flex items-baseline justify-between">
@@ -457,7 +443,7 @@ export const DashboardPage = () => {
               </button>
 
               {dropdownOpenCard === 'revenue' && (
-                <div className="absolute right-9 top-10 w-32 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-30 animate-in fade-in duration-100">
+                <div className="absolute right-0 top-10 w-32 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-30 animate-in fade-in duration-100">
                   {presets.map((p) => (
                     <button
                       key={p}
@@ -470,15 +456,6 @@ export const DashboardPage = () => {
                   ))}
                 </div>
               )}
-
-              {/* Arrow */}
-              <button
-                type="button"
-                className="w-6 h-6 rounded-full border border-slate-200/80 flex items-center justify-center text-slate-400 hover:text-slate-800 transition-colors"
-                aria-label="Expand revenue chart"
-              >
-                <ArrowUpRight className="w-3.5 h-3.5" />
-              </button>
             </div>
           </div>
 
@@ -767,13 +744,6 @@ export const DashboardPage = () => {
                 <span className="text-[11px] sm:text-xs font-medium text-slate-600">
                   Number of Customers
                 </span>
-                <button
-                  type="button"
-                  className="w-5 h-5 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-800 transition-colors"
-                  aria-label="View customers"
-                >
-                  <ArrowUpRight className="w-3.5 h-3.5" />
-                </button>
               </div>
               <div className="mt-1.5 flex items-center gap-2">
                 <Users className="w-4 h-4 text-slate-700 stroke-[2]" />
@@ -789,13 +759,6 @@ export const DashboardPage = () => {
                 <span className="text-[11px] sm:text-xs font-medium text-slate-600">
                   Total Orders
                 </span>
-                <button
-                  type="button"
-                  className="w-5 h-5 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-800 transition-colors"
-                  aria-label="View total orders"
-                >
-                  <ArrowUpRight className="w-3.5 h-3.5" />
-                </button>
               </div>
               <div className="mt-1.5 flex items-center gap-2">
                 <FileCheck2 className="w-4 h-4 text-slate-700 stroke-[2]" />
@@ -811,13 +774,6 @@ export const DashboardPage = () => {
                 <span className="text-[11px] sm:text-xs font-medium text-slate-600">
                   Average Order Values
                 </span>
-                <button
-                  type="button"
-                  className="w-5 h-5 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-800 transition-colors"
-                  aria-label="View average order value"
-                >
-                  <ArrowUpRight className="w-3.5 h-3.5" />
-                </button>
               </div>
               <div className="mt-1.5 flex items-center gap-1.5">
                 <span className="text-xl sm:text-2xl font-bold text-slate-800 leading-none">
@@ -842,13 +798,6 @@ export const DashboardPage = () => {
             <h2 className="text-sm sm:text-base font-bold text-slate-800">
               Recent Activity
             </h2>
-            <button
-              type="button"
-              className="w-6 h-6 rounded-full border border-slate-200/80 flex items-center justify-center text-slate-400 hover:text-slate-800 transition-colors"
-              aria-label="View all activity"
-            >
-              <ArrowUpRight className="w-3.5 h-3.5" />
-            </button>
           </div>
 
           {/* Activity List or Empty State */}

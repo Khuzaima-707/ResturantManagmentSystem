@@ -4,14 +4,12 @@ import { DataTable } from '../../../components/ui/DataTable';
 import { AddonModal } from './AddonModal';
 import { useAppStore } from '../../../store';
 import { detectAddonCategories, ADDON_TYPES, detectAddonType } from '../../../domain/rules';
+import { isCashierUser } from '../../../domain/selectors/invoiceSelectors';
 import { cn } from '../../../utils/cn';
 
 export const AddonsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClose }) => {
   const { addons, categories, addAddon, setAddonStatus, deleteAddon, user } = useAppStore();
-  const isCashier = Boolean(
-    (user?.role?.toLowerCase().includes('cashier') && !user?.role?.toLowerCase().includes('admin')) ||
-    (user?.username?.toLowerCase() === 'cashier' && user?.username?.toLowerCase() !== 'admin')
-  );
+  const isCashier = isCashierUser(user);
 
   const [newAddonName, setNewAddonName] = useState('');
   const [newAddonCostPrice, setNewAddonCostPrice] = useState('');
@@ -137,17 +135,21 @@ export const AddonsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClo
         </span>
       ),
     },
-    {
-      key: 'costPrice',
-      title: 'Cost',
-      headerClassName: 'whitespace-nowrap',
-      cellClassName: 'whitespace-nowrap',
-      render: (val) => (
-        <span className="font-semibold text-xs text-slate-500 whitespace-nowrap">
-          {val !== null && val !== undefined && val !== '' ? `Rs ${Number(val).toLocaleString()}` : '—'}
-        </span>
-      ),
-    },
+    ...(!isCashier
+      ? [
+          {
+            key: 'costPrice',
+            title: 'Cost',
+            headerClassName: 'whitespace-nowrap',
+            cellClassName: 'whitespace-nowrap',
+            render: (val) => (
+              <span className="font-semibold text-xs text-slate-500 whitespace-nowrap">
+                {val !== null && val !== undefined && val !== '' ? `Rs ${Number(val).toLocaleString()}` : '—'}
+              </span>
+            ),
+          },
+        ]
+      : []),
     {
       key: 'price',
       title: 'Sell Price',

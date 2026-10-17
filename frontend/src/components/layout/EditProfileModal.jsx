@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Camera, Trash2, User, Check, X } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { useAppStore } from '../../store';
@@ -16,13 +16,24 @@ export const EditProfileModal = ({ isOpen, onClose }) => {
   const nameInputRef = useRef(null);
   const roleInputRef = useRef(null);
 
-  const [name, setName] = useState(user?.name || 'John Holland');
-  const [role, setRole] = useState(user?.role || 'Admin Cashier');
-  const [avatarUrl, setAvatarUrl] = useState(
-    user?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80'
-  );
+  const isCashier = (user?.username || user?.role || '').toLowerCase().includes('cashier');
+  const defaultName = isCashier ? 'Cashier 1' : 'John Holland';
+  const defaultRole = isCashier ? 'Cashier' : 'Admin Cashier';
+
+  const [name, setName] = useState(user?.name || defaultName);
+  const [role, setRole] = useState(user?.role || defaultRole);
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl || '');
   const [error, setError] = useState('');
   const [isProcessingImg, setIsProcessingImg] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setName(user?.name || defaultName);
+      setRole(user?.role || defaultRole);
+      setAvatarUrl(user?.avatarUrl || '');
+      setError('');
+    }
+  }, [isOpen, user, defaultName, defaultRole]);
 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
@@ -80,7 +91,7 @@ export const EditProfileModal = ({ isOpen, onClose }) => {
       return;
     }
 
-    // Generate initials (e.g. John Holland -> JH)
+    // Generate initials (e.g. John Holland -> JH, Cashier 1 -> C1)
     const initials = trimmedName
       .split(' ')
       .filter(Boolean)
@@ -90,9 +101,9 @@ export const EditProfileModal = ({ isOpen, onClose }) => {
 
     updateUser({
       name: trimmedName,
-      role: role.trim() || 'Admin Cashier',
+      role: role.trim() || defaultRole,
       avatarUrl: avatarUrl || null,
-      initials: initials || 'JH',
+      initials: initials || (isCashier ? 'C1' : 'JH'),
     });
 
     onClose();

@@ -30,6 +30,12 @@ export function ShiftsPage() {
   const [openNotes, setOpenNotes] = useState('');
   const [openingSubmitting, setOpeningSubmitting] = useState(false);
 
+  useEffect(() => {
+    if (user?.name) {
+      setCashierName(user.name);
+    }
+  }, [user?.name]);
+
   // Close Shift Modal
   const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
   const [actualCashCounted, setActualCashCounted] = useState('');

@@ -7,6 +7,8 @@ import { Addon } from '../models/Addon.js';
 import { Expense } from '../models/Expense.js';
 import { Table } from '../models/Table.js';
 import { Shift } from '../models/Shift.js';
+import { Deal } from '../models/Deal.js';
+import { Counter } from '../models/Counter.js';
 
 /**
  * GET /api/settings
@@ -72,6 +74,7 @@ export async function deleteAllData(req, res, next) {
     const deleteTasks = [
       Order.deleteMany({}).catch(() => ({ deletedCount: 0 })),
       Reversal.deleteMany({}).catch(() => ({ deletedCount: 0 })),
+      Counter.deleteMany({}).catch(() => ({ deletedCount: 0 })),
     ];
 
     if (resetType === 'all') {
@@ -79,13 +82,14 @@ export async function deleteAllData(req, res, next) {
         Category.deleteMany({}).catch(() => ({ deletedCount: 0 })),
         Item.deleteMany({}).catch(() => ({ deletedCount: 0 })),
         Addon.deleteMany({}).catch(() => ({ deletedCount: 0 })),
+        Deal.deleteMany({}).catch(() => ({ deletedCount: 0 })),
         Expense.deleteMany({}).catch(() => ({ deletedCount: 0 })),
         Table.deleteMany({}).catch(() => ({ deletedCount: 0 })),
         Shift.deleteMany({}).catch(() => ({ deletedCount: 0 }))
       );
     }
 
-    const [ordersResult, reversalsResult, cRes, iRes, aRes, expRes, tblRes, shfRes] = await Promise.all(deleteTasks);
+    const [ordersResult, reversalsResult, cntRes, cRes, iRes, aRes, dRes, expRes, tblRes, shfRes] = await Promise.all(deleteTasks);
 
     return res.status(200).json({
       success: true,
@@ -96,6 +100,7 @@ export async function deleteAllData(req, res, next) {
         categoriesDeleted: cRes?.deletedCount || 0,
         itemsDeleted: iRes?.deletedCount || 0,
         addonsDeleted: aRes?.deletedCount || 0,
+        dealsDeleted: dRes?.deletedCount || 0,
         expensesDeleted: expRes?.deletedCount || 0,
         tablesDeleted: tblRes?.deletedCount || 0,
         shiftsDeleted: shfRes?.deletedCount || 0,

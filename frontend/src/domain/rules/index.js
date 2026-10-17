@@ -1431,3 +1431,74 @@ export const ALL_STANDARD_UNITS = Array.from(new Set([...COLD_DRINK_UNITS, ...FO
 
 export * from './settingsRules';
 
+/**
+ * Resolves all compatible add-ons explicitly attached or configured for a menu item
+ */
+export function getItemCompatibleAddons(item, allAddons = []) {
+  if (!item) return [];
+
+  const result = [];
+  const seenNames = new Set();
+  const seenIds = new Set();
+
+  // 1. Direct extra add-ons configured on this item (from ItemModal)
+  if (Array.isArray(item.addons) && item.addons.length > 0) {
+    item.addons.forEach((da, idx) => {
+      if (!da || !da.name || !(Number(da.price) > 0)) return;
+      const normName = da.name.trim().toLowerCase();
+      const storeAddon = (allAddons || []).find(
+        (sa) => sa && (sa.id === da.id || (sa.name && sa.name.trim().toLowerCase() === normName))
+      );
+      const resolvedCost =
+        da.costPrice !== undefined && da.costPrice !== null
+          ? Number(da.costPrice)
+          : storeAddon?.costPrice !== undefined && storeAddon?.costPrice !== null
+          ? Number(storeAddon.costPrice)
+          : null;
+
+      const id = da.id || storeAddon?.id || `direct-addon-${idx}-${normName}`;
+      if (!seenNames.has(normName) && !seenIds.has(id)) {
+        seenNames.add(normName);
+        seenIds.add(id);
+        result.push({
+          id,
+          name: da.name.trim(),
+          price: Number(da.price) || 0,
+          costPrice: resolvedCost,
+          status: 'active',
+          type: da.type || storeAddon?.type || detectAddonType(da.name) || 'Food',
+        });
+      }
+    });
+  }
+
+  // 2. Add-ons linked via item.addonIds or addon.itemIds
+  const itemAddonIds = Array.isArray(item.addonIds) ? item.addonIds.map(String) : [];
+  const currentItemId = String(item.id || '').toLowerCase();
+
+  (allAddons || []).forEach((addon) => {
+    if (addon.status !== 'active') return;
+    const aId = String(addon.id || '');
+    const isLinkedById = itemAddonIds.includes(aId);
+    const isLinkedByItemIds =
+      Array.isArray(addon.itemIds) &&
+      addon.itemIds.some((id) => String(id).toLowerCase() === currentItemId);
+
+    if (isLinkedById || isLinkedByItemIds) {
+      const normName = (addon.name || '').trim().toLowerCase();
+      if (!seenNames.has(normName) && !seenIds.has(aId)) {
+        seenNames.add(normName);
+        seenIds.add(aId);
+        result.push({
+          ...addon,
+          price: Number(addon.price) || 0,
+          costPrice: addon.costPrice !== undefined && addon.costPrice !== null ? Number(addon.costPrice) : null,
+          type: addon.type || detectAddonType(addon.name) || 'Food',
+        });
+      }
+    }
+  });
+
+  return result;
+}
+

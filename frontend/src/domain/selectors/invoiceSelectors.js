@@ -63,7 +63,7 @@ export function filterInvoices(orders = [], filters = {}) {
   } = filters;
 
   const query = (searchQuery || '').trim().toLowerCase();
-  const hasDateFilter = datePreset && datePreset !== 'All Time';
+  const hasDateFilter = datePreset && datePreset !== 'All Time' && datePreset !== 'All Dates';
   const interval = hasDateFilter
     ? getDateIntervalForPreset(datePreset, customRange, referenceDate)
     : null;
@@ -287,5 +287,224 @@ export function formatInvoiceForPrint(order, settings = {}, reversal = null) {
       amountReceived: order.amountReceived || 0,
       changeAmount: order.changeAmount || 0,
     },
+  };
+}
+
+/**
+ * Evaluates whether a user entity represents a Cashier (not Admin)
+ */
+export function isCashierUser(user) {
+  if (!user) return false;
+  const userRole = String(user.role || '').toLowerCase();
+  const userUsername = String(user.username || '').toLowerCase();
+  const isAdmin = userRole.includes('admin') || userUsername === 'admin';
+  return !isAdmin && (userRole.includes('cashier') || userUsername === 'cashier');
+}
+
+/**
+ * Determines if an invoice is visible to the given user based on role-based ownership:
+ * - Admin: can see all invoices created by all authorized users.
+ * - Cashier: can see ONLY invoices created by that logged-in cashier.
+ *   Must NOT see Admin-created invoices.
+ *   Must NOT see another cashier's invoices.
+ *   If creator attribution is genuinely missing, do not invent ownership (Admin only).
+ */
+export function isInvoiceVisibleToUser(order, user) {
+  if (!order || !user) return false;
+
+  // 1. Admin can see all invoices created by all authorized users
+  const userRole = String(user.role || '').toLowerCase();
+  const userUsername = String(user.username || '').toLowerCase();
+  const isAdmin = userRole.includes('admin') || userUsername === 'admin';
+  if (isAdmin) {
+    return true;
+  }
+
+  // 2. Cashier visibility check
+  const currentUserId = String(user.id || (user.username ? `user_${user.username}` : '')).trim();
+  if (!currentUserId) return false;
+
+  const orderUserId = String(order.createdByUserId || '').trim();
+  const orderRole = String(order.createdByRole || '').toLowerCase();
+
+  // If order was created by an admin, cashier must NEVER see it
+  if (orderRole === 'admin') {
+    return false;
+  }
+
+  // If order has creator attribution, match strictly against logged-in cashier's ID
+  if (orderUserId) {
+    return orderUserId === currentUserId;
+  }
+
+  // "Do not determine invoice ownership from current username text only.
+  // If historical invoice creator data already exists, use it.
+  // If creator attribution is genuinely missing, do not invent ownership."
+  // Therefore, invoices with genuinely missing creator attribution are NOT visible to Cashier.
+  return false;
+}
+
+/**
+ * Generates user-scoped localStorage key for POS cart
+ */
+export function getUserCartStorageKey(userOrId) {
+  if (!userOrId) return 'cart_guest';
+  const id = typeof userOrId === 'string'
+    ? userOrId
+    : userOrId.id || (userOrId.username ? `user_${userOrId.username}` : '');
+  const clean = String(id).trim();
+  return clean ? `cart_${clean}` : 'cart_guest';
+}
+
+/**
+ * Determines if a notification is visible to the given user based on role & ownership:
+ * - Admin: sees all system notifications across the store.
+ * - Cashier: sees ONLY notifications targeted to them:
+ *   - Notifications created by this cashier (their own completed sales)
+ *   - Notifications explicitly targeted to this cashier ID
+ *   - Broadcast announcements targeting 'cashier' or 'all'
+ *   - Must NEVER see Admin-only notifications (Admin sales, Admin-only reversals)
+ */
+export function isNotificationVisibleToUser(notification, user) {
+  if (!notification || !user) return false;
+
+  const userRole = String(user.role || '').toLowerCase();
+  const userUsername = String(user.username || '').toLowerCase();
+  const isAdmin = userRole.includes('admin') || userUsername === 'admin';
+
+  // 1. Admin sees all notifications across the restaurant
+  if (isAdmin) {
+    return true;
+  }
+
+  // 2. Cashier visibility check
+  const currentUserId = String(user.id || (user.username ? `user_${user.username}` : '')).trim();
+  if (!currentUserId) return false;
+
+  const notifCreatedByRole = String(notification.createdByRole || '').toLowerCase();
+  const notifCreatedByUserId = String(notification.createdByUserId || '').trim();
+  const notifTargetUserId = String(notification.targetUserId || '').trim();
+  const targetRoles = Array.isArray(notification.targetRoles)
+    ? notification.targetRoles.map((r) => String(r).toLowerCase())
+    : [];
+
+  // If explicitly targeted to this specific user ID
+  if (notifTargetUserId) {
+    return notifTargetUserId === currentUserId;
+  }
+
+  // If created by an admin and not explicitly broadcast to cashiers/all, hide from cashier
+  if (notifCreatedByRole === 'admin') {
+    const isBroadcastToCashier = targetRoles.includes('cashier') || targetRoles.includes('all');
+    return isBroadcastToCashier;
+  }
+
+  // If created by another cashier, hide from this cashier (unless broadcast)
+  if (notifCreatedByUserId) {
+    if (notifCreatedByUserId === currentUserId) {
+      return true;
+    }
+    const isBroadcast = targetRoles.includes('all') || targetRoles.includes('cashier');
+    return isBroadcast && !notifCreatedByRole.includes('admin');
+  }
+
+  // If targetRoles has 'cashier' or 'all'
+  if (targetRoles.length > 0) {
+    return targetRoles.includes('cashier') || targetRoles.includes('all');
+  }
+
+  // Default: hide untargeted admin/legacy notifications from cashier
+  return false;
+}
+
+/**
+ * Filters notifications list based on user role and ownership
+ */
+export function filterNotificationsByTargetUser(notifications = [], user = null) {
+  if (!Array.isArray(notifications)) return [];
+  if (!user) return [];
+  return notifications.filter((notif) => isNotificationVisibleToUser(notif, user));
+}
+
+/**
+ * Filters orders list based on user role and ownership
+ */
+export function filterOrdersByOwnership(orders = [], user = null) {
+  if (!Array.isArray(orders)) return [];
+  if (!user) return [];
+  return orders.filter((order) => isInvoiceVisibleToUser(order, user));
+}
+
+/**
+ * Safely repairs existing orders that share duplicate invoice numbers (e.g. historical multiple INV-0001).
+ * NEVER deletes any completed order. Preserves all items, lines, amounts, and dates.
+ * Reassigns duplicate orders to unique consecutive sequential invoice numbers.
+ */
+export function repairDuplicateInvoiceNumbersLocally(orders = [], prefix = 'INV-') {
+  if (!Array.isArray(orders) || orders.length === 0) return [];
+
+  // Sort by completedAt or createdAt ascending (oldest first)
+  const sorted = [...orders].sort((a, b) => {
+    const tA = new Date(a.completedAt || a.createdAt || 0).getTime();
+    const tB = new Date(b.completedAt || b.createdAt || 0).getTime();
+    return tA - tB;
+  });
+
+  const invoiceMap = new Map();
+  let maxSeq = 0;
+
+  for (const o of sorted) {
+    const inv = String(o.invoiceNumber || '').trim();
+    if (inv) {
+      const num = parseInt(inv.replace(/\D/g, ''), 10);
+      if (!isNaN(num) && num > maxSeq) maxSeq = num;
+    }
+    if (o.sequenceNumber && Number(o.sequenceNumber) > maxSeq) {
+      maxSeq = Number(o.sequenceNumber);
+    }
+  }
+
+  const repaired = sorted.map((o) => {
+    const inv = String(o.invoiceNumber || '').trim();
+    if (!inv || !invoiceMap.has(inv)) {
+      if (inv) invoiceMap.set(inv, o.id);
+      return o;
+    } else {
+      // Duplicate detected! Assign next sequential number without deleting the order
+      maxSeq += 1;
+      const newSeq = maxSeq;
+      const newInv = `${prefix}${String(newSeq).padStart(4, '0')}`;
+      invoiceMap.set(newInv, o.id);
+      return {
+        ...o,
+        sequenceNumber: newSeq,
+        invoiceNumber: newInv,
+      };
+    }
+  });
+
+  return repaired;
+}
+
+/**
+ * Generates next sequential unique invoice number by scanning all existing orders
+ */
+export function generateNextSequentialInvoiceNumber(allOrders = [], prefix = 'INV-') {
+  let maxSeq = 0;
+  for (const o of (allOrders || [])) {
+    if (o?.sequenceNumber && Number(o.sequenceNumber) > maxSeq) {
+      maxSeq = Number(o.sequenceNumber);
+    }
+    if (o?.invoiceNumber) {
+      const num = parseInt(String(o.invoiceNumber).replace(/\D/g, ''), 10);
+      if (!isNaN(num) && num > maxSeq) {
+        maxSeq = num;
+      }
+    }
+  }
+  const nextSeq = maxSeq + 1;
+  return {
+    sequenceNumber: nextSeq,
+    invoiceNumber: `${prefix}${String(nextSeq).padStart(4, '0')}`,
   };
 }

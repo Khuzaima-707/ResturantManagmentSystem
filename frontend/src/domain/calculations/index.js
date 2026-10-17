@@ -44,9 +44,21 @@ export function calculateConfiguredItemPrice(baseOrPortionPrice, addonTotal = 0)
 
 /**
  * Calculates single line item subtotal
+ * By default computes per-item addons unless isAddonFlat is true.
  */
-export function calculateLineSubtotal(unitPrice, addonsTotal = 0, quantity = 1) {
+export function calculateLineSubtotal(unitPrice, addonsTotal = 0, quantity = 1, isAddonFlat = false) {
+  if (isAddonFlat) {
+    return Math.max(0, (Number(unitPrice) || 0) * Math.max(1, quantity) + (Number(addonsTotal) || 0));
+  }
   return Math.max(0, ((Number(unitPrice) || 0) + (Number(addonsTotal) || 0)) * Math.max(1, quantity));
+}
+
+/**
+ * Calculates line subtotal with flat add-ons for the entire line
+ * (e.g., 5 Rolls @ Rs 200 + 2 Sauces @ Rs 80 = Rs 1,160)
+ */
+export function calculateFlatLineSubtotal(baseUnitPrice, addonsTotal = 0, quantity = 1) {
+  return Math.max(0, (Number(baseUnitPrice) || 0) * Math.max(1, quantity) + (Number(addonsTotal) || 0));
 }
 
 /**
@@ -158,14 +170,18 @@ export function buildOrderLineSnapshots(cartLines = [], itemsMaster = [], addons
       : Array.isArray(line.selectedAddons)
       ? line.selectedAddons
       : [];
-    const addonGrossSale =
-      rawAddons.reduce(
-        (sum, a) =>
-          sum +
-          (Number(a?.price ?? a?.sellingPrice) || 0) *
-            (a?.quantity !== undefined ? Math.max(1, Number(a.quantity)) : 1),
-        0
-      ) * quantitySnapshot;
+
+    const addonFlatSum = rawAddons.reduce(
+      (sum, a) =>
+        sum +
+        (Number(a?.price ?? a?.sellingPrice) || 0) *
+          (a?.quantity !== undefined ? Math.max(1, Number(a.quantity)) : 1),
+      0
+    );
+
+    const isAddonFlat = line.addonsAreFlat === true;
+
+    const addonGrossSale = isAddonFlat ? addonFlatSum : (addonFlatSum * quantitySnapshot);
     const itemGrossSale = Math.max(0, grossLineSale - addonGrossSale);
 
     // Proportional Discount Allocation
@@ -179,6 +195,60 @@ export function buildOrderLineSnapshots(cartLines = [], itemsMaster = [], addons
       }
     }
     const netRevenue = Math.max(0, grossLineSale - allocatedDiscount);
+
+    // If this line is a Deal, calculate COGS and Profit from frozen includedItems
+    if (line.isDeal) {
+      const incItems = Array.isArray(line.includedItems) ? line.includedItems : [];
+      let allItemsHaveCost = incItems.length > 0;
+      let dealUnitCost = 0;
+
+      for (const inc of incItems) {
+        if (
+          inc.costPrice === undefined ||
+          inc.costPrice === null ||
+          isNaN(Number(inc.costPrice)) ||
+          Number(inc.costPrice) < 0
+        ) {
+          allItemsHaveCost = false;
+        } else {
+          dealUnitCost += (Number(inc.costPrice) || 0) * (Number(inc.quantity) || 1);
+        }
+      }
+
+      let totalCOGS = null;
+      let grossProfit = null;
+      let grossProfitMargin = null;
+      const hasCost = allItemsHaveCost;
+
+      if (hasCost) {
+        totalCOGS = Math.round(dealUnitCost * quantitySnapshot);
+        grossProfit = netRevenue - totalCOGS;
+        grossProfitMargin = netRevenue > 0 ? Number(((grossProfit / netRevenue) * 100).toFixed(2)) : 0;
+      }
+
+      return {
+        ...line,
+        isDeal: true,
+        dealId: line.dealId || line.id,
+        pricingMode: 'deal',
+        categoryIdSnapshot: line.categoryIdSnapshot || 'cat-deals',
+        categoryNameSnapshot: line.categoryNameSnapshot && line.categoryNameSnapshot !== 'General' ? line.categoryNameSnapshot : 'Deals',
+        includedItems: incItems,
+        quantitySnapshot,
+        sellingPriceSnapshot,
+        costPriceSnapshot: hasCost ? dealUnitCost : (line.costPriceSnapshot ? Number(line.costPriceSnapshot) : null),
+        grossLineSale,
+        allocatedDiscount,
+        netRevenue,
+        itemCOGS: totalCOGS,
+        addonCOGS: 0,
+        totalCOGS,
+        grossProfit,
+        grossProfitMargin,
+        hasCost,
+        hasCostPrice: hasCost,
+      };
+    }
 
     // Item Cost Lookup from line or catalog if not already frozen on line
     const catalogItem = Array.isArray(itemsMaster)
@@ -254,14 +324,14 @@ export function buildOrderLineSnapshots(cartLines = [], itemsMaster = [], addons
       };
     });
 
-    const addonCOGS = addonSnapshotsWithCost.reduce(
+    const addonCOGSFlat = addonSnapshotsWithCost.reduce(
       (sum, a) =>
         sum +
         (Number(a?.costPrice) || 0) *
-          (a?.quantity !== undefined ? Math.max(1, Number(a.quantity)) : 1) *
-          quantitySnapshot,
+          (a?.quantity !== undefined ? Math.max(1, Number(a.quantity)) : 1),
       0
     );
+    const addonCOGS = isAddonFlat ? addonCOGSFlat : (addonCOGSFlat * quantitySnapshot);
 
     // Total COGS, Gross Profit & Margin
     let totalCOGS = null;
@@ -296,3 +366,76 @@ export function buildOrderLineSnapshots(cartLines = [], itemsMaster = [], addons
     };
   });
 }
+
+/**
+ * Calculates financials for a Deal (Regular Price, Customer Saving, Total Cost, Estimated Gross Profit)
+ * Implements:
+ * - Regular Price = sum of included item selling prices
+ * - Total Cost = sum of included item historical/current cost values
+ * - If Deal Price is empty or invalid: Saving = null, Profit = null, Profit Margin = null (do NOT treat empty as zero)
+ * - Once Deal Price is entered: Saving = Regular Price - Deal Price, Gross Profit = Deal Price - Total Cost
+ * - If any item has missing cost: mark totalCost and profit as null (never assume missing cost = 0)
+ */
+export function calculateDealFinancials(includedItems = [], dealPrice = null) {
+  let regularPrice = 0;
+  let totalCost = 0;
+  let allItemsHaveCost = Array.isArray(includedItems) && includedItems.length > 0;
+
+  for (const inc of (includedItems || [])) {
+    const qty = Math.max(1, Number(inc.quantity) || 1);
+    const itemSale = (Number(inc.sellingPrice) || 0) * qty;
+    regularPrice += itemSale;
+
+    if (
+      inc.costPrice === undefined ||
+      inc.costPrice === null ||
+      inc.costPrice === '' ||
+      isNaN(Number(inc.costPrice)) ||
+      Number(inc.costPrice) < 0
+    ) {
+      allItemsHaveCost = false;
+    } else {
+      totalCost += (Number(inc.costPrice) || 0) * qty;
+    }
+  }
+
+  // Check if dealPrice is provided and valid (not empty string, not null/undefined, not negative)
+  const isDealPriceProvided =
+    dealPrice !== null &&
+    dealPrice !== undefined &&
+    dealPrice !== '' &&
+    (typeof dealPrice !== 'string' || dealPrice.trim() !== '') &&
+    !isNaN(Number(dealPrice)) &&
+    Number(dealPrice) >= 0;
+
+  const numericDealPrice = isDealPriceProvided ? Number(dealPrice) : null;
+  const hasCost = allItemsHaveCost;
+
+  // Once Deal Price is entered:
+  // Saving = Regular Price - Deal Price
+  // Gross Profit = Deal Price - Total Cost
+  const customerSaving = isDealPriceProvided
+    ? Math.round(regularPrice - numericDealPrice)
+    : null;
+
+  const estimatedGrossProfit =
+    isDealPriceProvided && hasCost
+      ? Math.round(numericDealPrice - totalCost)
+      : null;
+
+  const profitMargin =
+    isDealPriceProvided && hasCost && numericDealPrice > 0
+      ? Number(((estimatedGrossProfit / numericDealPrice) * 100).toFixed(2))
+      : null;
+
+  return {
+    regularPrice: Math.round(regularPrice),
+    customerSaving,
+    totalCost: hasCost ? Math.round(totalCost) : null,
+    estimatedGrossProfit,
+    profitMargin,
+    hasCost,
+    isDealPriceProvided,
+  };
+}
+

@@ -20,6 +20,7 @@ import {
   filterInvoices,
   isInvoiceReversible,
   getReversalByInvoice,
+  filterOrdersByOwnership,
 } from '../../../domain/selectors/invoiceSelectors';
 import { downloadInvoicePdf } from '../../../services/pdf/invoicePdfGenerator';
 import { InvoiceModal } from './InvoiceModal';
@@ -49,9 +50,14 @@ export const InvoiceHistoryList = () => {
   const [selectedInvoiceForView, setSelectedInvoiceForView] = useState(null);
   const [selectedInvoiceForReversal, setSelectedInvoiceForReversal] = useState(null);
 
+  // Scoped orders based on role ownership
+  const visibleOrders = useMemo(() => {
+    return filterOrdersByOwnership(orders, user);
+  }, [orders, user]);
+
   // Sorted and filtered list
   const historyList = useMemo(() => {
-    const sorted = getInvoiceHistory(orders);
+    const sorted = getInvoiceHistory(visibleOrders);
     return filterInvoices(sorted, {
       searchQuery,
       datePreset,
@@ -59,7 +65,7 @@ export const InvoiceHistoryList = () => {
       orderType,
       status: statusFilter,
     });
-  }, [orders, searchQuery, datePreset, paymentMethod, orderType, statusFilter]);
+  }, [visibleOrders, searchQuery, datePreset, paymentMethod, orderType, statusFilter]);
 
   const handleResetFilters = () => {
     setSearchQuery('');
@@ -274,7 +280,7 @@ export const InvoiceHistoryList = () => {
               onChange={(e) => setDatePreset(e.target.value)}
               className="h-9 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer"
             >
-              <option value="All Time">All Time</option>
+              <option value="All Dates">All Dates</option>
               <option value="Today">Today</option>
               <option value="This Week">This Week</option>
               <option value="This Month">This Month</option>

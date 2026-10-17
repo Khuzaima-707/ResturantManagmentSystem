@@ -19,6 +19,7 @@ import {
   getDateIntervalForPreset,
   getValidNonReversedOrders,
 } from './dashboardSelectors';
+import { storage } from '../../services/persistence/storage';
 
 function toSafeDate(val) {
   if (!val) return null;
@@ -67,7 +68,7 @@ export function filterReportOrders(orders = [], filters = {}) {
     referenceDate = new Date(),
   } = filters;
 
-  const interval = datePreset !== 'All Time'
+  const interval = (datePreset !== 'All Time' && datePreset !== 'All Dates')
     ? getDateIntervalForPreset(datePreset, customRange, referenceDate)
     : null;
 
@@ -124,7 +125,7 @@ export function filterReportOrders(orders = [], filters = {}) {
       if (!hasCategoryMatch) return false;
     }
 
-    // Search query filter (matches invoiceNumber, item names, or addon names)
+    // Search query filter (matches invoiceNumber, item names, addon names, or deal included items)
     if (query) {
       const matchInv = String(order.invoiceNumber || '').toLowerCase().includes(query);
       const matchItem = (order.lines || []).some((l) => {
@@ -137,7 +138,9 @@ export function filterReportOrders(orders = [], filters = {}) {
           ? l.selectedAddons
           : [];
         const matchAddon = rawAddons.some((a) => String(a.name || '').toLowerCase().includes(query));
-        return matchLineItem || matchAddon;
+        const rawIncluded = Array.isArray(l.includedItems) ? l.includedItems : [];
+        const matchIncluded = rawIncluded.some((inc) => String(inc.name || inc.itemName || '').toLowerCase().includes(query));
+        return matchLineItem || matchAddon || matchIncluded;
       });
       if (!matchInv && !matchItem) return false;
     }
@@ -176,7 +179,7 @@ export function filterReportReversals(reversals = [], filters = {}) {
     referenceDate = new Date(),
   } = filters;
 
-  const interval = datePreset !== 'All Time'
+  const interval = (datePreset !== 'All Time' && datePreset !== 'All Dates')
     ? getDateIntervalForPreset(datePreset, customRange, referenceDate)
     : null;
 
@@ -251,6 +254,27 @@ export function deriveSalesReport(filteredOrders = [], filteredReversals = []) {
 
   const discountsGiven = filteredOrders.reduce((sum, o) => sum + (Number(o.discountAmount) || 0), 0);
 
+  // Deals analytics
+  let dealsSold = 0;
+  let dealRevenue = 0;
+  let dealCost = 0;
+  let dealGrossProfit = 0;
+
+  validOrders.forEach((o) => {
+    (o.lines || []).forEach((l) => {
+      if (l.isDeal) {
+        const qty = Number(l.quantity) || 1;
+        dealsSold += qty;
+        const rev = Number(l.netRevenue ?? (l.lineSubtotal ?? (Number(l.unitPrice || 0) * qty)));
+        dealRevenue += rev;
+        if (l.totalCOGS !== undefined && l.totalCOGS !== null) {
+          dealCost += Number(l.totalCOGS);
+          dealGrossProfit += Number(l.grossProfit ?? (rev - Number(l.totalCOGS)));
+        }
+      }
+    });
+  });
+
   return {
     grossSales,
     validNetSales,
@@ -259,7 +283,19 @@ export function deriveSalesReport(filteredOrders = [], filteredReversals = []) {
     averageOrderValue,
     itemsSold,
     discountsGiven,
+    dealsSold,
+    dealRevenue,
+    dealCost,
+    dealGrossProfit,
   };
+}
+
+/**
+ * Dedicated Deals analytics selector
+ */
+export function deriveDealsReport(filteredOrders = [], filteredReversals = []) {
+  const { dealsSold, dealRevenue, dealCost, dealGrossProfit } = deriveSalesReport(filteredOrders, filteredReversals);
+  return { dealsSold, dealRevenue, dealCost, dealGrossProfit };
 }
 
 /**
@@ -444,7 +480,7 @@ export function groupRevenueByDate(filteredOrders = [], filteredReversals = [], 
   const reversedIds = new Set(filteredReversals.map((r) => r.originalOrderId));
 
   let days = [];
-  const isAstronomical = !interval || datePreset === 'All Time' || interval.start.getFullYear() < 2000 || interval.end.getFullYear() > 2100;
+  const isAstronomical = !interval || datePreset === 'All Time' || datePreset === 'All Dates' || interval.start.getFullYear() < 2000 || interval.end.getFullYear() > 2100;
 
   if (isAstronomical) {
     const allDates = [
@@ -526,7 +562,7 @@ export function groupReversalsByDate(filteredReversals = [], datePreset = 'This 
   const interval = getDateIntervalForPreset(datePreset, customRange, referenceDate);
 
   let days = [];
-  const isAstronomical = !interval || datePreset === 'All Time' || interval.start.getFullYear() < 2000 || interval.end.getFullYear() > 2100;
+  const isAstronomical = !interval || datePreset === 'All Time' || datePreset === 'All Dates' || interval.start.getFullYear() < 2000 || interval.end.getFullYear() > 2100;
 
   if (isAstronomical) {
     const allDates = filteredReversals
@@ -620,18 +656,52 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
     ? filters.addons
     : [];
 
+  const dealsList = storage.get('deals', []) || [];
   const itemMap = new Map();
   let missingCostLinesCount = 0;
   let validOrderCount = validOrders.length;
   let totalItemsSold = 0;
 
   validOrders.forEach((order) => {
+    const orderTimestamp = toSafeDate(order.completedAt || order.createdAt)?.getTime() || 0;
     const lines = Array.isArray(order.lines) ? order.lines : [];
 
     lines.forEach((line) => {
       const lineItemId = String(line.itemId || line.id || 'unknown');
-      const lineItemName = String(line.itemNameSnapshot || line.name || 'Item');
-      const lineCategory = String(line.categoryNameSnapshot || line.categoryName || 'General');
+      const lineItemName = String(line.itemNameSnapshot || line.name || 'Item').trim();
+
+      const foundDeal = (dealsList || []).find(
+        (d) =>
+          d.id === line.dealId ||
+          d.id === line.itemId ||
+          d.id === lineItemId ||
+          (d.name && lineItemName && d.name.trim().toLowerCase() === lineItemName.toLowerCase()) ||
+          (lineItemName.toLowerCase().includes('combo') && d.name && d.name.toLowerCase().includes('combo')) ||
+          (lineItemName.toLowerCase().includes('deal') && d.name && d.name.toLowerCase().includes('deal'))
+      );
+
+      const isDealLine = Boolean(
+        line.isDeal ||
+        line.pricingMode === 'deal' ||
+        line.dealId ||
+        (Array.isArray(line.includedItems) && line.includedItems.length > 0) ||
+        foundDeal !== undefined ||
+        lineItemName.toLowerCase().includes('deal') ||
+        lineItemName.toLowerCase().includes('combo') ||
+        line.categoryIdSnapshot === 'cat-deals' ||
+        line.categoryNameSnapshot === 'Deals' ||
+        line.categoryName === 'Deals'
+      );
+
+      const lineCategory = isDealLine
+        ? 'Deals'
+        : String(
+            line.categoryNameSnapshot && line.categoryNameSnapshot !== 'General'
+              ? line.categoryNameSnapshot
+              : line.categoryName && line.categoryName !== 'General'
+              ? line.categoryName
+              : 'General'
+          );
 
       const qty = Math.max(1, Number(line.quantity || line.quantitySnapshot || 1));
       totalItemsSold += qty;
@@ -658,25 +728,108 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
         ? line.selectedAddons
         : [];
 
-      // Check item cost presence
+      // Check item / deal cost presence
       let lineItemCostPrice = null;
       let matchedCatItem = null;
-      if (line.costPriceSnapshot !== undefined && line.costPriceSnapshot !== null) {
-        lineItemCostPrice = Number(line.costPriceSnapshot);
-      } else if (line.costPrice !== undefined && line.costPrice !== null) {
-        lineItemCostPrice = Number(line.costPrice);
-      }
+      let dealComponentsBreakdown = [];
 
-      if (masterItems.length > 0) {
-        matchedCatItem = masterItems.find(
-          (mi) =>
-            mi &&
-            (mi.id === line.itemId ||
-              String(mi.id).toLowerCase() === String(line.itemId).toLowerCase() ||
-              (mi.name && lineItemName && mi.name.trim().toLowerCase() === lineItemName.trim().toLowerCase()))
-        );
-        if (lineItemCostPrice === null && matchedCatItem?.costPrice !== undefined && matchedCatItem?.costPrice !== null) {
-          lineItemCostPrice = Number(matchedCatItem.costPrice);
+      const incItems = (Array.isArray(line.includedItems) && line.includedItems.length > 0)
+        ? line.includedItems
+        : (foundDeal?.includedItems || []);
+
+      if (isDealLine) {
+        let sumDealCost = 0;
+        let dealAllCost = incItems.length > 0;
+
+        const compList = incItems.map((inc) => {
+          const incQty = Number(inc.quantity) || 1;
+          const totalQty = incQty * qty;
+          const masterMatch = (masterItems || []).find(
+            (mi) => mi.id === inc.itemId || (mi.name && inc.name && mi.name.trim().toLowerCase() === inc.name.trim().toLowerCase())
+          );
+          let unitCost = null;
+          if (inc.costPrice !== undefined && inc.costPrice !== null && !isNaN(Number(inc.costPrice)) && Number(inc.costPrice) >= 0) {
+            unitCost = Number(inc.costPrice);
+          } else if (masterMatch?.costPrice !== undefined && masterMatch?.costPrice !== null && !isNaN(Number(masterMatch.costPrice))) {
+            unitCost = Number(masterMatch.costPrice);
+          }
+          const hasCompCost = unitCost !== null;
+          if (hasCompCost) {
+            sumDealCost += unitCost * totalQty;
+          } else {
+            dealAllCost = false;
+          }
+
+          const unitSelling = Number(inc.sellingPrice ?? masterMatch?.basePrice ?? 0);
+          const totalSelling = unitSelling * totalQty;
+
+          return {
+            id: inc.itemId || inc.id || `comp_${(inc.name || 'item').toLowerCase()}`,
+            name: inc.name || masterMatch?.name || 'Deal Item',
+            portion: inc.portion || inc.portionDisplay || '',
+            singleQty: incQty,
+            totalQty,
+            unitCost: unitCost || 0,
+            totalCost: (unitCost || 0) * totalQty,
+            unitSelling,
+            totalSelling,
+            hasCost: hasCompCost,
+          };
+        });
+
+        if (dealAllCost && sumDealCost > 0) {
+          lineItemCostPrice = Math.round(sumDealCost / qty);
+        } else if (line.costPriceSnapshot !== undefined && line.costPriceSnapshot !== null && Number(line.costPriceSnapshot) > 0) {
+          lineItemCostPrice = Number(line.costPriceSnapshot);
+        }
+
+        // Allocate net sales and calculate individual profit for each component inside this deal
+        const totalRegSelling = compList.reduce((sum, c) => sum + c.totalSelling, 0);
+        let remainingNet = netRevenue;
+
+        dealComponentsBreakdown = compList.map((comp, cIdx) => {
+          let allocatedSales = 0;
+          if (cIdx === compList.length - 1) {
+            allocatedSales = remainingNet;
+          } else if (totalRegSelling > 0) {
+            allocatedSales = Math.round((comp.totalSelling / totalRegSelling) * netRevenue);
+            remainingNet -= allocatedSales;
+          } else {
+            allocatedSales = Math.round(netRevenue / Math.max(1, compList.length));
+            remainingNet -= allocatedSales;
+          }
+
+          const compProfit = comp.hasCost ? (allocatedSales - comp.totalCost) : null;
+          const compMargin = comp.hasCost && allocatedSales > 0
+            ? Number(((compProfit / allocatedSales) * 100).toFixed(2))
+            : null;
+
+          return {
+            ...comp,
+            allocatedNetSales: allocatedSales,
+            grossProfit: compProfit,
+            margin: compMargin,
+            profitMargin: compMargin !== null ? `${compMargin}%` : null,
+          };
+        });
+      } else {
+        if (line.costPriceSnapshot !== undefined && line.costPriceSnapshot !== null) {
+          lineItemCostPrice = Number(line.costPriceSnapshot);
+        } else if (line.costPrice !== undefined && line.costPrice !== null) {
+          lineItemCostPrice = Number(line.costPrice);
+        }
+
+        if (masterItems.length > 0) {
+          matchedCatItem = masterItems.find(
+            (mi) =>
+              mi &&
+              (mi.id === line.itemId ||
+                String(mi.id).toLowerCase() === String(line.itemId).toLowerCase() ||
+                (mi.name && lineItemName && mi.name.trim().toLowerCase() === lineItemName.trim().toLowerCase()))
+          );
+          if (lineItemCostPrice === null && matchedCatItem?.costPrice !== undefined && matchedCatItem?.costPrice !== null) {
+            lineItemCostPrice = Number(matchedCatItem.costPrice);
+          }
         }
       }
 
@@ -759,7 +912,9 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
       });
 
       let itemCOGSVal = null;
-      if (processedAddons.length === 0) {
+      if (isDealLine && lineItemCostPrice !== null) {
+        itemCOGSVal = Math.round(lineItemCostPrice * qty);
+      } else if (processedAddons.length === 0) {
         if (line.totalCOGS !== undefined && line.totalCOGS !== null) {
           itemCOGSVal = Number(line.totalCOGS);
         } else if (line.itemCOGS !== undefined && line.itemCOGS !== null) {
@@ -820,7 +975,9 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
         lineItemId.toLowerCase() === itemFilter;
 
       const shouldIncludeItem =
-        viewType !== 'addons' &&
+        (viewType === 'all' ||
+          (viewType === 'items' && !isDealLine) ||
+          (viewType === 'deals' && isDealLine)) &&
         categoryFilter !== 'add-ons' &&
         categoryFilter !== 'addon' &&
         matchesCategoryItem &&
@@ -834,6 +991,9 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
             name: lineItemName,
             category: lineCategory,
             isAddon: false,
+            isDeal: isDealLine,
+            includedItems: incItems,
+            includedComponents: dealComponentsBreakdown,
             invoicesSet: new Set(),
             qtySold: 0,
             weightGramsSold: 0,
@@ -842,6 +1002,7 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
             cogs: 0,
             hasCost: true,
             missingCostCount: 0,
+            lastSoldAt: orderTimestamp,
           });
         }
         const entry = itemMap.get(itemKey);
@@ -851,6 +1012,7 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
           entry.weightGramsSold += Number(line.selectedWeightGrams) * qty;
         }
         entry.netSales += itemNetRevenue;
+        entry.lastSoldAt = Math.max(entry.lastSoldAt || 0, orderTimestamp);
 
         if (itemHasCost) {
           entry.cogs += itemCOGSVal;
@@ -858,10 +1020,14 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
           entry.hasCost = false;
           entry.missingCostCount += 1;
         }
+
+        if (dealComponentsBreakdown.length > 0) {
+          entry.includedComponents = dealComponentsBreakdown;
+        }
       }
 
       // Add processed Addons to itemMap
-      if (viewType !== 'items') {
+      if (viewType !== 'items' && viewType !== 'deals') {
         processedAddons.forEach((pa) => {
           if (!pa.hasCost) {
             missingCostLinesCount += 1;
@@ -896,12 +1062,14 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
                 cogs: 0,
                 hasCost: true,
                 missingCostCount: 0,
+                lastSoldAt: orderTimestamp,
               });
             }
             const aEntry = itemMap.get(addonKey);
             aEntry.invoicesSet.add(order.invoiceNumber);
             aEntry.qtySold += (pa.qty ?? qty);
             aEntry.netSales += (pa.netRevenue ?? pa.gross);
+            aEntry.lastSoldAt = Math.max(aEntry.lastSoldAt || 0, orderTimestamp);
 
             if (pa.hasCost && pa.totalCOGS !== null) {
               aEntry.cogs += pa.totalCOGS;
@@ -915,7 +1083,7 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
     });
   });
 
-  const itemRows = Array.from(itemMap.values()).map((entry) => {
+  const baseRows = Array.from(itemMap.values()).map((entry) => {
     let qtyWeightDisplay = `${entry.qtySold} pcs`;
     if (entry.isWeight && entry.weightGramsSold > 0) {
       const kgVal = (entry.weightGramsSold / 1000).toFixed(2).replace(/\.00$/, '');
@@ -935,6 +1103,9 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
       name: entry.name,
       category: entry.category,
       isAddon: Boolean(entry.isAddon),
+      isDeal: Boolean(entry.isDeal),
+      includedItems: entry.includedItems || [],
+      includedComponents: entry.includedComponents || [],
       validInvoices: entry.invoicesSet.size,
       qtySold: entry.qtySold,
       weightGramsSold: entry.weightGramsSold,
@@ -943,21 +1114,78 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
       cogs,
       grossProfit,
       margin,
+      profitMargin: margin !== null ? `${margin}%` : null,
       hasCost: entry.hasCost,
       missingCostCount: entry.missingCostCount,
+      lastSoldAt: entry.lastSoldAt || 0,
     };
   });
 
-  // Sort item rows descending by Net Sales
-  itemRows.sort((a, b) => b.netSales - a.netSales);
+  const sortBy = (filters.sortBy || 'recent').toLowerCase().trim();
 
-  // Exact mathematical totals derived from rows:
-  // Sum(item Net Sales) = report Net Sales
-  // Sum(item COGS) = report COGS
-  // Sum(item Gross Profit) = report Gross Profit
-  const totalNetSales = itemRows.reduce((sum, r) => sum + r.netSales, 0);
-  const totalCOGS = itemRows.reduce((sum, r) => sum + (r.cogs || 0), 0);
-  const totalGrossProfit = itemRows.reduce((sum, r) => sum + (r.grossProfit || 0), 0);
+  // Sort base rows: Default to recently sold first (latest sale timestamp descending), then by netSales
+  baseRows.sort((a, b) => {
+    if (sortBy === 'sales' || sortBy === 'netsales') {
+      return b.netSales - a.netSales;
+    }
+    if (sortBy === 'profit' || sortBy === 'grossprofit') {
+      const pA = a.hasCost && a.grossProfit !== null ? a.grossProfit : -Infinity;
+      const pB = b.hasCost && b.grossProfit !== null ? b.grossProfit : -Infinity;
+      return pB - pA;
+    }
+    if (sortBy === 'margin') {
+      const mA = a.hasCost && a.margin !== null ? a.margin : -Infinity;
+      const mB = b.hasCost && b.margin !== null ? b.margin : -Infinity;
+      return mB - mA;
+    }
+    if (sortBy === 'qty' || sortBy === 'quantity') {
+      return b.qtySold - a.qtySold;
+    }
+    // Default: 'recent' (Latest sold items on top!)
+    const timeDiff = (b.lastSoldAt || 0) - (a.lastSoldAt || 0);
+    if (timeDiff !== 0) return timeDiff;
+    return b.netSales - a.netSales;
+  });
+
+  let itemRows = [];
+  if (viewType === 'deals') {
+    baseRows.forEach((dealRow) => {
+      itemRows.push(dealRow);
+      if (Array.isArray(dealRow.includedComponents) && dealRow.includedComponents.length > 0) {
+        dealRow.includedComponents.forEach((comp) => {
+          itemRows.push({
+            id: `${dealRow.id}_comp_${comp.id}`,
+            name: comp.name,
+            portion: comp.portion,
+            parentDealName: dealRow.name,
+            isDealComponent: true,
+            isDeal: false,
+            isAddon: false,
+            category: 'Deal Item',
+            validInvoices: dealRow.validInvoices,
+            qtySold: comp.totalQty,
+            weightGramsSold: 0,
+            qtyWeightDisplay: `${comp.totalQty} pcs${comp.portion ? ` (${comp.portion})` : ''}`,
+            netSales: Math.round(comp.allocatedNetSales),
+            cogs: comp.hasCost ? Math.round(comp.totalCost) : null,
+            grossProfit: comp.hasCost && comp.grossProfit !== null ? Math.round(comp.grossProfit) : null,
+            margin: comp.margin,
+            profitMargin: comp.profitMargin,
+            hasCost: comp.hasCost,
+            missingCostCount: comp.hasCost ? 0 : 1,
+          });
+        });
+      }
+    });
+  } else {
+    itemRows = baseRows;
+  }
+
+  // Exact mathematical totals derived from primary rows (avoid double counting child deal components)
+  const primaryRows = itemRows.filter((r) => !r.isDealComponent);
+  const totalNetSales = primaryRows.reduce((sum, r) => sum + r.netSales, 0);
+  const totalCOGS = primaryRows.reduce((sum, r) => sum + (r.cogs || 0), 0);
+  const totalGrossProfit = primaryRows.reduce((sum, r) => sum + (r.grossProfit || 0), 0);
 
   const overallMargin = totalNetSales > 0
     ? Number(((totalGrossProfit / totalNetSales) * 100).toFixed(2))

@@ -1,5 +1,8 @@
 import mongoose from 'mongoose';
 import { Order } from '../models/Order.js';
+import { Counter } from '../models/Counter.js';
+import { MenuItem } from '../models/Item.js';
+import { Deal } from '../models/Deal.js';
 import { isDbConnected } from '../config/db.js';
 
 function getStartOfDay(d = new Date()) {
@@ -75,15 +78,176 @@ function resolveDateRange(datePreset, startDate, endDate) {
 }
 
 /**
+ * Safely generates the next sequential unique invoice number atomically from the database.
+ * Prevents duplicate invoice numbers across multiple users, browser tabs, or concurrent sales.
+ */
+export async function getNextInvoiceSequence(prefix = 'INV-') {
+  const cleanPrefix = (prefix || 'INV-').trim();
+
+  if (!isDbConnected()) {
+    const highest = await Order.findOne().sort({ sequenceNumber: -1 }).lean();
+    const nextSeq = (highest?.sequenceNumber || 0) + 1;
+    return {
+      sequenceNumber: nextSeq,
+      invoiceNumber: `${cleanPrefix}${String(nextSeq).padStart(4, '0')}`,
+    };
+  }
+
+  // 1. Find highest numeric sequence currently in the Order collection to sync counter safely
+  const highestOrderBySeq = await Order.findOne({}, { sequenceNumber: 1, invoiceNumber: 1 })
+    .sort({ sequenceNumber: -1 })
+    .lean();
+
+  let maxSeq = highestOrderBySeq?.sequenceNumber || 0;
+
+  if (highestOrderBySeq?.invoiceNumber) {
+    const num = parseInt(String(highestOrderBySeq.invoiceNumber).replace(/\D/g, ''), 10);
+    if (!isNaN(num) && num > maxSeq) {
+      maxSeq = num;
+    }
+  }
+
+  // Ensure counter is at least maxSeq
+  await Counter.findOneAndUpdate(
+    { _id: 'order_invoice_sequence' },
+    { $max: { seq: maxSeq } },
+    { upsert: true }
+  );
+
+  // 2. Atomically increment counter and verify uniqueness against Order collection
+  let attempts = 0;
+  while (attempts < 50) {
+    attempts++;
+    const counterDoc = await Counter.findOneAndUpdate(
+      { _id: 'order_invoice_sequence' },
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
+    );
+
+    const candidateSeq = counterDoc.seq;
+    const candidateInvoiceNumber = `${cleanPrefix}${String(candidateSeq).padStart(4, '0')}`;
+
+    // Verify no existing order collides with this invoiceNumber
+    const existing = await Order.findOne({ invoiceNumber: candidateInvoiceNumber }, { _id: 1 }).lean();
+    if (!existing) {
+      return {
+        sequenceNumber: candidateSeq,
+        invoiceNumber: candidateInvoiceNumber,
+      };
+    }
+  }
+
+  // Fallback fallback guaranteed uniqueness
+  const fallbackSeq = Date.now();
+  return {
+    sequenceNumber: fallbackSeq,
+    invoiceNumber: `${cleanPrefix}${fallbackSeq}`,
+  };
+}
+
+/**
+ * Safely sanitizes existing orders in MongoDB that share duplicate invoice numbers.
+ * NEVER deletes any completed order. Preserves all items, lines, amounts, and dates.
+ * Reassigns duplicate orders to unique consecutive sequential invoice numbers.
+ */
+export async function repairDuplicateInvoiceNumbers(prefix = 'INV-') {
+  if (!isDbConnected()) return { repaired: 0 };
+
+  const orders = await Order.find({}).sort({ createdAt: 1, _id: 1 });
+  const invoiceMap = new Map();
+  let maxSeq = 0;
+
+  for (const o of orders) {
+    const inv = String(o.invoiceNumber || '').trim();
+    if (inv) {
+      const num = parseInt(inv.replace(/\D/g, ''), 10);
+      if (!isNaN(num) && num > maxSeq) maxSeq = num;
+    }
+    if (o.sequenceNumber && o.sequenceNumber > maxSeq) {
+      maxSeq = o.sequenceNumber;
+    }
+  }
+
+  let repairedCount = 0;
+  for (const o of orders) {
+    const inv = String(o.invoiceNumber || '').trim();
+    if (!invoiceMap.has(inv)) {
+      invoiceMap.set(inv, o._id.toString());
+    } else {
+      // Duplicate detected! Reassign to next consecutive unique sequence
+      maxSeq += 1;
+      const newSeq = maxSeq;
+      const newInv = `${prefix}${String(newSeq).padStart(4, '0')}`;
+      o.sequenceNumber = newSeq;
+      o.invoiceNumber = newInv;
+      await o.save();
+      invoiceMap.set(newInv, o._id.toString());
+      repairedCount++;
+    }
+  }
+
+  if (maxSeq > 0) {
+    await Counter.findOneAndUpdate(
+      { _id: 'order_invoice_sequence' },
+      { $max: { seq: maxSeq } },
+      { upsert: true }
+    );
+  }
+
+  return { repaired: repairedCount, maxSeq };
+}
+
+/**
+ * GET /api/orders/next-invoice-number
+ * Returns the authoritative next invoice sequence and number from the server
+ */
+export async function getNextInvoiceNumberHandler(req, res, next) {
+  try {
+    const prefix = req.query.prefix || 'INV-';
+    const nextInvoice = await getNextInvoiceSequence(prefix);
+    return res.status(200).json({
+      success: true,
+      ...nextInvoice,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
  * POST /api/orders
  * Creates a completed order with snapshot lines, auto-incremented invoice number,
- * and server-validated pure domain calculations.
+ * immutable creator attribution, and server-validated pure domain calculations.
  */
 export async function createOrder(req, res, next) {
   try {
     const body = { ...req.body };
 
-    // 1. Calculate each line's subtotal and addons
+    // DB lookup for cost enrichment if line costs were omitted (e.g. Cashier client)
+    let dbItemMap = new Map();
+    let dbDealMap = new Map();
+    if (isDbConnected() && Array.isArray(body.lines)) {
+      const itemIds = body.lines.map((l) => l.itemId).filter(Boolean);
+      const dealIds = body.lines.filter((l) => l.isDeal && l.dealId).map((l) => l.dealId);
+      if (itemIds.length > 0) {
+        try {
+          const foundItems = await MenuItem.find({ id: { $in: itemIds } });
+          foundItems.forEach((it) => dbItemMap.set(it.id, it));
+        } catch {
+          // ignore lookup error
+        }
+      }
+      if (dealIds.length > 0) {
+        try {
+          const foundDeals = await Deal.find({ id: { $in: dealIds } });
+          foundDeals.forEach((dl) => dbDealMap.set(dl.id, dl));
+        } catch {
+          // ignore lookup error
+        }
+      }
+    }
+
+    // 1. Calculate each line's subtotal and addons, preserving all snapshots & deals
     const calculatedLines = body.lines.map((l, index) => {
       const addonsTotal = (l.addonSnapshots || []).reduce(
         (sum, a) => sum + (Number(a.price) || 0),
@@ -93,13 +257,72 @@ export async function createOrder(req, res, next) {
       const quantity = Math.max(1, Math.floor(Number(l.quantity) || 1));
       const lineSubtotal = Math.round((unitPrice + addonsTotal) * quantity);
 
+      const dbItem = dbItemMap.get(l.itemId);
+      const dbDeal = l.dealId ? dbDealMap.get(l.dealId) : null;
+      let costPriceSnapshot = l.costPriceSnapshot;
+      if (costPriceSnapshot === undefined || costPriceSnapshot === null) {
+        costPriceSnapshot = dbItem?.costPrice ?? null;
+      }
+
+      let includedItems = Array.isArray(l.includedItems) ? l.includedItems : [];
+      if (l.isDeal && dbDeal && Array.isArray(dbDeal.includedItems)) {
+        includedItems = includedItems.map((inc) => {
+          if (inc.costPrice !== undefined && inc.costPrice !== null) return inc;
+          const matchedInc = dbDeal.includedItems.find((di) => di.itemId === inc.itemId || di.name === inc.name);
+          return {
+            ...inc,
+            costPrice: matchedInc?.costPrice ?? null,
+          };
+        });
+      }
+
+      let itemCOGS = l.itemCOGS;
+      let totalCOGS = l.totalCOGS;
+      let grossProfit = l.grossProfit;
+      let grossProfitMargin = l.grossProfitMargin;
+      let hasCost = l.hasCost;
+
+      const grossLineSale = l.grossLineSale !== undefined ? l.grossLineSale : lineSubtotal;
+      const allocatedDiscount = l.allocatedDiscount || 0;
+      const netRevenue = l.netRevenue !== undefined ? l.netRevenue : Math.max(0, grossLineSale - allocatedDiscount);
+
+      if (l.isDeal) {
+        let dealUnitCost = 0;
+        let dealHasAllCost = includedItems.length > 0;
+        includedItems.forEach((inc) => {
+          if (inc.costPrice === null || inc.costPrice === undefined) {
+            dealHasAllCost = false;
+          } else {
+            dealUnitCost += Number(inc.costPrice) * (Number(inc.quantity) || 1);
+          }
+        });
+        if (dealHasAllCost && (totalCOGS === undefined || totalCOGS === null)) {
+          itemCOGS = dealUnitCost * quantity;
+          totalCOGS = itemCOGS;
+          hasCost = true;
+          grossProfit = netRevenue - totalCOGS;
+          grossProfitMargin = netRevenue > 0 ? Number(((grossProfit / netRevenue) * 100).toFixed(2)) : 0;
+        }
+      } else if (costPriceSnapshot !== null && costPriceSnapshot !== undefined && (totalCOGS === undefined || totalCOGS === null)) {
+        itemCOGS = Number(costPriceSnapshot) * quantity;
+        const addonCOGS = l.addonCOGS || 0;
+        totalCOGS = itemCOGS + addonCOGS;
+        hasCost = true;
+        grossProfit = netRevenue - totalCOGS;
+        grossProfitMargin = netRevenue > 0 ? Number(((grossProfit / netRevenue) * 100).toFixed(2)) : 0;
+      }
+
       return {
         id: l.id || `line-${index + 1}-${Date.now()}`,
         itemId: l.itemId,
         itemNameSnapshot: l.itemNameSnapshot,
         itemImageSnapshot: l.itemImageSnapshot || '',
         categoryIdSnapshot: l.categoryIdSnapshot || '',
-        pricingMode: l.pricingMode || 'piece',
+        categoryNameSnapshot: l.categoryNameSnapshot || '',
+        pricingMode: l.pricingMode || (l.isDeal ? 'deal' : 'piece'),
+        isDeal: Boolean(l.isDeal),
+        dealId: l.dealId || null,
+        includedItems,
         selectedPortionLabel: l.selectedPortionLabel || '',
         selectedWeightGrams: Number(l.selectedWeightGrams) || 0,
         baseUnitSnapshot: l.baseUnitSnapshot || 'piece',
@@ -109,6 +332,22 @@ export async function createOrder(req, res, next) {
         unitPrice,
         quantity,
         lineSubtotal,
+        sellingPriceSnapshot: l.sellingPriceSnapshot,
+        costPriceSnapshot,
+        portionPrice: l.portionPrice,
+        quantitySnapshot: l.quantitySnapshot || quantity,
+        weightGramsSnapshot: l.weightGramsSnapshot,
+        itemGrossSale: l.itemGrossSale !== undefined ? l.itemGrossSale : lineSubtotal,
+        addonGrossSale: l.addonGrossSale || 0,
+        grossLineSale,
+        allocatedDiscount,
+        netRevenue,
+        itemCOGS,
+        addonCOGS: l.addonCOGS,
+        totalCOGS,
+        grossProfit,
+        grossProfitMargin,
+        hasCost,
         note: l.note || '',
       };
     });
@@ -143,20 +382,24 @@ export async function createOrder(req, res, next) {
       }
       changeAmount = Math.max(0, amountReceived - grandTotal);
     } else {
-      // For Card / Online, amount received equals grand total
       amountReceived = grandTotal;
       changeAmount = 0;
     }
 
-    // 3. Generate sequential invoice number atomically
-    const lastOrder = await Order.findOne().sort({ sequenceNumber: -1 });
-    const sequenceNumber = lastOrder && lastOrder.sequenceNumber ? lastOrder.sequenceNumber + 1 : 1;
+    // 3. Generate sequential invoice number atomically on the server
     const invoicePrefix = body.invoicePrefix || 'INV-';
-    const invoiceNumber = `${invoicePrefix}${String(sequenceNumber).padStart(4, '0')}`;
+    const { sequenceNumber, invoiceNumber } = await getNextInvoiceSequence(invoicePrefix);
 
     // 4. Order ID
     const randomSuffix = Math.random().toString(36).substring(2, 6);
     const id = body.id || `ord-${Date.now()}-${randomSuffix}`;
+
+    // 5. Creator attribution (immutable snapshot at sale completion)
+    const reqRole = req.user?.role || req.headers?.['x-user-role'];
+    const isReqAdmin = String(reqRole || '').toLowerCase().includes('admin') || String(body.createdByRole || '').toLowerCase() === 'admin';
+    const createdByUserId = body.createdByUserId || (req.user?.id ? String(req.user.id) : (isReqAdmin ? 'user_admin' : 'user_cashier'));
+    const createdByName = body.createdByName || body.cashierName || req.user?.name || req.user?.username || (isReqAdmin ? 'Admin' : 'Cashier');
+    const createdByRole = body.createdByRole || (isReqAdmin ? 'admin' : 'cashier');
 
     const orderPayload = {
       id,
@@ -164,8 +407,11 @@ export async function createOrder(req, res, next) {
       sequenceNumber,
       status: 'completed',
       orderType: body.orderType || 'Dine-In',
-      guestCount: body.orderType === 'Takeaway' ? (Number(body.guestCount) || 1) : (Number(body.guestCount) || 1),
-      cashierName: body.cashierName || 'Cashier 1',
+      guestCount: body.orderType === 'Takeaway' ? 1 : (Number(body.guestCount) || 1),
+      createdByUserId,
+      createdByName,
+      createdByRole,
+      cashierName: createdByName,
       customerName: body.customerName || '',
       customerPhone: body.customerPhone || '',
       tableNumber: body.tableNumber || '',
@@ -231,12 +477,17 @@ export async function getAllOrders(req, res, next) {
       startDate,
       endDate,
       search,
+      createdByUserId,
       page = 1,
       limit = 50,
       sort = '-completedAt',
     } = req.query;
 
     const filter = {};
+
+    if (createdByUserId) {
+      filter.createdByUserId = createdByUserId;
+    }
 
     if (status && status !== 'all') {
       filter.status = status;

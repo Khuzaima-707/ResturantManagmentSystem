@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { Addon } from '../models/Addon.js';
 import { defaultAddons } from '../data/defaultAddons.js';
 import { isDbConnected } from '../config/db.js';
+import { isCashierRequest } from '../middleware/authMiddleware.js';
 
 /**
  * GET /api/addons
@@ -64,10 +65,19 @@ export async function getAllAddons(req, res, next) {
 
     const addons = await Addon.find(filter).sort(sortOption);
 
+    const isCashier = isCashierRequest(req);
+    const sanitizedAddons = isCashier
+      ? addons.map((addon) => {
+          const doc = addon.toObject ? addon.toObject() : { ...addon };
+          delete doc.costPrice;
+          return doc;
+        })
+      : addons;
+
     return res.status(200).json({
       success: true,
-      count: addons.length,
-      data: addons,
+      count: sanitizedAddons.length,
+      data: sanitizedAddons,
     });
   } catch (error) {
     next(error);
@@ -95,9 +105,15 @@ export async function getAddonById(req, res, next) {
       });
     }
 
+    const isCashier = isCashierRequest(req);
+    const doc = addon.toObject ? addon.toObject() : { ...addon };
+    if (isCashier) {
+      delete doc.costPrice;
+    }
+
     return res.status(200).json({
       success: true,
-      data: addon,
+      data: doc,
     });
   } catch (error) {
     next(error);

@@ -5,6 +5,7 @@ import {
   getOrderById,
   seedOrders,
   updateKitchenStatus,
+  getNextInvoiceNumberHandler,
 } from '../controllers/orderController.js';
 import {
   createOrderSchema,
@@ -16,6 +17,9 @@ const router = Router();
 // Collection routes
 router.get('/', getAllOrders);
 router.post('/', validate(createOrderSchema), createOrder);
+
+// Next invoice sequence endpoint (must be before /:id)
+router.get('/next-invoice-number', getNextInvoiceNumberHandler);
 
 // Seed sample orders
 router.post('/seed', seedOrders);

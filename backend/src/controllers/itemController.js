@@ -4,65 +4,53 @@ import { Category } from '../models/Category.js';
 import { defaultItems } from '../data/defaultItems.js';
 import cloudinary from '../config/cloudinary.js';
 import { isDbConnected } from '../config/db.js';
+import { isCashierRequest } from '../middleware/authMiddleware.js';
 
+// Precompiled regex with word boundaries for high-performance, accurate tiering
+const DESSERT_REGEX = /\b(desert|dessert|sweet|ice\s*cream|icecream|kheer|halwa|gulab\s*jamun|jalebi|rasmalai|mithai|meetha|falooda|custard|pudding|cake|pastry|brownie)\b/i;
+
+const DRINK_REGEX = /\b(drink|coldrink|cold\s*drink|softdrink|soft\s*drink|beverage|water|juice|soda|shake|smoothie|dew|coke|pepsi|fanta|sprite|m[ia]rinda|7\s*up|sting|red\s*bull|monster|lemonade|lassi|mineral\s*water|cold\s*item|tea|coffee|chai|bottle)\b/i;
+
+/**
+ * Escapes special characters for safe use in a RegExp
+ */
+function escapeRegex(text) {
+  return String(text).replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+}
+
+/**
+ * Builds unified query filter for custom slug id or Mongo _id
+ */
+function buildIdFilter(id) {
+  if (mongoose.Types.ObjectId.isValid(id)) {
+    return { $or: [{ id }, { _id: id }] };
+  }
+  return { id };
+}
+
+/**
+ * Sanitizes sensitive fields (e.g. costPrice) based on role
+ */
+function sanitizeItemForClient(item, isCashier) {
+  if (!item) return item;
+  const doc = typeof item.toObject === 'function' ? item.toObject() : { ...item };
+  if (isCashier) {
+    delete doc.costPrice;
+  }
+  return doc;
+}
+
+/**
+ * Categorizes a menu item into display tiers:
+ * Tier 1: Main food items
+ * Tier 2: Desserts & Sweets
+ * Tier 3: Drinks & Beverages
+ */
 export function getItemTier(item) {
-  const combined = `${item?.categoryName || ''} ${item?.name || ''} ${item?.description || ''}`.toLowerCase();
+  const combined = `${item?.categoryName || ''} ${item?.name || ''} ${item?.description || ''}`;
 
-  const isDessert =
-    combined.includes('desert') ||
-    combined.includes('dessert') ||
-    combined.includes('sweet') ||
-    combined.includes('ice cream') ||
-    combined.includes('icecream') ||
-    combined.includes('kheer') ||
-    combined.includes('halwa') ||
-    combined.includes('gulab jamun') ||
-    combined.includes('jalebi') ||
-    combined.includes('rasmalai') ||
-    combined.includes('mithai') ||
-    combined.includes('meetha') ||
-    combined.includes('falooda') ||
-    combined.includes('custard') ||
-    combined.includes('pudding') ||
-    combined.includes('cake') ||
-    combined.includes('pastry') ||
-    combined.includes('brownie');
-
-  if (isDessert) return 2;
-
-  const isDrink =
-    combined.includes('drink') ||
-    combined.includes('coldrink') ||
-    combined.includes('cold drink') ||
-    combined.includes('softdrink') ||
-    combined.includes('soft drink') ||
-    combined.includes('beverage') ||
-    combined.includes('water') ||
-    combined.includes('juice') ||
-    combined.includes('soda') ||
-    combined.includes('shake') ||
-    combined.includes('smoothie') ||
-    combined.includes('dew') ||
-    combined.includes('coke') ||
-    combined.includes('pepsi') ||
-    combined.includes('fanta') ||
-    combined.includes('sprite') ||
-    combined.includes('marinda') ||
-    combined.includes('mirinda') ||
-    combined.includes('7up') ||
-    combined.includes('sting') ||
-    combined.includes('red bull') ||
-    combined.includes('monster') ||
-    combined.includes('lemonade') ||
-    combined.includes('lassi') ||
-    combined.includes('mineral water') ||
-    combined.includes('cold item') ||
-    combined.includes('tea') ||
-    combined.includes('coffee') ||
-    combined.includes('chai') ||
-    combined.includes('bottle');
-
-  if (isDrink) return 3;
+  if (DESSERT_REGEX.test(combined)) return 2;
+  if (DRINK_REGEX.test(combined)) return 3;
 
   return 1;
 }
@@ -94,7 +82,8 @@ export async function getAllItems(req, res, next) {
     }
 
     if (search && search.trim()) {
-      const searchRegex = new RegExp(search.trim(), 'i');
+      const safePattern = escapeRegex(search.trim());
+      const searchRegex = new RegExp(safePattern, 'i');
       filter.$or = [
         { name: searchRegex },
         { description: searchRegex },
@@ -112,19 +101,30 @@ export async function getAllItems(req, res, next) {
     let items = await MenuItem.find(filter).sort(sortOption);
 
     // Default natural sorting: Food first, Desserts next, Drinks/Water last
-    if (sort === 'createdAt') {
+    // Memoize tiers so getItemTier is computed once per item, avoiding O(N log N) regex re-evaluations
+    if (sort === 'createdAt' && items.length > 0) {
+      const tierMap = new Map();
+      for (const item of items) {
+        tierMap.set(item.id || item._id, getItemTier(item));
+      }
+
       items = [...items].sort((a, b) => {
-        const tierA = getItemTier(a);
-        const tierB = getItemTier(b);
+        const tierA = tierMap.get(a.id || a._id) ?? 1;
+        const tierB = tierMap.get(b.id || b._id) ?? 1;
         if (tierA !== tierB) return tierA - tierB;
         return String(a?.name || '').localeCompare(String(b?.name || ''));
       });
     }
 
+    const isCashier = isCashierRequest(req);
+    const sanitizedItems = isCashier
+      ? items.map((item) => sanitizeItemForClient(item, true))
+      : items;
+
     return res.status(200).json({
       success: true,
-      count: items.length,
-      data: items,
+      count: sanitizedItems.length,
+      data: sanitizedItems,
     });
   } catch (error) {
     next(error);
@@ -138,12 +138,9 @@ export async function getAllItems(req, res, next) {
 export async function getItemById(req, res, next) {
   try {
     const { id } = req.params;
+    const query = buildIdFilter(id);
 
-    let item = await MenuItem.findOne({ id });
-
-    if (!item && mongoose.Types.ObjectId.isValid(id)) {
-      item = await MenuItem.findById(id);
-    }
+    const item = await MenuItem.findOne(query);
 
     if (!item) {
       return res.status(404).json({
@@ -152,9 +149,12 @@ export async function getItemById(req, res, next) {
       });
     }
 
+    const isCashier = isCashierRequest(req);
+    const doc = sanitizeItemForClient(item, isCashier);
+
     return res.status(200).json({
       success: true,
-      data: item,
+      data: doc,
     });
   } catch (error) {
     next(error);
@@ -199,6 +199,8 @@ export async function createItem(req, res, next) {
         payload.imageRef = uploadRes.secure_url;
       } catch (err) {
         console.warn('[itemController] Cloudinary auto-upload warning:', err.message);
+        // Avoid persisting multi-megabyte base64 strings into MongoDB document on failure
+        delete payload.imageRef;
       }
     }
 
@@ -219,6 +221,12 @@ export async function createItem(req, res, next) {
       data: item,
     });
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        error: { message: `Menu item with ID '${req.body?.id}' already exists` },
+      });
+    }
     next(error);
   }
 }
@@ -231,6 +239,10 @@ export async function updateItem(req, res, next) {
   try {
     const { id } = req.params;
     const updates = { ...req.body };
+
+    // Protect primary identifiers from accidental mutation
+    delete updates._id;
+    delete updates.id;
 
     // If categoryId is changed, verify new category exists and update categoryName
     if (updates.categoryId) {
@@ -256,22 +268,18 @@ export async function updateItem(req, res, next) {
         updates.imageRef = uploadRes.secure_url;
       } catch (err) {
         console.warn('[itemController] Cloudinary auto-upload warning:', err.message);
+        // Don't overwrite imageRef with huge raw base64 data on failed upload
+        delete updates.imageRef;
       }
     }
 
-    let item = await MenuItem.findOneAndUpdate(
-      { id },
+    const query = buildIdFilter(id);
+
+    const item = await MenuItem.findOneAndUpdate(
+      query,
       { $set: updates },
       { new: true, runValidators: true }
     );
-
-    if (!item && mongoose.Types.ObjectId.isValid(id)) {
-      item = await MenuItem.findByIdAndUpdate(
-        id,
-        { $set: updates },
-        { new: true, runValidators: true }
-      );
-    }
 
     if (!item) {
       return res.status(404).json({
@@ -297,12 +305,9 @@ export async function updateItem(req, res, next) {
 export async function deleteItem(req, res, next) {
   try {
     const { id } = req.params;
+    const query = buildIdFilter(id);
 
-    let item = await MenuItem.findOneAndDelete({ id });
-
-    if (!item && mongoose.Types.ObjectId.isValid(id)) {
-      item = await MenuItem.findByIdAndDelete(id);
-    }
+    const item = await MenuItem.findOneAndDelete(query);
 
     if (!item) {
       return res.status(404).json({
@@ -323,7 +328,7 @@ export async function deleteItem(req, res, next) {
 
 /**
  * POST /api/items/seed
- * Upsert canonical default items into MongoDB Atlas
+ * Upsert canonical default items into MongoDB Atlas using bulk operations
  */
 export async function seedItems(req, res, next) {
   try {
@@ -333,23 +338,28 @@ export async function seedItems(req, res, next) {
       await MenuItem.deleteMany({});
     }
 
-    const results = [];
-    for (const item of defaultItems) {
-      const upserted = await MenuItem.findOneAndUpdate(
-        { id: item.id },
-        { $set: item },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
-      );
-      results.push(upserted);
+    const operations = defaultItems.map((item) => ({
+      updateOne: {
+        filter: { id: item.id },
+        update: { $set: item },
+        upsert: true,
+      },
+    }));
+
+    if (operations.length > 0) {
+      await MenuItem.bulkWrite(operations, { ordered: false });
     }
 
+    const seededItems = await MenuItem.find({
+      id: { $in: defaultItems.map((d) => d.id) },
+    });
     const totalCount = await MenuItem.countDocuments();
 
     return res.status(200).json({
       success: true,
       message: `Default menu items seeded successfully in MongoDB Atlas. Total items: ${totalCount}`,
-      count: results.length,
-      data: results,
+      count: seededItems.length,
+      data: seededItems,
     });
   } catch (error) {
     next(error);

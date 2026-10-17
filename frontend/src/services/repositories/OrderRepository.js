@@ -5,10 +5,23 @@
  */
 import { api } from '../adapters/apiClient';
 import { storage } from '../persistence/storage';
+import { generateNextSequentialInvoiceNumber } from '../../domain/selectors/invoiceSelectors';
 
 const STORAGE_KEY = 'orders';
 
 export const OrderRepository = {
+  getNextInvoiceNumber: async (prefix = 'INV-') => {
+    try {
+      const res = await api.get(`/orders/next-invoice-number?prefix=${encodeURIComponent(prefix)}`);
+      if (res && res.success && res.invoiceNumber) {
+        return res;
+      }
+    } catch {
+      // Server offline / disconnected fallback
+    }
+    const all = storage.get(STORAGE_KEY, []) || [];
+    return generateNextSequentialInvoiceNumber(all, prefix);
+  },
   getAll: async (params = {}) => {
     try {
       const query = new URLSearchParams(params).toString();

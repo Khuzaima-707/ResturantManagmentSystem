@@ -4,13 +4,11 @@ import { DataTable } from '../../../components/ui/DataTable';
 import { ItemModal } from './ItemModal';
 import { useAppStore } from '../../../store';
 import { sortCategories, sortMenuItems } from '../../../domain/rules';
+import { isCashierUser } from '../../../domain/selectors/invoiceSelectors';
 
 export const ItemsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClose }) => {
   const { items, categories, deleteItem, user } = useAppStore();
-  const isCashier = Boolean(
-    (user?.role?.toLowerCase().includes('cashier') && !user?.role?.toLowerCase().includes('admin')) ||
-    (user?.username?.toLowerCase() === 'cashier' && user?.username?.toLowerCase() !== 'admin')
-  );
+  const isCashier = isCashierUser(user);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All Categories');
@@ -147,6 +145,21 @@ export const ItemsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClos
         </p>
       ),
     },
+    ...(!isCashier
+      ? [
+          {
+            key: 'costPrice',
+            title: 'Cost',
+            headerClassName: 'w-24 whitespace-nowrap',
+            cellClassName: 'whitespace-nowrap',
+            render: (cost) => (
+              <span className="font-semibold text-xs text-slate-500 whitespace-nowrap">
+                {cost !== null && cost !== undefined && cost !== '' ? `Rs ${Number(cost).toLocaleString()}` : '—'}
+              </span>
+            ),
+          },
+        ]
+      : []),
     {
       key: 'basePrice',
       title: 'Price / Unit',

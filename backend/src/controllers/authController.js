@@ -113,12 +113,31 @@ export const login = async (req, res) => {
         (fallbackUser.username === 'admin' && (enteredPassword === 'admin123' || enteredPassword === '12345')) ||
         (fallbackUser.username === 'cashier' && (enteredPassword === 'cashier123' || enteredPassword === '1234')))
     ) {
-      const token = generateToken(fallbackUser);
+      let resolvedUser = { ...fallbackUser };
+      try {
+        const dbUser = await User.findOne({
+          $or: [{ username: fallbackUser.username }, { email: fallbackUser.email }],
+        });
+        if (dbUser) {
+          resolvedUser = {
+            id: dbUser.id || fallbackUser.id,
+            name: dbUser.name || fallbackUser.name,
+            username: dbUser.username || fallbackUser.username,
+            email: dbUser.email || fallbackUser.email,
+            role: dbUser.role || fallbackUser.role,
+            avatarUrl: dbUser.avatarUrl || fallbackUser.avatarUrl,
+          };
+        }
+      } catch {
+        // fast fallback
+      }
+
+      const token = generateToken(resolvedUser);
       return res.status(200).json({
         success: true,
         message: 'Login successful',
         token,
-        user: fallbackUser,
+        user: resolvedUser,
       });
     }
 
@@ -292,3 +311,95 @@ export const changePassword = async (req, res) => {
     });
   }
 };
+
+/**
+ * PUT /api/auth/profile
+ * Updates user profile (name, role, avatarUrl)
+ */
+export const updateProfile = async (req, res) => {
+  try {
+    const { id, username, name, role, avatarUrl } = req.body;
+    const normUsername = (username || (req.user && req.user.username) || '').trim().toLowerCase();
+    const userId = id || (req.user && req.user.id);
+    const trimmedName = (name || '').trim();
+
+    if (!trimmedName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name is required',
+      });
+    }
+
+    // 1. Update in-memory fallback users so subsequent logins immediately return updated details
+    const fallbackIdx = DEFAULT_USERS.findIndex(
+      (u) => (normUsername && u.username === normUsername) || (userId && u.id === userId)
+    );
+    if (fallbackIdx !== -1) {
+      DEFAULT_USERS[fallbackIdx] = {
+        ...DEFAULT_USERS[fallbackIdx],
+        name: trimmedName,
+        ...(role ? { role: role.toLowerCase().includes('admin') ? 'admin' : 'cashier' } : {}),
+        ...(avatarUrl !== undefined ? { avatarUrl } : {}),
+      };
+    }
+
+    // 2. Persist in MongoDB
+    let dbUser = null;
+    try {
+      if (normUsername || userId) {
+        dbUser = await User.findOne({
+          $or: [
+            ...(normUsername ? [{ username: normUsername }] : []),
+            ...(userId ? [{ id: userId }] : []),
+          ],
+        });
+      }
+
+      if (dbUser) {
+        dbUser.name = trimmedName;
+        if (role) {
+          dbUser.role = role.toLowerCase().includes('admin') ? 'admin' : 'cashier';
+        }
+        if (avatarUrl !== undefined) {
+          dbUser.avatarUrl = avatarUrl;
+        }
+        await dbUser.save();
+      } else if (normUsername) {
+        dbUser = new User({
+          id: userId || `user_${normUsername}`,
+          name: trimmedName,
+          username: normUsername,
+          email: `${normUsername}@spicehub.pk`,
+          password: validFallbackPasswords[normUsername] || '12345',
+          role: normUsername === 'cashier' ? 'cashier' : 'admin',
+          avatarUrl: avatarUrl || '',
+        });
+        await dbUser.save();
+      }
+    } catch (dbErr) {
+      console.warn('[Auth] DB update profile warning:', dbErr.message);
+    }
+
+    const updatedUser = {
+      id: dbUser?.id || userId || (normUsername ? `user_${normUsername}` : 'user_profile'),
+      name: trimmedName,
+      username: normUsername || dbUser?.username || 'user',
+      email: dbUser?.email || `${normUsername || 'user'}@spicehub.pk`,
+      role: role || dbUser?.role || (normUsername === 'cashier' ? 'Cashier' : 'Admin Cashier'),
+      avatarUrl: avatarUrl !== undefined ? avatarUrl : dbUser?.avatarUrl || null,
+    };
+
+    return res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: updatedUser,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update profile',
+      error: error.message,
+    });
+  }
+};
+

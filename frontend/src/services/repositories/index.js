@@ -7,4 +7,5 @@ export { SettingsRepository } from './SettingsRepository';
 export { ExpenseRepository } from './ExpenseRepository';
 export { TableRepository } from './TableRepository';
 export { ShiftRepository } from './ShiftRepository';
+export { DealRepository } from './DealRepository';
 export * from './types';

@@ -28,8 +28,21 @@ const OrderLineSchema = new mongoose.Schema(
     },
     pricingMode: {
       type: String,
-      enum: ['piece', 'portion', 'custom_weight'],
+      enum: ['piece', 'portion', 'custom_weight', 'deal'],
       default: 'piece',
+    },
+    isDeal: {
+      type: Boolean,
+      default: false,
+    },
+    dealId: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    includedItems: {
+      type: [mongoose.Schema.Types.Mixed],
+      default: [],
     },
     selectedPortionLabel: {
       type: String,
@@ -208,6 +221,23 @@ const OrderSchema = new mongoose.Schema(
       type: String,
       default: 'Cashier 1',
       trim: true,
+    },
+    createdByUserId: {
+      type: String,
+      default: null,
+      trim: true,
+      index: true,
+    },
+    createdByName: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    createdByRole: {
+      type: String,
+      default: null,
+      trim: true,
+      index: true,
     },
     customerName: {
       type: String,

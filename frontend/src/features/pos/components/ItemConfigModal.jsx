@@ -15,6 +15,7 @@ import {
   calculateAddonTotal,
   calculateConfiguredItemPrice,
   calculateLineSubtotal,
+  calculateFlatLineSubtotal,
   formatCurrency,
 } from '../../../domain/calculations';
 import { getCompatibleAddons, STANDARD_WEIGHT_PORTIONS, detectAddonType } from '../../../domain/rules';
@@ -229,11 +230,11 @@ const ItemConfigModalContent = ({ item, isOpen, onClose, onAddToCart }) => {
 
   const addonsTotal = calculateAddonTotal(selectedAddonsList);
 
-  // Single unit price including add-ons
-  const unitPrice = calculateConfiguredItemPrice(baseCalculatedPrice, addonsTotal);
+  // Single unit price of base item / portion
+  const unitPrice = baseCalculatedPrice;
 
-  // Total line subtotal
-  const lineSubtotal = calculateLineSubtotal(unitPrice, 0, quantity);
+  // Total line subtotal with flat add-on calculation: (base * qty) + addonsTotal
+  const lineSubtotal = calculateFlatLineSubtotal(baseCalculatedPrice, addonsTotal, quantity);
 
   const handleToggleAddon = (aid) => {
     setSelectedAddonQuantities((prev) => {
@@ -290,8 +291,10 @@ const ItemConfigModalContent = ({ item, isOpen, onClose, onAddToCart }) => {
           costPrice: a.costPrice !== undefined ? a.costPrice : null,
           quantity: a.quantity || 1,
         })),
+        addonsTotal,
+        addonsAreFlat: true,
         quantity,
-        unitPrice,
+        unitPrice: baseCalculatedPrice,
         lineSubtotal,
         note: '',
       };
@@ -335,7 +338,7 @@ const ItemConfigModalContent = ({ item, isOpen, onClose, onAddToCart }) => {
             <button
               type="button"
               onClick={handleAdd}
-              disabled={unitPrice <= 0 || isAdding}
+              disabled={(baseCalculatedPrice <= 0 && addonsTotal <= 0) || isAdding}
               className="h-8 px-3.5 rounded-lg bg-[#FF5C28] hover:bg-[#E04D1D] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
             >
               <ShoppingBag className="w-3.5 h-3.5" />
@@ -770,7 +773,7 @@ const ItemConfigModalContent = ({ item, isOpen, onClose, onAddToCart }) => {
           <div className="text-right">
             <span className="text-[9px] text-slate-400 block font-medium leading-none mb-0.5">Rate per item</span>
             <span className="text-xs font-bold text-slate-800">
-              {formatCurrency(unitPrice)}
+              {formatCurrency(baseCalculatedPrice)}
               {addonsTotal > 0 && (
                 <span className="text-[10px] text-slate-400 font-normal ml-1">
                   (+Rs {addonsTotal})

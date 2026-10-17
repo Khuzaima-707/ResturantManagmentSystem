@@ -8,6 +8,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { useAppStore } from '../../store';
+import { isNotificationVisibleToUser } from '../../domain/selectors/invoiceSelectors';
 
 /**
  * Format relative time cleanly (e.g. Just now, 5m ago, 2h ago, or date)
@@ -44,9 +45,14 @@ export const NotificationDropdown = () => {
     markNotificationAsRead,
     markAllNotificationsAsRead,
     clearNotifications,
+    user,
   } = useAppStore();
 
-  const unreadCount = (notifications || []).filter((n) => !n.read).length;
+  const userNotifications = React.useMemo(() => {
+    return (notifications || []).filter((n) => isNotificationVisibleToUser(n, user));
+  }, [notifications, user]);
+
+  const unreadCount = userNotifications.filter((n) => !n.read).length;
 
   // Close dropdown on click outside or Escape key
   useEffect(() => {
@@ -124,7 +130,7 @@ export const NotificationDropdown = () => {
 
           {/* Notifications List */}
           <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-200 [&::-webkit-scrollbar-thumb]:rounded-full">
-            {notifications.length === 0 ? (
+            {userNotifications.length === 0 ? (
               <div className="p-8 text-center">
                 <div className="w-10 h-10 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center mx-auto mb-2 text-[#FF5C28]">
                   <Bell className="w-5 h-5 text-[#FF5C28]" />
@@ -135,7 +141,7 @@ export const NotificationDropdown = () => {
                 </p>
               </div>
             ) : (
-              notifications.map((notif) => (
+              userNotifications.map((notif) => (
                 <div
                   key={notif.id}
                   onClick={() => markNotificationAsRead(notif.id)}
@@ -191,10 +197,10 @@ export const NotificationDropdown = () => {
           </div>
 
           {/* Footer */}
-          {notifications.length > 0 && (
+          {userNotifications.length > 0 && (
             <div className="p-2.5 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between text-xs">
               <span className="text-[11px] text-slate-400 font-medium">
-                {notifications.length} {notifications.length === 1 ? 'order update' : 'order updates'}
+                {userNotifications.length} {userNotifications.length === 1 ? 'order update' : 'order updates'}
               </span>
               <button
                 type="button"

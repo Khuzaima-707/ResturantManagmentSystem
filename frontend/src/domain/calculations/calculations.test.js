@@ -4,6 +4,7 @@ import {
   calculateWeightFromAmount,
   calculateAddonTotal,
   calculateLineSubtotal,
+  calculateFlatLineSubtotal,
   calculateOrderSubtotal,
   calculateDiscount,
   calculateTax,
@@ -38,6 +39,12 @@ describe('Domain Calculations & Pricing', () => {
   it('calculates single line subtotal with add-ons and quantity', () => {
     // Rs 450 burger + Rs 50 cheese, qty 2 = Rs 1,000
     expect(calculateLineSubtotal(450, 50, 2)).toBe(1000);
+  });
+
+  it('calculates flat line subtotal where add-ons apply to the entire line rather than per-item', () => {
+    // 5 rolls @ Rs 200 + 2 sauces @ Rs 80 (Rs 160) = Rs 1,160
+    expect(calculateFlatLineSubtotal(200, 160, 5)).toBe(1160);
+    expect(calculateLineSubtotal(200, 160, 5, true)).toBe(1160);
   });
 
   it('calculates order subtotal and grand total', () => {

@@ -57,6 +57,7 @@ import {
   groupSalesByDate,
   groupSalesByCategory,
 } from '../domain/selectors/dashboardSelectors';
+import { filterOrdersByOwnership } from '../domain/selectors/invoiceSelectors';
 import { formatCurrency, formatNumber } from '../utils/formatters';
 import {
   exportSalesReportExcel,
@@ -92,7 +93,7 @@ const DONUT_COLORS = [
  * using historical transaction snapshots and reconciling 100% with accounting rules.
  */
 export const ReportsPage = () => {
-  const { orders, reversals, categories, settings, items, addons, user } = useAppStore();
+  const { orders, reversals, categories, settings, items, addons, deals, user } = useAppStore();
 
   const isCashier = Boolean(
     (user?.role?.toLowerCase().includes('cashier') && !user?.role?.toLowerCase().includes('admin')) ||
@@ -103,12 +104,13 @@ export const ReportsPage = () => {
   const [activeTab, setActiveTab] = useState('Sales');
 
   // Unified Filter States (Cashier strictly locked to 'Today')
-  const [datePreset, setDatePreset] = useState(isCashier ? 'Today' : 'This Week');
+  const [datePreset, setDatePreset] = useState(isCashier ? 'Today' : 'All Dates');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedItem, setSelectedItem] = useState('All');
   const [profitViewType, setProfitViewType] = useState('all'); // 'all' | 'items' | 'addons'
+  const [profitSortBy, setProfitSortBy] = useState('recent'); // 'recent' | 'sales' | 'profit' | 'margin' | 'qty'
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('All');
   const [selectedOrderType, setSelectedOrderType] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
@@ -146,17 +148,33 @@ export const ReportsPage = () => {
   }, [isCashier, activeTab]);
 
   const effectiveDatePreset = isCashier ? 'Today' : datePreset;
-  const effectiveCustomRange = isCashier
-    ? null
-    : (datePreset === 'Custom' && customStartDate && customEndDate
-        ? { startDate: customStartDate, endDate: customEndDate }
-        : null);
+  const effectiveCustomRange = useMemo(() => {
+    return isCashier
+      ? null
+      : (datePreset === 'Custom' && customStartDate && customEndDate
+          ? { startDate: customStartDate, endDate: customEndDate }
+          : null);
+  }, [isCashier, datePreset, customStartDate, customEndDate]);
 
   const customRange = effectiveCustomRange;
 
+  // Role-based visible datasets
+  const visibleOrders = useMemo(() => {
+    return filterOrdersByOwnership(orders, user);
+  }, [orders, user]);
+
+  const visibleReversals = useMemo(() => {
+    if (!isCashier) return reversals;
+    const allowedOrderIds = new Set(visibleOrders.map((o) => o.id));
+    const allowedInvoiceNumbers = new Set(visibleOrders.map((o) => o.invoiceNumber));
+    return (reversals || []).filter(
+      (r) => allowedOrderIds.has(r.originalOrderId) || allowedInvoiceNumbers.has(r.originalInvoiceNumber)
+    );
+  }, [reversals, visibleOrders, isCashier]);
+
   // Unified Filtered Datasets (Single source of truth)
   const filteredOrders = useMemo(() => {
-    return filterReportOrders(orders, {
+    return filterReportOrders(visibleOrders, {
       datePreset: effectiveDatePreset,
       customRange: effectiveCustomRange,
       category: selectedCategory,
@@ -166,7 +184,7 @@ export const ReportsPage = () => {
       searchQuery,
     });
   }, [
-    orders,
+    visibleOrders,
     effectiveDatePreset,
     effectiveCustomRange,
     selectedCategory,
@@ -177,22 +195,23 @@ export const ReportsPage = () => {
   ]);
 
   const filteredReversals = useMemo(() => {
-    return filterReportReversals(reversals, {
+    return filterReportReversals(visibleReversals, {
       datePreset: effectiveDatePreset,
       customRange: effectiveCustomRange,
       reason: selectedReason,
       searchQuery,
     });
-  }, [reversals, effectiveDatePreset, effectiveCustomRange, selectedReason, searchQuery]);
+  }, [visibleReversals, effectiveDatePreset, effectiveCustomRange, selectedReason, searchQuery]);
 
   // Reset Filters
   const handleResetFilters = () => {
-    setDatePreset(isCashier ? 'Today' : 'This Week');
+    setDatePreset(isCashier ? 'Today' : 'All Dates');
     setCustomStartDate('');
     setCustomEndDate('');
     setSelectedCategory('All');
     setSelectedItem('All');
     setProfitViewType('all');
+    setProfitSortBy('recent');
     setSelectedPaymentMethod('All');
     setSelectedOrderType('All');
     setSelectedStatus('All');
@@ -214,22 +233,36 @@ export const ReportsPage = () => {
     return deriveReversalReport(filteredReversals);
   }, [filteredReversals]);
 
+  const hasAnyDeals = useMemo(() => {
+    return Boolean(
+      (deals && deals.length > 0) ||
+      (visibleOrders && visibleOrders.some((o) => (o.lines || []).some((l) => l.isDeal || l.dealId || l.categoryNameSnapshot === 'Deals')))
+    );
+  }, [deals, visibleOrders]);
+
+  useEffect(() => {
+    if (!hasAnyDeals && profitViewType === 'deals') {
+      setProfitViewType('all');
+    }
+  }, [hasAnyDeals, profitViewType]);
+
   // Profit & Cost Report Data (Deterministic, snapshot-based, includes Add-ons)
   const profitReportData = useMemo(() => {
     return getProfitAndCostReportData(
-      orders,
-      reversals,
+      visibleOrders,
+      visibleReversals,
       {
         datePreset,
         customRange,
         category: selectedCategory,
         item: selectedItem !== 'All' ? selectedItem : searchQuery,
         viewType: profitViewType,
+        sortBy: profitSortBy,
       },
       items,
       addons
     );
-  }, [orders, reversals, datePreset, customRange, selectedCategory, selectedItem, searchQuery, profitViewType, items, addons]);
+  }, [visibleOrders, visibleReversals, datePreset, customRange, selectedCategory, selectedItem, searchQuery, profitViewType, profitSortBy, items, addons]);
 
   const profitKpis = profitReportData.kpis;
   const profitItemRows = profitReportData.itemRows;
@@ -658,25 +691,69 @@ export const ReportsPage = () => {
   const profitTableColumns = [
     {
       key: 'name',
-      title: 'Item',
+      title: (
+        <button
+          type="button"
+          onClick={() => {
+            setProfitSortBy((s) => (s === 'recent' ? 'sales' : 'recent'));
+            setCurrentPage(1);
+          }}
+          className="hover:text-[#FF5C28] inline-flex items-center gap-1 font-bold cursor-pointer"
+          title="Click to sort by recently sold"
+        >
+          <span>Item</span>
+          {profitSortBy === 'recent' && <span className="text-[10px] text-[#FF5C28]">↓</span>}
+        </button>
+      ),
       headerClassName: 'min-w-[170px] font-bold',
-      render: (name, row) => (
-        <div>
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="font-semibold text-xs text-slate-800">{name}</span>
-            {row.isAddon && (
-              <span className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-orange-100 text-[#FF5C28] border border-orange-200">
-                Add-on
+      render: (name, row) => {
+        if (row.isDealComponent) {
+          return (
+            <div className="pl-3.5 flex items-start gap-1.5 py-0.5">
+              <span className="text-slate-400 font-mono text-xs mt-0.5 select-none">↳</span>
+              <div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-semibold text-xs text-slate-800">{name}</span>
+                  {row.portion && (
+                    <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded font-normal">
+                      {row.portion}
+                    </span>
+                  )}
+                  <span className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                    Deal Item
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  Part of {row.parentDealName}
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="font-semibold text-xs text-slate-800">{name}</span>
+              {row.isDeal && (
+                <span className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-[#FF5C28] text-white">
+                  DEAL
+                </span>
+              )}
+              {row.isAddon && (
+                <span className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-orange-100 text-[#FF5C28] border border-orange-200">
+                  Add-on
+                </span>
+              )}
+            </div>
+            {!row.hasCost && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-medium mt-0.5">
+                <AlertTriangle className="w-2.5 h-2.5" /> Cost Missing
               </span>
             )}
           </div>
-          {!row.hasCost && (
-            <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-medium mt-0.5">
-              <AlertTriangle className="w-2.5 h-2.5" /> Cost Missing
-            </span>
-          )}
-        </div>
-      ),
+        );
+      },
     },
     {
       key: 'category',
@@ -687,18 +764,35 @@ export const ReportsPage = () => {
       render: (cat, row) => (
         <span
           className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
-            row.isAddon
+            row.isDealComponent
+              ? 'bg-amber-50 text-amber-800 border border-amber-200/80'
+              : row.isAddon
               ? 'bg-orange-50 text-[#FF5C28] border border-orange-200/60'
+              : row.isDeal
+              ? 'bg-slate-800 text-white'
               : 'bg-slate-100 text-slate-700'
           }`}
         >
-          {cat || (row.isAddon ? 'Add-ons' : 'General')}
+          {row.isDealComponent ? `In ${row.parentDealName}` : cat || (row.isAddon ? 'Add-ons' : row.isDeal ? 'Deals' : 'General')}
         </span>
       ),
     },
     {
       key: 'qtyWeightDisplay',
-      title: 'Qty / Weight Sold',
+      title: (
+        <button
+          type="button"
+          onClick={() => {
+            setProfitSortBy('qty');
+            setCurrentPage(1);
+          }}
+          className="hover:text-[#FF5C28] inline-flex items-center gap-1 font-semibold cursor-pointer"
+          title="Click to sort by quantity sold"
+        >
+          <span>Qty / Weight Sold</span>
+          {profitSortBy === 'qty' && <span className="text-[10px] text-[#FF5C28]">↓</span>}
+        </button>
+      ),
       headerClassName: 'w-32 text-center',
       align: 'center',
       cellClassName: 'text-center',
@@ -718,7 +812,20 @@ export const ReportsPage = () => {
     },
     {
       key: 'netSales',
-      title: 'Net Sales',
+      title: (
+        <button
+          type="button"
+          onClick={() => {
+            setProfitSortBy('sales');
+            setCurrentPage(1);
+          }}
+          className="hover:text-[#FF5C28] inline-flex items-center gap-1 font-semibold cursor-pointer justify-end"
+          title="Click to sort by net sales"
+        >
+          <span>Net Sales</span>
+          {profitSortBy === 'sales' && <span className="text-[10px] text-[#FF5C28]">↓</span>}
+        </button>
+      ),
       headerClassName: 'w-28 text-right font-semibold',
       align: 'right',
       cellClassName: 'text-right',
@@ -742,7 +849,20 @@ export const ReportsPage = () => {
     },
     {
       key: 'grossProfit',
-      title: 'Gross Profit',
+      title: (
+        <button
+          type="button"
+          onClick={() => {
+            setProfitSortBy('profit');
+            setCurrentPage(1);
+          }}
+          className="hover:text-[#FF5C28] inline-flex items-center gap-1 font-bold cursor-pointer justify-end"
+          title="Click to sort by gross profit"
+        >
+          <span>Gross Profit</span>
+          {profitSortBy === 'profit' && <span className="text-[10px] text-[#FF5C28]">↓</span>}
+        </button>
+      ),
       headerClassName: 'w-28 text-right font-bold',
       align: 'right',
       cellClassName: 'text-right',
@@ -758,7 +878,20 @@ export const ReportsPage = () => {
     },
     {
       key: 'margin',
-      title: 'Profit Margin %',
+      title: (
+        <button
+          type="button"
+          onClick={() => {
+            setProfitSortBy('margin');
+            setCurrentPage(1);
+          }}
+          className="hover:text-[#FF5C28] inline-flex items-center gap-1 font-bold cursor-pointer justify-center"
+          title="Click to sort by profit margin %"
+        >
+          <span>Profit Margin %</span>
+          {profitSortBy === 'margin' && <span className="text-[10px] text-[#FF5C28]">↓</span>}
+        </button>
+      ),
       headerClassName: 'w-28 text-center font-bold',
       align: 'center',
       cellClassName: 'text-center',
@@ -908,11 +1041,11 @@ export const ReportsPage = () => {
                 }}
                 className="h-9 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer"
               >
+                <option value="All Dates">All Dates</option>
                 <option value="Today">Today</option>
                 <option value="Yesterday">Yesterday</option>
                 <option value="This Week">This Week</option>
                 <option value="This Month">This Month</option>
-                <option value="All Time">All Time</option>
                 <option value="Custom">Custom Range</option>
               </select>
             )}
@@ -953,9 +1086,10 @@ export const ReportsPage = () => {
                 className="h-9 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer"
               >
                 <option value="All">All Categories</option>
+                <option value="Deals">Deals</option>
                 {activeTab === 'Profit' && <option value="Add-ons">Add-ons</option>}
                 {(categories || [])
-                  .filter((c) => c && c.name && c.name.toLowerCase() !== 'add-ons')
+                  .filter((c) => c && c.name && c.name.toLowerCase() !== 'add-ons' && c.name.toLowerCase() !== 'deals')
                   .map((c) => (
                     <option key={c.id} value={c.name}>
                       {c.name}
@@ -975,6 +1109,15 @@ export const ReportsPage = () => {
                 className="h-9 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer"
               >
                 <option value="All">All Items & Add-ons</option>
+                {Array.isArray(deals) && deals.length > 0 && (
+                  <optgroup label="Deals">
+                    {deals.map((dl) => (
+                      <option key={dl.id || dl.name} value={dl.name}>
+                        {dl.name} (Deal)
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
                 <optgroup label="Menu Items">
                   {(items || []).map((it) => (
                     <option key={it.id || it.name} value={it.name}>
@@ -1818,6 +1961,41 @@ export const ReportsPage = () => {
                   >
                     Add-ons Only
                   </button>
+                  {hasAnyDeals && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfitViewType('deals');
+                        setCurrentPage(1);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                        profitViewType === 'deals'
+                          ? 'bg-white text-[#FF5C28] shadow-2xs font-bold'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      Deals Only
+                    </button>
+                  )}
+                </div>
+
+                {/* Sort By Dropdown */}
+                <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                  <span className="font-semibold text-slate-600">Sort:</span>
+                  <select
+                    value={profitSortBy}
+                    onChange={(e) => {
+                      setProfitSortBy(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="h-7 px-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none cursor-pointer hover:border-slate-300 transition-colors"
+                  >
+                    <option value="recent">Recently Sold (Latest First)</option>
+                    <option value="sales">Net Sales (Highest First)</option>
+                    <option value="profit">Gross Profit (Highest First)</option>
+                    <option value="margin">Profit Margin %</option>
+                    <option value="qty">Qty Sold (Highest First)</option>
+                  </select>
                 </div>
 
                 <div className="flex items-center gap-1.5 text-xs text-slate-500">

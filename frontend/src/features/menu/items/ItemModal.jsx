@@ -6,6 +6,7 @@ import { useAppStore } from '../../../store';
 import { sortCategories } from '../../../domain/rules';
 
 const STANDARD_UNITS = [
+  'Unit',
   'Piece',
   'Cup',
   'Glass',
@@ -75,7 +76,7 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
   );
 
   const [servingUnit, setServingUnit] = useState(
-    item?.unit || item?.servingUnit || 'Piece'
+    item?.unit || item?.servingUnit || 'Unit'
   );
   const [isUnitDropdownOpen, setIsUnitDropdownOpen] = useState(false);
 
@@ -200,7 +201,7 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
       targetCatId = created.id;
     }
 
-    const finalUnit = servingUnit.trim() || 'Piece';
+    const finalUnit = servingUnit.trim() || 'Unit';
 
     const isWeightUnit =
       finalUnit.toLowerCase().includes('kg') ||
@@ -511,7 +512,7 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
                 }
               }}
               onClick={() => setIsUnitDropdownOpen(true)}
-              placeholder="Piece, Cup, 1 Kg, 2 Kg..."
+              placeholder="Unit, Piece, Cup, 1 Kg, 2 Kg..."
               className="w-full h-8 pl-3 pr-8 rounded-full border border-slate-300 bg-white text-xs font-semibold text-slate-800 placeholder:text-slate-400 outline-none focus:outline-none focus:ring-0 focus:border-slate-400"
             />
             <button

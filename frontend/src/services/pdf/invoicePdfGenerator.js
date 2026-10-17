@@ -27,7 +27,7 @@ export function downloadInvoicePdf(order, settings = {}, reversal = null) {
   const lines = Array.isArray(order.lines) ? order.lines : [];
 
   // Business & Store Info
-  const restaurantName = settings?.business?.name || settings?.restaurantName || 'SpiceHub Restaurant & Grill';
+  const restaurantName = order?.businessName || settings?.business?.name || settings?.restaurantName || 'SpiceHub';
   const rawStoreName = order.storeName || settings?.storeName || '';
   const isDuplicateStore = !rawStoreName ||
     rawStoreName.trim().toLowerCase() === restaurantName.trim().toLowerCase() ||
@@ -71,7 +71,11 @@ export function downloadInvoicePdf(order, settings = {}, reversal = null) {
       ? `Custom Weight (${line.selectedWeightGrams}g)`
       : line.selectedPortionLabel || line.baseUnitSnapshot || '';
     const hasAddons = Array.isArray(line.addonSnapshots) && line.addonSnapshots.length > 0;
-    if (portionText || hasAddons) calcY += 3.2;
+    if (line.isDeal && Array.isArray(line.includedItems)) {
+      calcY += line.includedItems.length * 3.2;
+    } else if (portionText || hasAddons) {
+      calcY += 3.2;
+    }
 
     if (hasAddons) {
       const addonNames = line.addonSnapshots
@@ -277,20 +281,30 @@ export function downloadInvoicePdf(order, settings = {}, reversal = null) {
       ? Number(line.portionPrice)
       : (line.baseCalculatedPrice ? Number(line.baseCalculatedPrice) : Math.max(0, unitPrice - addonsTotal));
 
-    let portionDisplay = '';
-    if (portionText) {
-      portionDisplay = (baseItemPrice > 0 && (addonsTotal > 0 || line.pricingMode === 'amount' || line.selectedPortionLabel))
-        ? `Portion: ${portionText} (Rs ${baseItemPrice})`
-        : `Portion: ${portionText}`;
-    } else if (addonsTotal > 0 && baseItemPrice > 0) {
-      portionDisplay = `Base Item (Rs ${baseItemPrice})`;
-    }
-
-    if (portionDisplay) {
+    if (line.isDeal && Array.isArray(line.includedItems) && line.includedItems.length > 0) {
       doc.setFontSize(7.0); // ~9.3px
       doc.setTextColor(100, 116, 139);
-      doc.text(portionDisplay, colItemX + 1.5, y);
-      y += 3.2;
+      line.includedItems.forEach((inc) => {
+        const itemText = `• ${inc.name}${inc.portion ? ` (${inc.portion})` : ''}${inc.quantity && inc.quantity > 1 ? ` x${inc.quantity}` : ''}`;
+        doc.text(itemText, colItemX + 1.5, y);
+        y += 3.2;
+      });
+    } else {
+      let portionDisplay = '';
+      if (portionText) {
+        portionDisplay = (baseItemPrice > 0 && (addonsTotal > 0 || line.pricingMode === 'amount' || line.selectedPortionLabel))
+          ? `Portion: ${portionText} (Rs ${baseItemPrice})`
+          : `Portion: ${portionText}`;
+      } else if (addonsTotal > 0 && baseItemPrice > 0) {
+        portionDisplay = `Base Item (Rs ${baseItemPrice})`;
+      }
+
+      if (portionDisplay) {
+        doc.setFontSize(7.0); // ~9.3px
+        doc.setTextColor(100, 116, 139);
+        doc.text(portionDisplay, colItemX + 1.5, y);
+        y += 3.2;
+      }
     }
 
     // Addons

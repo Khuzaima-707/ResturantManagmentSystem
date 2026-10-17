@@ -22,7 +22,13 @@ import {
   TableRepository,
   ShiftRepository,
   SettingsRepository,
+  DealRepository,
 } from '../services/repositories';
+import {
+  repairDuplicateInvoiceNumbersLocally,
+  getUserCartStorageKey,
+  isNotificationVisibleToUser,
+} from '../domain/selectors/invoiceSelectors';
 
 /**
  * Global RMS Store
@@ -67,15 +73,24 @@ export const useAppStore = create((set, get) => ({
   isCartDrawerOpen: false,
   setCartDrawerOpen: (isOpen) => set({ isCartDrawerOpen: isOpen }),
 
-  // POS Cart State
+  // POS Cart State - Scoped by logged-in user ID
   cart: (() => {
-    const saved = storage.get('pos_cart', null);
+    const activeUser = storage.get('active_user', null);
+    const token = storage.get('auth_token', null);
+    const resolvedUser = activeUser || (token?.includes('cashier') ? { id: 'user_cashier' } : (token?.includes('admin') ? { id: 'user_admin' } : null));
+    if (!resolvedUser) return [];
+    const cartKey = getUserCartStorageKey(resolvedUser);
+    const saved = storage.get(cartKey, null);
     if (Array.isArray(saved)) return saved;
     return [];
   })(),
 
   addToCart: (line) => {
     const existingIndex = get().cart.findIndex((c) => {
+      if (line.isDeal) {
+        return c.isDeal && (c.dealId === line.dealId || c.itemId === line.itemId);
+      }
+      if (c.isDeal) return false;
       if (c.itemId !== line.itemId) return false;
       if (c.pricingMode !== line.pricingMode) return false;
       if (c.selectedPortionLabel !== line.selectedPortionLabel) return false;
@@ -92,10 +107,11 @@ export const useAppStore = create((set, get) => ({
       updated = get().cart.map((item, idx) => {
         if (idx === existingIndex) {
           const newQty = item.quantity + line.quantity;
+          const newSubtotal = (Number(item.lineSubtotal) || 0) + (Number(line.lineSubtotal) || ((Number(item.unitPrice) || 0) * line.quantity));
           return {
             ...item,
             quantity: newQty,
-            lineSubtotal: item.unitPrice * newQty,
+            lineSubtotal: newSubtotal,
           };
         }
         return item;
@@ -104,7 +120,43 @@ export const useAppStore = create((set, get) => ({
       updated = [...get().cart, line];
     }
 
-    storage.set('pos_cart', updated);
+    const currentUser = get().user || storage.get('active_user', null);
+    const cartKey = getUserCartStorageKey(currentUser);
+    const uid = currentUser?.id || (currentUser?.username ? `user_${currentUser.username}` : 'guest');
+    storage.set(cartKey, updated);
+    storage.set(`currentOrder_${uid}`, updated);
+    set({ cart: updated });
+  },
+
+  updateCartLineAddons: (lineId, addonSnapshots) => {
+    const updated = get().cart.map((item) => {
+      if (item.id === lineId) {
+        const itemAddonTotal = Array.isArray(addonSnapshots)
+          ? addonSnapshots.reduce(
+              (sum, a) => sum + (Number(a.price) || 0) * (Number(a.quantity) || 1),
+              0
+            )
+          : 0;
+        const baseRate = Number(item.portionPrice ?? item.basePriceSnapshot ?? item.unitPrice ?? 0);
+        const isFlat = item.addonsAreFlat !== false;
+        const lineSubtotal = isFlat
+          ? (baseRate * item.quantity) + itemAddonTotal
+          : (baseRate + itemAddonTotal) * item.quantity;
+
+        return {
+          ...item,
+          addonSnapshots,
+          addonsTotal: itemAddonTotal,
+          lineSubtotal,
+        };
+      }
+      return item;
+    });
+    const currentUser = get().user || storage.get('active_user', null);
+    const cartKey = getUserCartStorageKey(currentUser);
+    const uid = currentUser?.id || (currentUser?.username ? `user_${currentUser.username}` : 'guest');
+    storage.set(cartKey, updated);
+    storage.set(`currentOrder_${uid}`, updated);
     set({ cart: updated });
   },
 
@@ -112,25 +164,50 @@ export const useAppStore = create((set, get) => ({
     const updated = get().cart.map((item) => {
       if (item.id === lineId) {
         const nextQty = Math.max(1, item.quantity + delta);
+        const itemAddonTotal = Array.isArray(item.addonSnapshots)
+          ? item.addonSnapshots.reduce(
+              (sum, a) => sum + (Number(a.price) || 0) * (Number(a.quantity) || 1),
+              0
+            )
+          : Number(item.addonsTotal) || 0;
+        const baseRate = Number(item.portionPrice ?? item.basePriceSnapshot ?? item.unitPrice ?? 0);
+        const isFlat = item.addonsAreFlat !== false;
+        const lineSubtotal = isFlat
+          ? (baseRate * nextQty) + itemAddonTotal
+          : (baseRate + itemAddonTotal) * nextQty;
+
         return {
           ...item,
           quantity: nextQty,
-          lineSubtotal: item.unitPrice * nextQty,
+          lineSubtotal,
         };
       }
       return item;
     });
-    storage.set('pos_cart', updated);
+    const currentUser = get().user || storage.get('active_user', null);
+    const cartKey = getUserCartStorageKey(currentUser);
+    const uid = currentUser?.id || (currentUser?.username ? `user_${currentUser.username}` : 'guest');
+    storage.set(cartKey, updated);
+    storage.set(`currentOrder_${uid}`, updated);
     set({ cart: updated });
   },
 
   removeCartLine: (lineId) => {
     const updated = get().cart.filter((item) => item.id !== lineId);
-    storage.set('pos_cart', updated);
+    const currentUser = get().user || storage.get('active_user', null);
+    const cartKey = getUserCartStorageKey(currentUser);
+    const uid = currentUser?.id || (currentUser?.username ? `user_${currentUser.username}` : 'guest');
+    storage.set(cartKey, updated);
+    storage.set(`currentOrder_${uid}`, updated);
     set({ cart: updated });
   },
 
   clearCart: () => {
+    const currentUser = get().user || storage.get('active_user', null);
+    const cartKey = getUserCartStorageKey(currentUser);
+    const uid = currentUser?.id || (currentUser?.username ? `user_${currentUser.username}` : 'guest');
+    storage.set(cartKey, []);
+    storage.set(`currentOrder_${uid}`, []);
     storage.set('pos_cart', []);
     const defType = get().settings?.pos?.defaultOrderType || get().settings?.defaultOrderType || 'Dine-In';
     set({ cart: [], orderType: defType });
@@ -138,14 +215,49 @@ export const useAppStore = create((set, get) => ({
 
   // Active User Profile
   user: (() => {
-    const saved = storage.get('active_user', null);
-    if (saved && typeof saved === 'object') return saved;
-    return {
-      name: 'John Holland',
-      role: 'Admin Cashier',
-      initials: 'JH',
-      avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
+    const defaultUserProfiles = {
+      admin: {
+        id: 'user_admin',
+        name: 'John Holland',
+        username: 'admin',
+        email: 'admin@spicehub.pk',
+        role: 'Admin Cashier',
+        initials: 'JH',
+        avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
+      },
+      cashier: {
+        id: 'user_cashier',
+        name: 'Cashier 1',
+        username: 'cashier',
+        email: 'cashier@spicehub.pk',
+        role: 'Cashier',
+        initials: 'C1',
+        avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80',
+      },
     };
+
+    const saved = storage.get('active_user', null);
+    if (saved && typeof saved === 'object') {
+      if (!saved.initials && saved.name) {
+        saved.initials =
+          saved.name
+            .split(' ')
+            .filter(Boolean)
+            .map((n) => n[0].toUpperCase())
+            .slice(0, 2)
+            .join('') || 'U';
+      }
+      return saved;
+    }
+    const token = storage.get('auth_token', null);
+    if (token) {
+      const profiles = storage.get('user_profiles', {});
+      if (token.includes('cashier')) {
+        return profiles.cashier || defaultUserProfiles.cashier;
+      }
+      return profiles.admin || defaultUserProfiles.admin;
+    }
+    return null;
   })(),
 
   // Authentication State
@@ -153,6 +265,27 @@ export const useAppStore = create((set, get) => ({
   isAuthenticated: Boolean(storage.get('auth_token', null)),
 
   login: async ({ usernameOrEmail, password }) => {
+    const defaultUserProfiles = {
+      admin: {
+        id: 'user_admin',
+        name: 'John Holland',
+        username: 'admin',
+        email: 'admin@spicehub.pk',
+        role: 'Admin Cashier',
+        initials: 'JH',
+        avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
+      },
+      cashier: {
+        id: 'user_cashier',
+        name: 'Cashier 1',
+        username: 'cashier',
+        email: 'cashier@spicehub.pk',
+        role: 'Cashier',
+        initials: 'C1',
+        avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80',
+      },
+    };
+
     const norm = (usernameOrEmail || '').trim().toLowerCase();
     const creds = storage.get('auth_credentials', {
       admin: '12345',
@@ -172,30 +305,42 @@ export const useAppStore = create((set, get) => ({
       const role = isLocalAdminMatch ? 'admin' : 'cashier';
       const roleTitle = isLocalAdminMatch ? 'Admin Cashier' : 'Cashier';
       const dummyToken = `jwt_${role}_${Date.now()}`;
-      const userObj = isLocalAdminMatch
-        ? {
-            id: 'user_admin',
-            name: 'John Holland',
-            username: 'admin',
-            email: 'admin@spicehub.pk',
-            role: roleTitle,
-            avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
-          }
-        : {
-            id: 'user_cashier',
-            name: 'Cashier 1',
-            username: 'cashier',
-            email: 'cashier@spicehub.pk',
-            role: roleTitle,
-            avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80',
-          };
+
+      const profiles = storage.get('user_profiles', {});
+      const existingProfile = profiles[role] || defaultUserProfiles[role];
+
+      const userObj = {
+        ...defaultUserProfiles[role],
+        ...existingProfile,
+        id: existingProfile.id || defaultUserProfiles[role].id,
+        username: existingProfile.username || defaultUserProfiles[role].username,
+        role: existingProfile.role || roleTitle,
+        name: existingProfile.name || defaultUserProfiles[role].name,
+      };
+      if (!userObj.initials && userObj.name) {
+        userObj.initials =
+          userObj.name
+            .split(' ')
+            .filter(Boolean)
+            .map((n) => n[0].toUpperCase())
+            .slice(0, 2)
+            .join('') || 'U';
+      }
 
       storage.set('auth_token', dummyToken);
       storage.set('active_user', userObj);
+      profiles[role] = userObj;
+      storage.set('user_profiles', profiles);
+
+      // Load user-scoped cart
+      const userCartKey = getUserCartStorageKey(userObj);
+      const userCart = storage.get(userCartKey, []);
+
       set({
         token: dummyToken,
         user: userObj,
         isAuthenticated: true,
+        cart: Array.isArray(userCart) ? userCart : [],
       });
 
       // Background asynchronous token upgrade with backend (non-blocking)
@@ -209,12 +354,44 @@ export const useAppStore = create((set, get) => ({
           if (data?.success && data?.token) {
             storage.set('auth_token', data.token);
             if (data.user) {
-              storage.set('active_user', data.user);
+              const currentProfiles = storage.get('user_profiles', {});
+              const customProfile = currentProfiles[role] || {};
+              const resolvedName =
+                customProfile.name &&
+                customProfile.name !== 'John Holland' &&
+                customProfile.name !== 'Cashier 1'
+                  ? customProfile.name
+                  : (data.user.name || customProfile.name || userObj.name);
+
+              const mergedUser = {
+                ...userObj,
+                ...data.user,
+                name: resolvedName,
+                role: customProfile.role || data.user.role || userObj.role,
+                avatarUrl:
+                  customProfile.avatarUrl !== undefined
+                    ? customProfile.avatarUrl
+                    : (data.user.avatarUrl || userObj.avatarUrl),
+              };
+              if (!mergedUser.initials && mergedUser.name) {
+                mergedUser.initials =
+                  mergedUser.name
+                    .split(' ')
+                    .filter(Boolean)
+                    .map((n) => n[0].toUpperCase())
+                    .slice(0, 2)
+                    .join('') || 'U';
+              }
+              storage.set('active_user', mergedUser);
+              currentProfiles[role] = mergedUser;
+              storage.set('user_profiles', currentProfiles);
+              set({
+                token: data.token,
+                user: mergedUser,
+              });
+            } else {
+              set({ token: data.token });
             }
-            set({
-              token: data.token,
-              user: data.user || userObj,
-            });
           }
         })
         .catch(() => {});
@@ -231,13 +408,42 @@ export const useAppStore = create((set, get) => ({
       const data = await response.json();
       if (data.success && data.token) {
         storage.set('auth_token', data.token);
-        if (data.user) {
-          storage.set('active_user', data.user);
+        const role = (data.user?.role || '').toLowerCase().includes('cashier') ? 'cashier' : 'admin';
+        const userProfiles = storage.get('user_profiles', {});
+        const customProfile = userProfiles[role] || {};
+        const resolvedName =
+          customProfile.name &&
+          customProfile.name !== 'John Holland' &&
+          customProfile.name !== 'Cashier 1'
+            ? customProfile.name
+            : (data.user?.name || customProfile.name || 'User');
+
+        const finalUser = {
+          ...customProfile,
+          ...(data.user || {}),
+          name: resolvedName,
+        };
+        if (!finalUser.initials && finalUser.name) {
+          finalUser.initials =
+            finalUser.name
+              .split(' ')
+              .filter(Boolean)
+              .map((n) => n[0].toUpperCase())
+              .slice(0, 2)
+              .join('') || 'U';
         }
+        storage.set('active_user', finalUser);
+        userProfiles[role] = finalUser;
+        storage.set('user_profiles', userProfiles);
+
+        const userCartKey = getUserCartStorageKey(finalUser);
+        const userCart = storage.get(userCartKey, []);
+
         set({
           token: data.token,
-          user: data.user || get().user,
+          user: finalUser,
           isAuthenticated: true,
+          cart: Array.isArray(userCart) ? userCart : [],
         });
         return { success: true };
       }
@@ -254,7 +460,14 @@ export const useAppStore = create((set, get) => ({
       // ignore
     }
     storage.remove('auth_token');
-    set({ token: null, isAuthenticated: false });
+    storage.remove('active_user');
+    storage.remove('pos_cart');
+    set({
+      token: null,
+      user: null,
+      isAuthenticated: false,
+      cart: [], // In-memory cart cleared immediately
+    });
   },
 
   changePassword: async ({ targetRole, newPassword }) => {
@@ -288,7 +501,43 @@ export const useAppStore = create((set, get) => ({
   updateUser: (updates) => {
     set((state) => {
       const updatedUser = { ...state.user, ...updates };
+      if (!updatedUser.initials && updatedUser.name) {
+        updatedUser.initials =
+          updatedUser.name
+            .split(' ')
+            .filter(Boolean)
+            .map((n) => n[0].toUpperCase())
+            .slice(0, 2)
+            .join('') || 'U';
+      }
+
+      // 1. Update active user session
       storage.set('active_user', updatedUser);
+
+      // 2. Persist in user_profiles by role key so it never resets across logout/login
+      const userKey = (updatedUser.username || updatedUser.role || 'admin').toLowerCase().includes('cashier')
+        ? 'cashier'
+        : 'admin';
+      const userProfiles = storage.get('user_profiles', {});
+      userProfiles[userKey] = updatedUser;
+      storage.set('user_profiles', userProfiles);
+
+      // 3. Asynchronously sync to backend profile endpoint
+      fetch('/api/auth/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}),
+        },
+        body: JSON.stringify({
+          id: updatedUser.id,
+          username: updatedUser.username || userKey,
+          name: updatedUser.name,
+          role: updatedUser.role,
+          avatarUrl: updatedUser.avatarUrl,
+        }),
+      }).catch(() => {});
+
       return { user: updatedUser };
     });
   },
@@ -308,12 +557,93 @@ export const useAppStore = create((set, get) => ({
     const saved = storage.get('orders', null);
     const catalogItems = storage.get('menu_items', seedMenuItems);
     const catalogAddons = storage.get('addons', seedAddons);
+    const catalogDeals = storage.get('deals', []);
 
     const enrichOrderLines = (orderList) => {
       return (orderList || []).map((o) => {
         if (!Array.isArray(o.lines) || o.lines.length === 0) return o;
         let orderHasChange = false;
         const enrichedLines = o.lines.map((l) => {
+          const qty = Math.max(1, Number(l.quantity || 1));
+          const lineGross = Number(l.grossLineSale ?? l.lineSubtotal ?? (Number(l.unitPrice || 0) * qty));
+          const allocatedDiscount = Number(l.allocatedDiscount || 0);
+          const netRev = Number(l.netRevenue ?? Math.max(0, lineGross - allocatedDiscount));
+
+          // 1. Precise Deal Line COGS & Profit Attribution
+          const lineName = String(l.itemNameSnapshot || l.name || '').trim();
+          const foundDeal = (catalogDeals || []).find(
+            (d) =>
+              d.id === l.dealId ||
+              d.id === l.itemId ||
+              (d.name && lineName && d.name.trim().toLowerCase() === lineName.toLowerCase()) ||
+              (lineName.toLowerCase().includes('combo') && d.name && d.name.toLowerCase().includes('combo')) ||
+              (lineName.toLowerCase().includes('deal') && d.name && d.name.toLowerCase().includes('deal'))
+          );
+
+          const isDeal = Boolean(
+            l.isDeal ||
+            l.pricingMode === 'deal' ||
+            l.dealId ||
+            (Array.isArray(l.includedItems) && l.includedItems.length > 0) ||
+            foundDeal !== undefined ||
+            lineName.toLowerCase().includes('deal') ||
+            lineName.toLowerCase().includes('combo') ||
+            l.categoryIdSnapshot === 'cat-deals' ||
+            l.categoryNameSnapshot === 'Deals' ||
+            l.categoryName === 'Deals'
+          );
+
+          if (isDeal) {
+            const incItems = (Array.isArray(l.includedItems) && l.includedItems.length > 0)
+              ? l.includedItems
+              : (foundDeal?.includedItems || []);
+
+            let dealUnitCost = 0;
+            let hasDealCost = incItems.length > 0;
+            incItems.forEach((inc) => {
+              if (inc.costPrice !== undefined && inc.costPrice !== null && !isNaN(Number(inc.costPrice)) && Number(inc.costPrice) >= 0) {
+                dealUnitCost += Number(inc.costPrice) * (Number(inc.quantity) || 1);
+              } else {
+                const catItem = (catalogItems || []).find(
+                  (ci) => ci.id === inc.itemId || (ci.name && inc.name && ci.name.trim().toLowerCase() === inc.name.trim().toLowerCase())
+                );
+                if (catItem?.costPrice !== undefined && catItem?.costPrice !== null) {
+                  dealUnitCost += Number(catItem.costPrice) * (Number(inc.quantity) || 1);
+                } else {
+                  hasDealCost = false;
+                }
+              }
+            });
+
+            const resolvedCost = hasDealCost && dealUnitCost > 0
+              ? dealUnitCost
+              : (l.costPriceSnapshot && Number(l.costPriceSnapshot) > 0 ? Number(l.costPriceSnapshot) : null);
+
+            if (resolvedCost !== null) {
+              const totalCOGS = resolvedCost * qty;
+              const grossProfit = Math.round(netRev - totalCOGS);
+              const margin = netRev > 0 ? Number(((grossProfit / netRev) * 100).toFixed(2)) : 0;
+              orderHasChange = true;
+              return {
+                ...l,
+                isDeal: true,
+                dealId: l.dealId || foundDeal?.id || l.itemId,
+                pricingMode: 'deal',
+                categoryIdSnapshot: 'cat-deals',
+                categoryNameSnapshot: 'Deals',
+                includedItems: incItems,
+                costPriceSnapshot: resolvedCost,
+                itemCOGS: totalCOGS,
+                addonCOGS: 0,
+                totalCOGS,
+                grossProfit,
+                grossProfitMargin: margin,
+                hasCost: true,
+                hasCostPrice: true,
+              };
+            }
+          }
+
           if (l.costPriceSnapshot !== undefined && l.costPriceSnapshot !== null && Number(l.costPriceSnapshot) > 0 && l.itemCOGS !== undefined) {
             return l;
           }
@@ -324,7 +654,6 @@ export const useAppStore = create((set, get) => ({
           const itemCost = (l.costPriceSnapshot && Number(l.costPriceSnapshot) > 0)
             ? Number(l.costPriceSnapshot)
             : (foundItem?.costPrice || Math.round((Number(l.unitPrice) || 0) * 0.55));
-          const qty = Math.max(1, Number(l.quantity || 1));
           const isWeight = Boolean(l.pricingMode === 'portion' || l.pricingMode === 'custom_weight' || l.selectedWeightGrams);
           let derivedGrams = Number(l.selectedWeightGrams) || 0;
           if (isWeight && derivedGrams <= 0) {
@@ -358,8 +687,6 @@ export const useAppStore = create((set, get) => ({
             return { ...a, costPrice: aCost };
           });
           const totalCOGS = lineItemCOGS + lineAddonCOGS;
-          const lineGross = Number(l.grossLineSale ?? l.lineSubtotal ?? (Number(l.unitPrice || 0) * qty));
-          const netRev = Number(l.netRevenue ?? lineGross);
           const grossProfit = Math.round(netRev - totalCOGS);
           const margin = netRev > 0 ? Number(((grossProfit / netRev) * 100).toFixed(2)) : 0;
 
@@ -379,15 +706,17 @@ export const useAppStore = create((set, get) => ({
     };
 
     if (saved && Array.isArray(saved)) {
-      // Deduplicate by ID and invoiceNumber
+      // 1. Repair any duplicate invoice numbers in existing data without deleting any order
+      const repaired = repairDuplicateInvoiceNumbersLocally(saved);
+
+      // 2. Deduplicate strictly identical records by ID
       const seen = new Set();
       const deduped = [];
-      for (const o of saved) {
-        const key = o.id || o.invoiceNumber;
-        if (key && !seen.has(key)) {
-          seen.add(key);
+      for (const o of repaired) {
+        if (o.id && !seen.has(o.id)) {
+          seen.add(o.id);
           deduped.push(o);
-        } else if (!key) {
+        } else if (!o.id) {
           deduped.push(o);
         }
       }
@@ -436,6 +765,14 @@ export const useAppStore = create((set, get) => ({
 
   addons: (() => {
     const saved = storage.get('addons', null);
+    if (saved && Array.isArray(saved)) {
+      return saved;
+    }
+    return [];
+  })(),
+
+  deals: (() => {
+    const saved = storage.get('deals', null);
     if (saved && Array.isArray(saved)) {
       return saved;
     }
@@ -582,6 +919,10 @@ export const useAppStore = create((set, get) => ({
         orderType: o.orderType,
         read: idx >= 3,
         timestamp: o.completedAt || o.createdAt || new Date().toISOString(),
+        createdByUserId: o.createdByUserId || 'user_cashier',
+        createdByRole: o.createdByRole || 'cashier',
+        targetUserId: o.createdByUserId || null,
+        targetRoles: o.createdByRole === 'admin' ? ['admin'] : ['cashier'],
       }));
       storage.set('notifications', initial);
       return initial;
@@ -609,7 +950,7 @@ export const useAppStore = create((set, get) => ({
   },
 
   // Append new completed order (used by POS checkout)
-  addOrder: (order) => {
+  addOrder: async (order) => {
     const currentOrders = get().orders || [];
     const alreadyExists = currentOrders.some(
       (o) =>
@@ -618,29 +959,14 @@ export const useAppStore = create((set, get) => ({
     );
     if (alreadyExists) {
       console.warn('[Store] Duplicate order rejected by addOrder:', order.id, order.invoiceNumber);
-      return;
+      return order;
     }
 
     const updated = [order, ...currentOrders];
     storage.set('orders', updated);
 
-    // Live sync to MongoDB Atlas via OrderRepository
-    OrderRepository.create(order)
-      .then((synced) => {
-        if (synced && synced.id) {
-          const liveOrders = get().orders || [];
-          const replaced = liveOrders.map((o) =>
-            o.id === order.id || o.id === synced.id ? { ...o, ...synced } : o
-          );
-          storage.set('orders', replaced);
-          set({ orders: replaced });
-        }
-      })
-      .catch((err) => {
-        console.warn('[Store] Order Atlas sync warning:', err.message);
-      });
-
-    // Create real notification for each new order
+    // Create real notification for each new order with user targeting
+    const isOrderAdmin = String(order.createdByRole || '').toLowerCase() === 'admin';
     const newNotif = {
       id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       type: 'order',
@@ -652,11 +978,33 @@ export const useAppStore = create((set, get) => ({
       orderType: order.orderType,
       read: false,
       timestamp: new Date().toISOString(),
+      createdByUserId: order.createdByUserId || null,
+      createdByRole: order.createdByRole || (isOrderAdmin ? 'admin' : 'cashier'),
+      targetUserId: order.createdByUserId || null,
+      targetRoles: isOrderAdmin ? ['admin'] : ['admin', 'cashier'],
     };
     const updatedNotifs = [newNotif, ...(get().notifications || [])];
     storage.set('notifications', updatedNotifs);
 
     set({ orders: updated, notifications: updatedNotifs });
+
+    // Live sync to MongoDB Atlas via OrderRepository
+    try {
+      const synced = await OrderRepository.create(order);
+      if (synced && synced.id) {
+        const liveOrders = get().orders || [];
+        const replaced = liveOrders.map((o) =>
+          o.id === order.id || o.id === synced.id ? { ...o, ...synced } : o
+        );
+        storage.set('orders', replaced);
+        set({ orders: replaced });
+        return synced;
+      }
+    } catch (err) {
+      console.warn('[Store] Order Atlas sync warning:', err.message);
+    }
+
+    return order;
   },
 
   // Deletion & Audit History State
@@ -1115,11 +1463,71 @@ export const useAppStore = create((set, get) => ({
     });
   },
 
-  // Complete wipe of all restaurant data (categories, items, addons, orders, reversals, expenses, tables)
+  // ================= DEAL ACTIONS =================
+  addDeal: (deal) => {
+    const newRecord = {
+      ...deal,
+      id: deal.id || `deal-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      createdAt: deal.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const updated = [newRecord, ...get().deals];
+    storage.set('deals', updated);
+    set({ deals: updated });
+
+    // Live sync to MongoDB Atlas via DealRepository
+    DealRepository.create(newRecord)
+      .then((synced) => {
+        if (synced && synced.id) {
+          const liveDeals = get().deals || [];
+          const replaced = liveDeals.map((d) =>
+            d.id === newRecord.id || d.id === synced.id ? { ...d, ...synced } : d
+          );
+          storage.set('deals', replaced);
+          set({ deals: replaced });
+        }
+      })
+      .catch((err) => {
+        console.warn('[Store] Deal Atlas sync warning:', err.message);
+      });
+
+    return newRecord;
+  },
+
+  updateDeal: (id, updates) => {
+    const updated = get().deals.map((d) =>
+      d.id === id ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d
+    );
+    storage.set('deals', updated);
+    set({ deals: updated });
+
+    // Live sync to MongoDB Atlas via DealRepository
+    DealRepository.update(id, updates).catch((err) => {
+      console.warn('[Store] Deal update Atlas sync warning:', err.message);
+    });
+  },
+
+  setDealStatus: (id, status) => {
+    get().updateDeal(id, { status });
+  },
+
+  deleteDeal: (id) => {
+    const updated = get().deals.filter((d) => d.id !== id);
+    storage.set('deals', updated);
+    set({ deals: updated });
+
+    // Live sync to MongoDB Atlas via DealRepository
+    DealRepository.delete(id).catch((err) => {
+      console.warn('[Store] Deal delete Atlas sync warning:', err.message);
+    });
+  },
+
+  // Complete wipe of all restaurant data (categories, items, addons, deals, orders, reversals, expenses, tables)
   clearAllData: async () => {
     storage.set('categories', []);
     storage.set('menu_items', []);
     storage.set('addons', []);
+    storage.set('deals', []);
     storage.set('orders', []);
     storage.set('reversals', []);
     storage.set('expenses', []);
@@ -1127,6 +1535,10 @@ export const useAppStore = create((set, get) => ({
     storage.set('shifts', []);
     storage.set('current_shift', null);
     storage.set('pos_cart', []);
+    storage.set('cart_user_admin', []);
+    storage.set('cart_user_cashier', []);
+    storage.set('currentOrder_user_admin', []);
+    storage.set('currentOrder_user_cashier', []);
     storage.set('notifications', []);
     const safeDefaults = getDefaultSettings();
     storage.set('settings', safeDefaults);
@@ -1140,6 +1552,7 @@ export const useAppStore = create((set, get) => ({
       categories: [],
       items: [],
       addons: [],
+      deals: [],
       orders: [],
       reversals: [],
       expenses: [],
@@ -1184,10 +1597,11 @@ export const useAppStore = create((set, get) => ({
   // Synchronize store with live Express + MongoDB Atlas backend
   syncWithBackend: async () => {
     try {
-      const [cats, its, adds, ords, revs, exps, tbls, curShift] = await Promise.all([
+      const [cats, its, adds, dls, ords, revs, exps, tbls, curShift] = await Promise.all([
         CategoryRepository.getAll().catch(() => null),
         ItemRepository.getAll().catch(() => null),
         AddonRepository.getAll().catch(() => null),
+        DealRepository.getAll().catch(() => null),
         OrderRepository.getAll().catch(() => null),
         ReversalRepository.getAll().catch(() => null),
         ExpenseRepository.getAll().catch(() => null),
@@ -1234,6 +1648,19 @@ export const useAppStore = create((set, get) => ({
         const mergedAdds = [...adds, ...unsyncedAdds];
         updates.addons = mergedAdds;
         storage.set('addons', mergedAdds);
+      }
+
+      // 3.5. Deals
+      if (Array.isArray(dls)) {
+        const localDeals = get().deals || [];
+        const backendDealMap = new Map((dls || []).map((d) => [d.id, d]));
+        const unsyncedDeals = localDeals.filter((d) => d?.id && !backendDealMap.has(d.id));
+        unsyncedDeals.forEach((d) => {
+          DealRepository.create(d).catch(() => {});
+        });
+        const mergedDeals = [...dls, ...unsyncedDeals];
+        updates.deals = mergedDeals;
+        storage.set('deals', mergedDeals);
       }
 
       // 4. Orders

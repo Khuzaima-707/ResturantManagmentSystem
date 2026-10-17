@@ -19,7 +19,10 @@ async function runItemTests() {
   console.log(`   📡 Local test server listening on ${baseUrl}`);
 
   try {
-    // 2. Test SEED default items
+    // 2. Ensure default categories are seeded so relational checks pass
+    await fetch(`${baseUrl}/api/categories/seed`, { method: 'POST' });
+
+    // Test SEED default items
     console.log('\n2. Testing POST /api/items/seed...');
     const seedRes = await fetch(`${baseUrl}/api/items/seed`, { method: 'POST' });
     const seedData = await seedRes.json();

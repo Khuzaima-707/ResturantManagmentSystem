@@ -6,7 +6,10 @@ const orderLineSchema = z.object({
   itemNameSnapshot: z.string().trim().min(1, 'Item name snapshot is required'),
   itemImageSnapshot: z.string().trim().optional().default(''),
   categoryIdSnapshot: z.string().trim().optional().default(''),
-  pricingMode: z.enum(['piece', 'portion', 'custom_weight']).default('piece'),
+  pricingMode: z.enum(['piece', 'portion', 'custom_weight', 'deal']).default('piece'),
+  isDeal: z.boolean().optional().default(false),
+  dealId: z.string().trim().nullable().optional(),
+  includedItems: z.array(z.any()).optional().default([]),
   selectedPortionLabel: z.string().trim().optional().default(''),
   selectedWeightGrams: z.number().min(0).optional().default(0),
   baseUnitSnapshot: z.string().trim().optional().default('piece'),
@@ -49,6 +52,11 @@ const orderLineSchema = z.object({
 export const createOrderSchema = z
   .object({
     id: z.string().trim().optional(),
+    invoicePrefix: z.string().trim().nullable().optional(),
+    invoiceNumber: z.string().trim().nullable().optional(),
+    createdByUserId: z.string().trim().nullable().optional(),
+    createdByName: z.string().trim().nullable().optional(),
+    createdByRole: z.string().trim().nullable().optional(),
     orderType: z.enum(['Dine-In', 'Takeaway']).default('Dine-In'),
     guestCount: z.number().int().min(1).default(1).optional(),
     cashierName: z.string().trim().max(100).default('Cashier 1').optional(),

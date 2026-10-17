@@ -85,9 +85,8 @@ export const InvoiceModal = ({
     hour12: true,
   });
 
-  const rawRestName = settings?.business?.name || settings?.restaurantName || 'SpiceHub Restaurant & Grill';
-  const restaurantName = rawRestName === 'SpiceHub' ? 'SpiceHub Restaurant & Grill' : rawRestName;
-  const restaurantSub = 'Restaurant & Grill';
+  const restaurantName = order?.businessName || settings?.business?.name || settings?.restaurantName || 'SpiceHub';
+  const restaurantSub = order?.tagline || settings?.business?.tagline || settings?.tagline || '';
   const address =
     settings?.business?.address ||
     (settings?.address && settings?.address !== 'Shop #4, Food Street, Main Boulevard'
@@ -220,7 +219,9 @@ export const InvoiceModal = ({
                     <h3 className="font-bold text-sm sm:text-base text-slate-900 leading-tight">
                       {restaurantName}
                     </h3>
-                    <p className="text-[11px] text-slate-400 mt-0.5">{restaurantSub}</p>
+                    {restaurantSub ? (
+                      <p className="text-[11px] text-slate-400 mt-0.5">{restaurantSub}</p>
+                    ) : null}
                   </div>
                 </div>
 
@@ -298,14 +299,27 @@ export const InvoiceModal = ({
                             {idx + 1}
                           </td>
                           <td className="py-2.5 px-1 align-top">
-                            <div className="font-bold text-slate-900 text-[11px]">
-                              {line.itemNameSnapshot}
+                            <div className="font-bold text-slate-900 text-[11px] flex items-center gap-1">
+                              {line.isDeal && (
+                                <span className="px-1 py-0.2 rounded-xs bg-[#FF5C28] text-white text-[8px] font-black shrink-0">
+                                  DEAL
+                                </span>
+                              )}
+                              <span>{line.itemNameSnapshot}</span>
                             </div>
-                            {portionDisplay && (
+                            {line.isDeal && Array.isArray(line.includedItems) && line.includedItems.length > 0 ? (
+                              <div className="text-[10px] text-slate-500 font-medium mt-0.5 space-y-0.5">
+                                {line.includedItems.map((inc, i) => (
+                                  <div key={i}>
+                                    • {inc.name}{inc.portion ? ` (${inc.portion})` : ''}{inc.quantity && inc.quantity > 1 ? ` x${inc.quantity}` : ''}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : portionDisplay ? (
                               <div className="text-[10px] text-slate-500 font-medium mt-0.5">
                                 {portionDisplay}
                               </div>
-                            )}
+                            ) : null}
                             {Array.isArray(line.addonSnapshots) &&
                               line.addonSnapshots.length > 0 && (
                                 <div className="text-[10px] text-[#FF5C28] mt-0.5">

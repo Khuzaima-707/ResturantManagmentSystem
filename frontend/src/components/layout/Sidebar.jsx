@@ -279,7 +279,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
                 />
               ) : (
                 <div className="w-8 h-8 rounded-full bg-orange-100 text-[#FF5C28] flex items-center justify-center font-bold text-xs border border-orange-200">
-                  {user?.initials || 'JH'}
+                  {user?.initials || ((user?.role || '').toLowerCase().includes('cashier') ? 'C1' : 'JH')}
                 </div>
               )}
               <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white" />
@@ -287,10 +287,10 @@ export const Sidebar = ({ isOpen, onClose }) => {
             {/* Name & Role */}
             <div className="min-w-0 truncate">
               <span className="text-xs font-semibold text-slate-800 block truncate leading-tight group-hover:text-[#FF5C28] transition-colors">
-                {user?.name || 'John Holland'}
+                {user?.name || ((user?.role || '').toLowerCase().includes('cashier') ? 'Cashier 1' : 'John Holland')}
               </span>
               <span className="text-[10px] text-slate-400 font-normal block leading-tight mt-0.5">
-                {user?.role || 'Admin Cashier'}
+                {user?.role || ((user?.role || '').toLowerCase().includes('cashier') ? 'Cashier' : 'Admin Cashier')}
               </span>
             </div>
           </div>

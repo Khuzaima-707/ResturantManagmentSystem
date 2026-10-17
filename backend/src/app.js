@@ -16,6 +16,7 @@ import tableRoutes from './routes/tableRoutes.js';
 import shiftRoutes from './routes/shiftRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
+import dealRoutes from './routes/dealRoutes.js';
 
 export const app = express();
 
@@ -91,6 +92,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/tables', tableRoutes);
 app.use('/api/shifts', shiftRoutes);
+app.use('/api/deals', dealRoutes);
 app.use('/api/upload', uploadRoutes);
 
 // 404 & Global Error Handling
