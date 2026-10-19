@@ -318,6 +318,29 @@ const OrderSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    balanceDue: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    paymentStatus: {
+      type: String,
+      enum: ['paid', 'partial', 'unpaid'],
+      default: 'paid',
+      index: true,
+    },
+    settlementHistory: [
+      {
+        id: String,
+        amountPaid: Number,
+        previousBalance: Number,
+        remainingBalance: Number,
+        paymentMethod: String,
+        settledAt: { type: Date, default: Date.now },
+        settledBy: String,
+        note: String,
+      },
+    ],
     reversalId: {
       type: String,
       default: null,

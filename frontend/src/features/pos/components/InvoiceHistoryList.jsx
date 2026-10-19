@@ -8,6 +8,7 @@ import {
   Receipt,
   Trash2,
   RotateCcw as ResetIcon,
+  Wallet,
 } from 'lucide-react';
 import { useAppStore } from '../../../store';
 import { DataTable } from '../../../components/ui/DataTable';
@@ -25,6 +26,7 @@ import {
 import { downloadInvoicePdf } from '../../../services/pdf/invoicePdfGenerator';
 import { InvoiceModal } from './InvoiceModal';
 import { ReversalModal } from './ReversalModal';
+import { SettleBalanceModal } from './SettleBalanceModal';
 
 /**
  * InvoiceHistoryList Component
@@ -49,11 +51,23 @@ export const InvoiceHistoryList = () => {
   // Modals
   const [selectedInvoiceForView, setSelectedInvoiceForView] = useState(null);
   const [selectedInvoiceForReversal, setSelectedInvoiceForReversal] = useState(null);
+  const [orderToSettle, setOrderToSettle] = useState(null);
 
   // Scoped orders based on role ownership
   const visibleOrders = useMemo(() => {
     return filterOrdersByOwnership(orders, user);
   }, [orders, user]);
+
+  // Outstanding Invoices & Total Amount
+  const outstandingInvoices = useMemo(() => {
+    return visibleOrders.filter(
+      (o) => Number(o.balanceDue) > 0 && (o.status || '').toLowerCase() !== 'reversed'
+    );
+  }, [visibleOrders]);
+
+  const totalOutstandingAmount = useMemo(() => {
+    return outstandingInvoices.reduce((sum, o) => sum + (Number(o.balanceDue) || 0), 0);
+  }, [outstandingInvoices]);
 
   // Sorted and filtered list
   const historyList = useMemo(() => {
@@ -167,13 +181,28 @@ export const InvoiceHistoryList = () => {
       headerClassName: 'w-24 text-center',
       align: 'center',
       cellClassName: 'text-center',
-      render: (status) => {
+      render: (status, row) => {
         const isReversed = (status || '').toLowerCase() === 'reversed';
-        return isReversed ? (
-          <Badge variant="danger" size="sm">
-            Reversed
-          </Badge>
-        ) : (
+        const isPartial = Number(row?.balanceDue) > 0 || (status || '').toLowerCase() === 'partial';
+        if (isReversed) {
+          return (
+            <Badge variant="danger" size="sm">
+              Reversed
+            </Badge>
+          );
+        }
+        if (isPartial) {
+          return (
+            <Badge
+              variant="warning"
+              size="sm"
+              title={`Balance Due: ${formatCurrency(row?.balanceDue || 0)}`}
+            >
+              Partial
+            </Badge>
+          );
+        }
+        return (
           <Badge variant="success" size="sm">
             Completed
           </Badge>
@@ -228,6 +257,19 @@ export const InvoiceHistoryList = () => {
               <Download className="w-3.5 h-3.5" />
             </button>
 
+            {/* Pay Balance (if partial balance due) */}
+            {Number(row?.balanceDue) > 0 && (row?.status || '').toLowerCase() !== 'reversed' && (
+              <button
+                type="button"
+                onClick={() => setOrderToSettle(row)}
+                className="p-1.5 rounded-lg text-amber-600 hover:text-amber-800 hover:bg-amber-50 transition-colors cursor-pointer"
+                title={`Pay remaining balance (${formatCurrency(row.balanceDue)})`}
+                aria-label="Pay Balance"
+              >
+                <Wallet className="w-3.5 h-3.5" />
+              </button>
+            )}
+
             {/* Reverse Invoice (if eligible) */}
             {reversible ? (
               <button
@@ -261,6 +303,7 @@ export const InvoiceHistoryList = () => {
 
   return (
     <div className="space-y-4">
+
       {/* Filters Bar */}
       <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-3">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
@@ -317,6 +360,7 @@ export const InvoiceHistoryList = () => {
             >
               <option value="All">All Statuses</option>
               <option value="completed">Completed</option>
+              <option value="partial">Partial</option>
               <option value="reversed">Reversed</option>
             </select>
 
@@ -430,6 +474,18 @@ export const InvoiceHistoryList = () => {
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* Settle Balance Modal */}
+      {orderToSettle && (
+        <SettleBalanceModal
+          order={orderToSettle}
+          isOpen={Boolean(orderToSettle)}
+          onClose={() => setOrderToSettle(null)}
+          onSettled={(updated) => {
+            setOrderToSettle(null);
+          }}
+        />
       )}
     </div>
   );

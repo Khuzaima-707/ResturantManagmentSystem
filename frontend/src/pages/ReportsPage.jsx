@@ -5,7 +5,6 @@ import {
   TrendingUp,
   RotateCcw,
   BarChart2,
-  PieChart as PieIcon,
   Download,
   Printer,
   FileSpreadsheet,
@@ -17,22 +16,10 @@ import {
   AlertTriangle,
   Lock,
   Calendar,
+  FileText,
+  CheckCircle2,
+  Layers,
 } from 'lucide-react';
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-  AreaChart,
-  Area,
-  Legend,
-  PieChart,
-  Pie,
-  Cell,
-} from 'recharts';
 import { KPICard } from '../components/ui/KPICard';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
 import { Tabs } from '../components/ui/Tabs';
@@ -52,6 +39,9 @@ import {
   getTaxBreakdown,
   getDiscountBreakdown,
   getProfitAndCostReportData,
+  deriveFinancialSummaryReport,
+  sortInvoicesDescending,
+  sortInvoicesAscending,
 } from '../domain/selectors/reportSelectors';
 import {
   groupSalesByDate,
@@ -68,6 +58,8 @@ import {
   exportReversalReportCsv,
   exportProfitReportExcel,
   exportProfitReportCsv,
+  exportFinancialSummaryExcel,
+  exportFinancialSummaryCsv,
   downloadReportPdf,
 } from '../services/export/reportExporter';
 import { InvoiceModal } from '../features/pos/components/InvoiceModal';
@@ -116,6 +108,8 @@ export const ReportsPage = () => {
   const [selectedStatus, setSelectedStatus] = useState('All');
   const [selectedReason, setSelectedReason] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [financialTableTab, setFinancialTableTab] = useState('items'); // 'items' | 'orders'
+  const [invoiceSortOrder, setInvoiceSortOrder] = useState('desc'); // 'desc' (5->1) | 'asc' (1->5)
 
   // Pagination
   const [pageSize, setPageSize] = useState(10);
@@ -131,6 +125,7 @@ export const ReportsPage = () => {
         { id: 'Sales', label: "Today's Sales" },
         { id: 'Revenue', label: "Today's Revenue" },
         { id: 'Reversals', label: "Today's Reversals" },
+        { id: 'FinancialSummary', label: "Today's Financial Summary" },
       ];
     }
     return [
@@ -138,6 +133,7 @@ export const ReportsPage = () => {
       { id: 'Revenue', label: 'Revenue' },
       { id: 'Reversals', label: 'Reversals' },
       { id: 'Profit', label: 'Profit & Cost' },
+      { id: 'FinancialSummary', label: 'Financial Summary' },
     ];
   }, [isCashier]);
 
@@ -174,7 +170,7 @@ export const ReportsPage = () => {
 
   // Unified Filtered Datasets (Single source of truth)
   const filteredOrders = useMemo(() => {
-    return filterReportOrders(visibleOrders, {
+    const list = filterReportOrders(visibleOrders, {
       datePreset: effectiveDatePreset,
       customRange: effectiveCustomRange,
       category: selectedCategory,
@@ -183,6 +179,9 @@ export const ReportsPage = () => {
       status: selectedStatus,
       searchQuery,
     });
+    return invoiceSortOrder === 'asc'
+      ? [...list].sort(sortInvoicesAscending)
+      : [...list].sort(sortInvoicesDescending);
   }, [
     visibleOrders,
     effectiveDatePreset,
@@ -192,16 +191,34 @@ export const ReportsPage = () => {
     selectedOrderType,
     selectedStatus,
     searchQuery,
+    invoiceSortOrder,
   ]);
 
   const filteredReversals = useMemo(() => {
-    return filterReportReversals(visibleReversals, {
+    const list = filterReportReversals(visibleReversals, {
       datePreset: effectiveDatePreset,
       customRange: effectiveCustomRange,
       reason: selectedReason,
       searchQuery,
     });
-  }, [visibleReversals, effectiveDatePreset, effectiveCustomRange, selectedReason, searchQuery]);
+    return invoiceSortOrder === 'asc'
+      ? [...list].sort(sortInvoicesAscending)
+      : [...list].sort(sortInvoicesDescending);
+  }, [visibleReversals, effectiveDatePreset, effectiveCustomRange, selectedReason, searchQuery, invoiceSortOrder]);
+
+  const reversedOrderIds = useMemo(() => {
+    return new Set(
+      Array.isArray(filteredReversals)
+        ? filteredReversals.map((r) => r.originalOrderId || r.orderId).filter(Boolean)
+        : []
+    );
+  }, [filteredReversals]);
+
+  const validFilteredOrders = useMemo(() => {
+    return filteredOrders.filter(
+      (o) => !reversedOrderIds.has(o.id) && (o.status || '').toLowerCase() !== 'reversed'
+    );
+  }, [filteredOrders, reversedOrderIds]);
 
   // Reset Filters
   const handleResetFilters = () => {
@@ -266,6 +283,44 @@ export const ReportsPage = () => {
 
   const profitKpis = profitReportData.kpis;
   const profitItemRows = profitReportData.itemRows;
+
+  // Role Visibility: Admin sees full summary including costs/profits; Cashier is restricted
+  const canViewCosts = !isCashier;
+
+  // Financial Summary / Profit & Loss Report Data (Reconciled statement, trend & item profitability)
+  const financialSummaryReport = useMemo(() => {
+    return deriveFinancialSummaryReport(
+      visibleOrders,
+      visibleReversals,
+      {
+        datePreset: effectiveDatePreset,
+        customRange: effectiveCustomRange,
+        category: selectedCategory,
+        item: selectedItem !== 'All' ? selectedItem : searchQuery,
+        paymentMethod: selectedPaymentMethod,
+        orderType: selectedOrderType,
+        status: selectedStatus,
+        searchQuery,
+        sortBy: profitSortBy,
+      },
+      items,
+      addons
+    );
+  }, [
+    visibleOrders,
+    visibleReversals,
+    effectiveDatePreset,
+    effectiveCustomRange,
+    selectedCategory,
+    selectedItem,
+    selectedPaymentMethod,
+    selectedOrderType,
+    selectedStatus,
+    searchQuery,
+    profitSortBy,
+    items,
+    addons,
+  ]);
 
   // --- CHARTS & BREAKDOWNS ---
   // Sales Daily Chart
@@ -346,6 +401,15 @@ export const ReportsPage = () => {
         filters: filterMetadata,
         settings,
       });
+    } else if (activeTab === 'FinancialSummary') {
+      exportFinancialSummaryExcel({
+        statement: financialSummaryReport.statement,
+        itemRows: financialSummaryReport.itemRows,
+        filters: filterMetadata,
+        settings,
+        user,
+        canViewCosts,
+      });
     } else {
       exportReversalReportExcel({
         reversals: filteredReversals,
@@ -358,7 +422,7 @@ export const ReportsPage = () => {
 
   const handleExportCsv = () => {
     const filterMetadata = {
-      datePreset,
+      datePreset: effectiveDatePreset,
       category: selectedCategory,
       item: selectedItem !== 'All' ? selectedItem : searchQuery,
       paymentMethod: selectedPaymentMethod,
@@ -390,6 +454,15 @@ export const ReportsPage = () => {
         filters: filterMetadata,
         settings,
       });
+    } else if (activeTab === 'FinancialSummary') {
+      exportFinancialSummaryCsv({
+        statement: financialSummaryReport.statement,
+        itemRows: financialSummaryReport.itemRows,
+        filters: filterMetadata,
+        settings,
+        user,
+        canViewCosts,
+      });
     } else {
       exportReversalReportCsv({
         reversals: filteredReversals,
@@ -401,6 +474,19 @@ export const ReportsPage = () => {
   };
 
   const handleDownloadPdf = () => {
+    if (activeTab === 'FinancialSummary') {
+      downloadReportPdf({
+        reportType: 'Financial Summary',
+        statement: financialSummaryReport.statement,
+        itemRows: financialSummaryReport.itemRows,
+        filters: { datePreset: effectiveDatePreset },
+        settings,
+        user,
+        canViewCosts,
+      });
+      return;
+    }
+
     const kpisToExport =
       activeTab === 'Sales'
         ? salesKpis
@@ -419,8 +505,10 @@ export const ReportsPage = () => {
     downloadReportPdf({
       reportType: activeTab === 'Profit' ? 'Profit & Cost' : activeTab,
       kpis: kpisToExport,
-      filters: { datePreset },
+      filters: { datePreset: effectiveDatePreset },
       settings,
+      user,
+      canViewCosts,
     });
   };
 
@@ -433,29 +521,46 @@ export const ReportsPage = () => {
   const salesTableColumns = [
     {
       key: 'invoiceNumber',
-      title: 'Invoice #',
-      headerClassName: 'w-28 font-bold',
+      title: (
+        <button
+          type="button"
+          onClick={() => {
+            setInvoiceSortOrder((d) => (d === 'desc' ? 'asc' : 'desc'));
+            setCurrentPage(1);
+          }}
+          className="hover:text-[#FF5C28] inline-flex items-center gap-1 font-bold cursor-pointer"
+          title={`Click to sort invoices (${invoiceSortOrder === 'desc' ? 'currently newest first' : 'currently oldest first'})`}
+        >
+          <span>Invoice #</span>
+          <span className="text-[10px] text-[#FF5C28] font-bold">
+            {invoiceSortOrder === 'desc' ? '↓' : '↑'}
+          </span>
+        </button>
+      ),
+      headerClassName: 'w-32 font-bold whitespace-nowrap',
+      cellClassName: 'whitespace-nowrap',
       render: (invNum, row) => (
         <button
           type="button"
           onClick={() => setSelectedInvoiceForView(row)}
-          className="font-bold text-xs text-[#FF5C28] hover:underline cursor-pointer flex items-center gap-1"
+          className="font-bold text-xs text-[#FF5C28] hover:underline cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
         >
-          <Receipt className="w-3.5 h-3.5" />
-          <span>{invNum || `#${row.id}`}</span>
+          <Receipt className="w-3.5 h-3.5 shrink-0" />
+          <span className="whitespace-nowrap font-mono">{invNum || `#${row.id}`}</span>
         </button>
       ),
     },
     {
       key: 'completedAt',
       title: 'Date & Time',
-      headerClassName: 'w-36',
+      headerClassName: 'w-36 whitespace-nowrap',
+      cellClassName: 'whitespace-nowrap',
       render: (dVal, row) => {
         const d = new Date(dVal || row.createdAt || Date.now());
         return (
           <div className="text-[11px] text-slate-700 whitespace-nowrap">
-            <span className="font-semibold block">{d.toLocaleDateString()}</span>
-            <span className="text-slate-400">
+            <span className="font-semibold block whitespace-nowrap">{d.toLocaleDateString()}</span>
+            <span className="text-slate-400 whitespace-nowrap">
               {d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
             </span>
           </div>
@@ -465,11 +570,11 @@ export const ReportsPage = () => {
     {
       key: 'orderType',
       title: 'Order Type',
-      headerClassName: 'w-24 text-center',
+      headerClassName: 'w-24 text-center whitespace-nowrap',
       align: 'center',
-      cellClassName: 'text-center',
+      cellClassName: 'text-center whitespace-nowrap',
       render: (type) => (
-        <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700">
+        <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 whitespace-nowrap">
           {type || 'Dine-In'}
         </span>
       ),
@@ -551,13 +656,27 @@ export const ReportsPage = () => {
       headerClassName: 'w-24 text-center',
       align: 'center',
       cellClassName: 'text-center',
-      render: (status) => {
-        const isRev = (status || '').toLowerCase() === 'reversed';
-        return isRev ? (
-          <Badge variant="danger" size="sm">
-            Reversed
-          </Badge>
-        ) : (
+      render: (status, row) => {
+        const isRev = (status || '').toLowerCase() === 'reversed' || (row?.id && reversedOrderIds.has(row.id));
+        const isPartial = Number(row?.balanceDue) > 0 || (row?.paymentStatus || '').toLowerCase() === 'partial';
+        if (isRev) {
+          return (
+            <Badge variant="danger" size="sm">
+              Reversed
+            </Badge>
+          );
+        }
+        if (isPartial) {
+          return (
+            <span
+              className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-amber-100 text-amber-800 border border-amber-300"
+              title={`Balance Due: ${formatCurrency(row?.balanceDue || 0)}`}
+            >
+              Partial
+            </span>
+          );
+        }
+        return (
           <Badge variant="success" size="sm">
             Completed
           </Badge>
@@ -583,6 +702,171 @@ export const ReportsPage = () => {
     },
   ];
 
+  // Revenue Detailed Records Table
+  const revenueTableColumns = [
+    {
+      key: 'invoiceNumber',
+      title: (
+        <button
+          type="button"
+          onClick={() => {
+            setInvoiceSortOrder((d) => (d === 'desc' ? 'asc' : 'desc'));
+            setCurrentPage(1);
+          }}
+          className="hover:text-[#FF5C28] inline-flex items-center gap-1 font-bold cursor-pointer"
+          title={`Click to sort invoices (${invoiceSortOrder === 'desc' ? 'currently newest first' : 'currently oldest first'})`}
+        >
+          <span>Invoice #</span>
+          <span className="text-[10px] text-[#FF5C28] font-bold">
+            {invoiceSortOrder === 'desc' ? '↓' : '↑'}
+          </span>
+        </button>
+      ),
+      headerClassName: 'w-32 font-bold whitespace-nowrap',
+      cellClassName: 'whitespace-nowrap',
+      render: (invNum, row) => (
+        <button
+          type="button"
+          onClick={() => setSelectedInvoiceForView(row)}
+          className="font-bold text-xs text-[#FF5C28] hover:underline cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+        >
+          <Receipt className="w-3.5 h-3.5 shrink-0" />
+          <span className="whitespace-nowrap font-mono">{invNum || `#${row.id}`}</span>
+        </button>
+      ),
+    },
+    {
+      key: 'completedAt',
+      title: 'Date & Time',
+      headerClassName: 'w-36 whitespace-nowrap',
+      cellClassName: 'whitespace-nowrap',
+      render: (dVal, row) => {
+        const d = new Date(dVal || row.createdAt || Date.now());
+        return (
+          <div className="text-[11px] text-slate-700 whitespace-nowrap">
+            <span className="font-semibold block whitespace-nowrap">{d.toLocaleDateString()}</span>
+            <span className="text-slate-400 whitespace-nowrap">
+              {d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
+            </span>
+          </div>
+        );
+      },
+    },
+    {
+      key: 'orderType',
+      title: 'Order Type',
+      headerClassName: 'w-24 text-center whitespace-nowrap',
+      align: 'center',
+      cellClassName: 'text-center whitespace-nowrap',
+      render: (type) => (
+        <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 whitespace-nowrap">
+          {type || 'Dine-In'}
+        </span>
+      ),
+    },
+    {
+      key: 'paymentMethod',
+      title: 'Payment',
+      headerClassName: 'w-24 text-center',
+      align: 'center',
+      cellClassName: 'text-center',
+      render: (method) => (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+          {method || 'Cash'}
+        </span>
+      ),
+    },
+    {
+      key: 'grandTotal',
+      title: 'Gross Billed',
+      headerClassName: 'w-24 text-right',
+      align: 'right',
+      cellClassName: 'text-right',
+      render: (total, row) => (
+        <span className="text-xs font-semibold text-slate-800">
+          {formatCurrency(total ?? row.grandTotal ?? 0)}
+        </span>
+      ),
+    },
+    {
+      key: 'discountAmount',
+      title: 'Discount',
+      headerClassName: 'w-24 text-right',
+      align: 'right',
+      cellClassName: 'text-right',
+      render: (disc) => (
+        <span className="text-xs text-rose-600 font-medium">
+          {Number(disc) > 0 ? `-${formatCurrency(disc)}` : 'Rs 0'}
+        </span>
+      ),
+    },
+    {
+      key: 'taxAmount',
+      title: 'Tax Collected',
+      headerClassName: 'w-24 text-right',
+      align: 'right',
+      cellClassName: 'text-right',
+      render: (tax, row) => {
+        const isRev = (row.status || '').toLowerCase() === 'reversed' || (row?.id && reversedOrderIds.has(row.id));
+        if (isRev) {
+          return <span className="text-xs text-slate-400 line-through">Rs 0</span>;
+        }
+        return <span className="text-xs text-amber-700 font-medium">{formatCurrency(tax || 0)}</span>;
+      },
+    },
+    {
+      key: 'netRevenue',
+      title: 'Net Revenue',
+      headerClassName: 'w-28 text-right font-bold',
+      align: 'right',
+      cellClassName: 'text-right',
+      render: (_, row) => {
+        const isRev = (row.status || '').toLowerCase() === 'reversed' || (row?.id && reversedOrderIds.has(row.id));
+        if (isRev) {
+          return <span className="text-xs text-slate-400 line-through">Rs 0</span>;
+        }
+        const net = Math.max(0, (row.grandTotal || 0) - (row.taxAmount || 0));
+        return <span className="font-bold text-xs text-emerald-700">{formatCurrency(net)}</span>;
+      },
+    },
+    {
+      key: 'status',
+      title: 'Status',
+      headerClassName: 'w-24 text-center',
+      align: 'center',
+      cellClassName: 'text-center',
+      render: (status, row) => {
+        const isRev = (status || '').toLowerCase() === 'reversed' || (row?.id && reversedOrderIds.has(row.id));
+        return isRev ? (
+          <Badge variant="danger" size="sm">
+            Reversed
+          </Badge>
+        ) : (
+          <Badge variant="success" size="sm">
+            Completed
+          </Badge>
+        );
+      },
+    },
+    {
+      key: 'actions',
+      title: 'Action',
+      headerClassName: 'w-20 text-center',
+      align: 'center',
+      cellClassName: 'text-center',
+      render: (_, row) => (
+        <button
+          type="button"
+          onClick={() => setSelectedInvoiceForView(row)}
+          className="p-1.5 rounded-lg text-slate-500 hover:text-[#FF5C28] hover:bg-orange-50 transition-colors cursor-pointer"
+          title="View Invoice"
+        >
+          <Eye className="w-3.5 h-3.5" />
+        </button>
+      ),
+    },
+  ];
+
   // Reversals Detailed Table
   const reversalTableColumns = [
     {
@@ -593,18 +877,34 @@ export const ReportsPage = () => {
     },
     {
       key: 'originalInvoiceNumber',
-      title: 'Original Inv #',
-      headerClassName: 'w-28 font-bold',
+      title: (
+        <button
+          type="button"
+          onClick={() => {
+            setInvoiceSortOrder((d) => (d === 'desc' ? 'asc' : 'desc'));
+            setCurrentPage(1);
+          }}
+          className="hover:text-[#FF5C28] inline-flex items-center gap-1 font-bold cursor-pointer"
+          title={`Click to sort invoices (${invoiceSortOrder === 'desc' ? 'currently newest first' : 'currently oldest first'})`}
+        >
+          <span>Original Inv #</span>
+          <span className="text-[10px] text-[#FF5C28] font-bold">
+            {invoiceSortOrder === 'desc' ? '↓' : '↑'}
+          </span>
+        </button>
+      ),
+      headerClassName: 'w-28 font-bold whitespace-nowrap',
+      cellClassName: 'whitespace-nowrap',
       render: (invNum, row) => {
         const originalOrder = orders.find((o) => o.id === row.originalOrderId);
         return (
           <button
             type="button"
             onClick={() => originalOrder && setSelectedInvoiceForView(originalOrder)}
-            className="font-bold text-xs text-[#FF5C28] hover:underline cursor-pointer flex items-center gap-1"
+            className="font-bold text-xs text-[#FF5C28] hover:underline cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
           >
-            <Receipt className="w-3.5 h-3.5" />
-            <span>{invNum}</span>
+            <Receipt className="w-3.5 h-3.5 shrink-0" />
+            <span className="whitespace-nowrap font-mono">{invNum}</span>
           </button>
         );
       },
@@ -907,10 +1207,152 @@ export const ReportsPage = () => {
     },
   ];
 
+  // Item Profitability Columns for Financial Summary (Respects role visibility)
+  const financialSummaryTableColumns = useMemo(() => {
+    return [
+      {
+        key: 'name',
+        title: 'Item',
+        headerClassName: 'w-48 font-bold',
+        render: (name, row) => (
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-xs text-slate-900">{name}</span>
+            {row.isDeal && (
+              <Badge variant="warning" size="xs">
+                Deal
+              </Badge>
+            )}
+            {row.isAddon && (
+              <Badge variant="info" size="xs">
+                Add-on
+              </Badge>
+            )}
+          </div>
+        ),
+      },
+      {
+        key: 'category',
+        title: 'Category',
+        headerClassName: 'w-28 text-slate-600',
+        render: (cat) => <span className="text-xs text-slate-600">{cat || '—'}</span>,
+      },
+      {
+        key: 'qtyWeightDisplay',
+        title: 'Qty / Weight Sold',
+        headerClassName: 'w-28 text-center',
+        align: 'center',
+        cellClassName: 'text-center',
+        render: (disp, row) => (
+          <span className="font-semibold text-xs text-slate-700">
+            {disp || `${row.qtySold} pcs`}
+          </span>
+        ),
+      },
+      {
+        key: 'netSales',
+        title: (
+          <button
+            type="button"
+            onClick={() => {
+              setProfitSortBy('sales');
+              setCurrentPage(1);
+            }}
+            className="hover:text-[#FF5C28] inline-flex items-center gap-1 font-semibold cursor-pointer justify-end"
+            title="Click to sort by net sales"
+          >
+            <span>Net Sales</span>
+            {profitSortBy === 'sales' && <span className="text-[10px] text-[#FF5C28]">↓</span>}
+          </button>
+        ),
+        headerClassName: 'w-28 text-right font-semibold',
+        align: 'right',
+        cellClassName: 'text-right',
+        render: (val) => (
+          <span className="font-semibold text-xs text-slate-900">{formatCurrency(val)}</span>
+        ),
+      },
+      ...(canViewCosts
+        ? [
+            {
+              key: 'cogs',
+              title: 'COGS',
+              headerClassName: 'w-28 text-right font-semibold',
+              align: 'right',
+              cellClassName: 'text-right',
+              render: (val, row) =>
+                row.hasCost && val !== null ? (
+                  <span className="text-xs text-slate-700">{formatCurrency(val)}</span>
+                ) : (
+                  <span className="text-[11px] text-amber-600 font-medium italic">Cost Missing</span>
+                ),
+            },
+            {
+              key: 'grossProfit',
+              title: (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfitSortBy('profit');
+                    setCurrentPage(1);
+                  }}
+                  className="hover:text-[#FF5C28] inline-flex items-center gap-1 font-bold cursor-pointer justify-end"
+                  title="Click to sort by gross profit"
+                >
+                  <span>Gross Profit</span>
+                  {profitSortBy === 'profit' && <span className="text-[10px] text-[#FF5C28]">↓</span>}
+                </button>
+              ),
+              headerClassName: 'w-28 text-right font-bold',
+              align: 'right',
+              cellClassName: 'text-right',
+              render: (val, row) =>
+                row.hasCost && val !== null ? (
+                  <span className={`text-xs font-bold ${val >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {formatCurrency(val)}
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-slate-400 italic">Unavailable</span>
+                ),
+            },
+            {
+              key: 'margin',
+              title: (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfitSortBy('margin');
+                    setCurrentPage(1);
+                  }}
+                  className="hover:text-[#FF5C28] inline-flex items-center gap-1 font-bold cursor-pointer justify-center"
+                  title="Click to sort by profit margin %"
+                >
+                  <span>Profit Margin %</span>
+                  {profitSortBy === 'margin' && <span className="text-[10px] text-[#FF5C28]">↓</span>}
+                </button>
+              ),
+              headerClassName: 'w-28 text-center font-bold',
+              align: 'center',
+              cellClassName: 'text-center',
+              render: (val, row) =>
+                row.hasCost && val !== null ? (
+                  <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700">
+                    {val}%
+                  </span>
+                ) : (
+                  <span className="text-xs text-slate-400 italic">—</span>
+                ),
+            },
+          ]
+        : []),
+    ];
+  }, [canViewCosts, profitSortBy]);
+
   // Pagination slicing
   const activeDataset =
     activeTab === 'Profit'
       ? profitItemRows
+      : activeTab === 'FinancialSummary'
+      ? (financialTableTab === 'orders' ? filteredOrders : financialSummaryReport.itemRows)
       : activeTab === 'Reversals'
       ? filteredReversals
       : filteredOrders;
@@ -982,31 +1424,10 @@ export const ReportsPage = () => {
         />
       </div>
 
-      {/* Cashier 1-Day Restriction Banner */}
-      {isCashier && (
-        <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200/90 text-amber-900 text-xs flex items-center justify-between gap-3 shadow-2xs no-print">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 shrink-0">
-              <Lock className="w-3.5 h-3.5" />
-            </div>
-            <div>
-              <span className="font-bold text-amber-900 block leading-tight">
-                Cashier View Locked to Today (1 Day Only)
-              </span>
-              <span className="text-[11px] text-amber-700 block mt-0.5">
-                Cashier accounts are restricted to today's shift & single-day sales report. Historical multi-day reports require Administrator credentials.
-              </span>
-            </div>
-          </div>
-          <span className="px-2.5 py-1 rounded-full bg-amber-200/70 text-amber-900 font-bold text-[10px] tracking-wide uppercase border border-amber-300 shrink-0">
-            1-Day Access
-          </span>
-        </div>
-      )}
 
       {/* 3. Common Filter Toolbar (Single Shared Filter Source) */}
-      <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-3 no-print">
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+      <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-2xs space-y-2.5 no-print">
+        <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-2.5">
           {/* Search Input */}
           <SearchInput
             value={searchQuery}
@@ -1021,16 +1442,16 @@ export const ReportsPage = () => {
                 ? 'Search item name or category...'
                 : 'Search invoice # or item name...'
             }
-            className="w-full lg:max-w-xs"
+            className="w-full sm:w-48 lg:w-56 shrink-0"
           />
 
           {/* Filters Group */}
-          <div className="flex items-center gap-2 flex-wrap text-xs">
+          <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap text-xs">
             {/* Date Preset */}
             {isCashier ? (
-              <div className="h-9 px-3 bg-amber-50 border border-amber-200 rounded-xl font-bold text-amber-800 flex items-center gap-2 text-xs select-none">
+              <div className="h-9 px-2.5 bg-amber-50 border border-amber-200 rounded-xl font-bold text-amber-800 flex items-center gap-1.5 text-xs select-none shrink-0">
                 <Calendar className="w-3.5 h-3.5 text-amber-600" />
-                <span>Today (1 Day Only)</span>
+                <span>Today (1 Day)</span>
               </div>
             ) : (
               <select
@@ -1039,20 +1460,22 @@ export const ReportsPage = () => {
                   setDatePreset(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="h-9 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer"
+                className="h-9 px-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer text-xs shrink-0"
               >
                 <option value="All Dates">All Dates</option>
                 <option value="Today">Today</option>
                 <option value="Yesterday">Yesterday</option>
                 <option value="This Week">This Week</option>
+                <option value="Last Week">Last Week</option>
                 <option value="This Month">This Month</option>
+                <option value="Last Month">Last Month</option>
                 <option value="Custom">Custom Range</option>
               </select>
             )}
 
             {/* Custom Range Inputs */}
             {!isCashier && datePreset === 'Custom' && (
-              <div className="flex items-center gap-1.5 bg-slate-50 p-1 rounded-xl border border-slate-200">
+              <div className="flex items-center gap-1.5 bg-slate-50 p-1 rounded-xl border border-slate-200 shrink-0">
                 <input
                   type="date"
                   value={customStartDate}
@@ -1083,11 +1506,11 @@ export const ReportsPage = () => {
                   setSelectedCategory(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="h-9 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer"
+                className="h-9 px-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer text-xs shrink-0"
               >
                 <option value="All">All Categories</option>
                 <option value="Deals">Deals</option>
-                {activeTab === 'Profit' && <option value="Add-ons">Add-ons</option>}
+                {(activeTab === 'Profit' || activeTab === 'FinancialSummary') && <option value="Add-ons">Add-ons</option>}
                 {(categories || [])
                   .filter((c) => c && c.name && c.name.toLowerCase() !== 'add-ons' && c.name.toLowerCase() !== 'deals')
                   .map((c) => (
@@ -1106,7 +1529,7 @@ export const ReportsPage = () => {
                   setSelectedItem(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="h-9 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer"
+                className="h-9 px-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer text-xs shrink-0"
               >
                 <option value="All">All Items & Add-ons</option>
                 {Array.isArray(deals) && deals.length > 0 && (
@@ -1145,7 +1568,7 @@ export const ReportsPage = () => {
                   setSelectedPaymentMethod(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="h-9 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer"
+                className="h-9 px-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer text-xs shrink-0"
               >
                 <option value="All">All Payments</option>
                 <option value="Cash">Cash</option>
@@ -1162,7 +1585,7 @@ export const ReportsPage = () => {
                   setSelectedOrderType(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="h-9 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer"
+                className="h-9 px-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer text-xs shrink-0"
               >
                 <option value="All">All Types</option>
                 <option value="Dine-In">Dine-In</option>
@@ -1178,10 +1601,11 @@ export const ReportsPage = () => {
                   setSelectedStatus(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="h-9 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer"
+                className="h-9 px-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer text-xs shrink-0"
               >
                 <option value="All">All Statuses</option>
                 <option value="completed">Completed</option>
+                <option value="partial">Partial</option>
                 <option value="reversed">Reversed</option>
               </select>
             )}
@@ -1216,8 +1640,8 @@ export const ReportsPage = () => {
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5 sm:gap-3">
             <KPICard
               size="sm"
-              title="Gross Sales"
-              value={formatCurrency(salesKpis.grossSales)}
+              title="Total Sale"
+              value={formatCurrency(salesKpis.validBilledSales !== undefined ? salesKpis.validBilledSales : (salesKpis.totalSale || salesKpis.grossSales))}
               color="green"
               icon={DollarSign}
               showArrow={false}
@@ -1264,149 +1688,6 @@ export const ReportsPage = () => {
             />
           </div>
 
-          {/* Charts Row: Daily Sales Trend & Category Breakdown */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-            {/* Daily Sales Bar Chart */}
-            <Card className="lg:col-span-7 flex flex-col justify-between">
-              <CardHeader className="flex-row items-center justify-between pb-2">
-                <div>
-                  <CardTitle>Daily Sales Trend</CardTitle>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Valid gross sales volume grouped by date
-                  </p>
-                </div>
-                <BarChart2 className="w-4 h-4 text-slate-400" />
-              </CardHeader>
-              <CardContent className="h-64 pt-2">
-                {salesDailyChart.length === 0 ||
-                salesDailyChart.every((d) => d.grossSales === 0) ? (
-                  <div className="h-full flex items-center justify-center text-xs text-slate-400">
-                    No sales recorded for this interval.
-                  </div>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={salesDailyChart} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
-                      <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
-                      <YAxis
-                        tick={{ fontSize: 11, fill: '#64748B' }}
-                        axisLine={false}
-                        tickLine={false}
-                        tickFormatter={(val) => `Rs ${val >= 1000 ? `${Math.round(val / 1000)}k` : val}`}
-                      />
-                      <Tooltip
-                        formatter={(val) => [formatCurrency(val), 'Sales']}
-                        labelFormatter={(lbl) => `Date: ${lbl}`}
-                        contentStyle={{
-                          backgroundColor: '#1E293B',
-                          borderRadius: '8px',
-                          color: '#fff',
-                          fontSize: '12px',
-                          border: 'none',
-                        }}
-                      />
-                      <Bar dataKey="grossSales" fill="#FF5C28" radius={[4, 4, 0, 0]} maxBarSize={36} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Category Sales Breakdown */}
-            <Card className="lg:col-span-5 flex flex-col justify-between">
-              <CardHeader className="flex-row items-center justify-between pb-2">
-                <div>
-                  <CardTitle>Sales by Category</CardTitle>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Product share distribution across active sales
-                  </p>
-                </div>
-                <PieIcon className="w-4 h-4 text-slate-400" />
-              </CardHeader>
-              <CardContent className="pt-2 flex flex-col justify-between min-h-[250px]">
-                {categoryBreakdown.length === 0 ? (
-                  <div className="h-48 flex items-center justify-center text-xs text-slate-400">
-                    No category sales data for selected filters.
-                  </div>
-                ) : (
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-6 py-2">
-                    {/* Left: Donut Chart matching screenshot */}
-                    <div className="w-44 h-44 shrink-0 flex items-center justify-center relative">
-                      <PieChart width={176} height={176}>
-                        <Tooltip
-                          formatter={(value, name) => [
-                            `${formatCurrency(value)} (${
-                              categoryBreakdown.find((c) => (c.name || c.category) === name)?.percentage || 0
-                            }%)`,
-                            name,
-                          ]}
-                          contentStyle={{
-                            borderRadius: '12px',
-                            fontSize: '11px',
-                            border: '1px solid #E2E8F0',
-                            boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.05)',
-                          }}
-                        />
-                        <Pie
-                          data={categoryBreakdown}
-                          dataKey="value"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={46}
-                          outerRadius={72}
-                          paddingAngle={3}
-                          stroke="#FFFFFF"
-                          strokeWidth={2}
-                          isAnimationActive={false}
-                        >
-                          {categoryBreakdown.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                      </PieChart>
-                    </div>
-
-                    {/* Right: Category List with Percentages matching screenshot */}
-                    <div className="flex-1 w-full space-y-3.5 max-h-52 overflow-y-auto pr-1">
-                      {categoryBreakdown.map((cat) => (
-                        <div
-                          key={cat.category || cat.name}
-                          className="flex items-center justify-between text-xs"
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                            <span
-                              className="w-2.5 h-2.5 rounded-full shrink-0"
-                              style={{ backgroundColor: cat.color }}
-                            />
-                            <span className="font-medium text-slate-700 truncate">
-                              {cat.category || cat.name}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className="font-bold text-slate-900 text-xs">
-                              {cat.percentage}%
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Footer Invoices count note matching screenshot */}
-                {(salesKpis.validOrderCount ?? filteredOrders.length) > 0 && (
-                  <div className="pt-2 border-t border-slate-100 flex justify-end">
-                    <span className="text-[11px] text-slate-400 font-medium">
-                      {salesKpis.validOrderCount ?? filteredOrders.length}{' '}
-                      {(salesKpis.validOrderCount ?? filteredOrders.length) === 1 ? 'invoice' : 'invoices'}
-                    </span>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
           {/* Detailed Sales Transactions Table */}
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
             <div className="p-4 border-b border-slate-100 flex items-center justify-between">
@@ -1440,6 +1721,33 @@ export const ReportsPage = () => {
                   columns={salesTableColumns}
                   data={paginatedData}
                   keyField="id"
+                  footer={
+                    <tr className="border-t-2 border-slate-300 bg-slate-50/90 text-xs font-bold text-slate-900">
+                      <td colSpan={4} className="py-2.5 px-3.5 text-slate-800 whitespace-nowrap">
+                        <span className="uppercase tracking-wider text-[11px] text-slate-500 font-bold block">
+                          Reconciled Sales Total
+                        </span>
+                        <span className="text-[11px] text-slate-400 font-normal">
+                          ({validFilteredOrders.length} valid / {filteredOrders.length} total)
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
+                        {formatCurrency(validFilteredOrders.reduce((s, o) => s + (Number(o.subtotal) || 0), 0))}
+                      </td>
+                      <td className="py-2.5 px-3.5 text-right font-extrabold text-rose-600 whitespace-nowrap">
+                        {validFilteredOrders.reduce((s, o) => s + (Number(o.discountAmount) || 0), 0) > 0
+                          ? `-${formatCurrency(validFilteredOrders.reduce((s, o) => s + (Number(o.discountAmount) || 0), 0))}`
+                          : 'Rs 0'}
+                      </td>
+                      <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-700 whitespace-nowrap">
+                        {formatCurrency(validFilteredOrders.reduce((s, o) => s + (Number(o.taxAmount) || 0), 0))}
+                      </td>
+                      <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
+                        {formatCurrency(validFilteredOrders.reduce((s, o) => s + (Number(o.grandTotal) || 0), 0))}
+                      </td>
+                      <td colSpan={3} className="py-2.5 px-3.5" />
+                    </tr>
+                  }
                 />
 
                 {/* Pagination Controls */}
@@ -1479,8 +1787,8 @@ export const ReportsPage = () => {
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5 sm:gap-3">
             <KPICard
               size="sm"
-              title="Gross Billed"
-              value={formatCurrency(revenueKpis.grossBilled)}
+              title="Total Sale"
+              value={formatCurrency(revenueKpis.validBilled !== undefined ? revenueKpis.validBilled : (revenueKpis.totalSale || revenueKpis.grossBilled))}
               color="green"
               icon={DollarSign}
               showArrow={false}
@@ -1527,77 +1835,6 @@ export const ReportsPage = () => {
             />
           </div>
 
-          {/* Revenue Trend Chart */}
-          <Card>
-            <CardHeader className="flex-row items-center justify-between pb-2">
-              <div>
-                <CardTitle>Revenue Trend</CardTitle>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Gross Billed vs Net Revenue vs Stored Tax Collected
-                </p>
-              </div>
-              <TrendingUp className="w-4 h-4 text-slate-400" />
-            </CardHeader>
-            <CardContent className="h-72 pt-2">
-              {revenueDailyChart.length === 0 ||
-              revenueDailyChart.every((d) => d.grossBilled === 0) ? (
-                <div className="h-full flex items-center justify-center text-xs text-slate-400">
-                  No revenue data available for the selected filters.
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={revenueDailyChart} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="netRevGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10B981" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#10B981" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="grossBilledGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.2} />
-                        <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
-                    <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
-                    <YAxis
-                      tick={{ fontSize: 11, fill: '#64748B' }}
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={(val) => `Rs ${val >= 1000 ? `${Math.round(val / 1000)}k` : val}`}
-                    />
-                    <Tooltip
-                      formatter={(val, name, item) => {
-                        const key = item?.dataKey || name;
-                        let label = 'Tax';
-                        if (key === 'grossBilled' || name === 'Gross Sales' || name === 'Gross Billed') {
-                          label = 'Gross Sales';
-                        } else if (key === 'netRevenue' || name === 'Net Revenue') {
-                          label = 'Net Revenue';
-                        } else if (key === 'tax' || name === 'Tax') {
-                          label = 'Tax';
-                        }
-                        return [formatCurrency(val), label];
-                      }}
-                      labelFormatter={(lbl) => `Date: ${lbl}`}
-                      contentStyle={{
-                        backgroundColor: '#0B0F19',
-                        borderRadius: '10px',
-                        color: '#fff',
-                        fontSize: '12px',
-                        border: '1px solid #1E293B',
-                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4)',
-                        padding: '8px 12px',
-                      }}
-                    />
-                    <Legend />
-                    <Area type="monotone" dataKey="grossBilled" stroke="#3B82F6" strokeWidth={2} fillOpacity={1} fill="url(#grossBilledGradient)" name="Gross Sales" />
-                    <Area type="monotone" dataKey="netRevenue" stroke="#10B981" strokeWidth={2} fillOpacity={1} fill="url(#netRevGradient)" name="Net Revenue" />
-                    <Bar dataKey="tax" fill="#8B5CF6" radius={[2, 2, 0, 0]} maxBarSize={18} name="Tax" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              )}
-            </CardContent>
-          </Card>
 
           {/* 3 Summary Breakdown Cards: Payment Methods, Tax Summary, Discounts Summary */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -1685,6 +1922,100 @@ export const ReportsPage = () => {
               </CardContent>
             </Card>
           </div>
+
+          {/* Detailed Revenue Transactions Records Table */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
+            <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="font-bold text-sm text-slate-900">
+                  Revenue Transactions Records ({filteredOrders.length})
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Complete transactional ledger of gross billed, discounts given, tax collected, and net operating revenue
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <span>Rows:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="h-7 px-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                </select>
+              </div>
+            </div>
+
+            {filteredOrders.length === 0 ? (
+              <div className="p-12 text-center text-xs text-slate-400">
+                No revenue records found for the selected filters.
+              </div>
+            ) : (
+              <>
+                <DataTable
+                  columns={revenueTableColumns}
+                  data={paginatedData}
+                  keyField="id"
+                  footer={
+                    <tr className="border-t-2 border-slate-300 bg-slate-50/90 text-xs font-bold text-slate-900">
+                      <td colSpan={4} className="py-2.5 px-3.5 text-slate-800 whitespace-nowrap">
+                        <span className="uppercase tracking-wider text-[11px] text-slate-500 font-bold block">
+                          Reconciled Revenue Total
+                        </span>
+                        <span className="text-[11px] text-slate-400 font-normal">
+                          ({filteredOrders.length} {filteredOrders.length === 1 ? 'sale' : 'sales'})
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
+                        {formatCurrency(revenueKpis.grossBilled)}
+                      </td>
+                      <td className="py-2.5 px-3.5 text-right font-extrabold text-rose-600 whitespace-nowrap">
+                        {revenueKpis.totalDiscounts > 0 ? `-${formatCurrency(revenueKpis.totalDiscounts)}` : 'Rs 0'}
+                      </td>
+                      <td className="py-2.5 px-3.5 text-right font-extrabold text-amber-700 whitespace-nowrap">
+                        {formatCurrency(revenueKpis.taxCollected)}
+                      </td>
+                      <td className="py-2.5 px-3.5 text-right font-extrabold text-emerald-700 whitespace-nowrap">
+                        {formatCurrency(revenueKpis.netRevenue)}
+                      </td>
+                      <td colSpan={2} className="py-2.5 px-3.5" />
+                    </tr>
+                  }
+                />
+
+                {/* Pagination Controls */}
+                <div className="p-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                  <span>
+                    Page {currentPage} of {totalPages} ({filteredOrders.length} total sales)
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={currentPage <= 1}
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      className="px-2.5 py-1 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      disabled={currentPage >= totalPages}
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      className="px-2.5 py-1 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
 
@@ -1735,54 +2066,6 @@ export const ReportsPage = () => {
             />
           </div>
 
-          {/* Reversal Trend Chart */}
-          <Card>
-            <CardHeader className="flex-row items-center justify-between pb-2">
-              <div>
-                <CardTitle>Reversal Trend</CardTitle>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Reversed customer-billed volume and count over time
-                </p>
-              </div>
-              <RotateCcw className="w-4 h-4 text-slate-400" />
-            </CardHeader>
-            <CardContent className="h-64 pt-2">
-              {reversalDailyChart.length === 0 ||
-              reversalDailyChart.every((d) => d.reversalTotal === 0) ? (
-                <div className="h-full flex items-center justify-center text-xs text-slate-400">
-                  No reversals recorded for this interval.
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={reversalDailyChart} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
-                    <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
-                    <YAxis
-                      tick={{ fontSize: 11, fill: '#64748B' }}
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={(val) => `Rs ${val}`}
-                    />
-                    <Tooltip
-                      formatter={(val, name) => [
-                        name === 'reversalTotal' ? formatCurrency(val) : val,
-                        name === 'reversalTotal' ? 'Reversal Total' : 'Count',
-                      ]}
-                      labelFormatter={(lbl) => `Date: ${lbl}`}
-                      contentStyle={{
-                        backgroundColor: '#1E293B',
-                        borderRadius: '8px',
-                        color: '#fff',
-                        fontSize: '12px',
-                        border: 'none',
-                      }}
-                    />
-                    <Bar dataKey="reversalTotal" fill="#EF4444" radius={[4, 4, 0, 0]} maxBarSize={32} name="reversalTotal" />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </CardContent>
-          </Card>
 
           {/* Reversal Detail Table */}
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
@@ -1817,6 +2100,28 @@ export const ReportsPage = () => {
                   columns={reversalTableColumns}
                   data={paginatedData}
                   keyField="id"
+                  footer={
+                    <tr className="border-t-2 border-slate-300 bg-slate-50/90 text-xs font-bold text-slate-900">
+                      <td colSpan={4} className="py-2.5 px-3.5 text-slate-800 whitespace-nowrap">
+                        <span className="uppercase tracking-wider text-[11px] text-slate-500 font-bold block">
+                          Total Reversals
+                        </span>
+                        <span className="text-[11px] text-slate-400 font-normal">
+                          ({filteredReversals.length} {filteredReversals.length === 1 ? 'reversal' : 'reversals'})
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
+                        {formatCurrency(reversalKpis.reversedSubtotal)}
+                      </td>
+                      <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-700 whitespace-nowrap">
+                        {formatCurrency(reversalKpis.reversedTax)}
+                      </td>
+                      <td className="py-2.5 px-3.5 text-right font-extrabold text-rose-600 whitespace-nowrap">
+                        {formatCurrency(reversalKpis.reversalTotalIncludingTax)}
+                      </td>
+                      <td className="py-2.5 px-3.5" />
+                    </tr>
+                  }
                 />
 
                 {/* Pagination Controls */}
@@ -2026,42 +2331,597 @@ export const ReportsPage = () => {
                   columns={profitTableColumns}
                   data={paginatedData}
                   keyField="id"
-                />
-
-                {/* Accounting TOTAL ROW: Section 8 Requirement */}
-                <div className="border-t-2 border-slate-300 bg-slate-50/80 px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-                  <div className="font-bold text-slate-800 flex items-center gap-2">
-                    <span className="uppercase tracking-wider text-[11px] text-slate-500">Total / Overall</span>
-                    <span className="text-slate-400">({profitItemRows.length} items sold across {profitKpis.validOrdersCount} valid invoices)</span>
-                  </div>
-                  <div className="flex items-center gap-5 sm:gap-7 flex-wrap justify-end">
-                    <div>
-                      <span className="text-[10px] text-slate-500 block uppercase font-medium">Total Net Sales</span>
-                      <span className="font-bold text-slate-900 text-sm">{formatCurrency(profitKpis.netSales)}</span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 block uppercase font-medium">Total COGS</span>
-                      <span className="font-bold text-slate-700 text-sm">{formatCurrency(profitKpis.cogs)}</span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 block uppercase font-medium">Total Gross Profit</span>
-                      <span className={`font-bold text-sm ${profitKpis.grossProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                  footer={
+                    <tr className="border-t-2 border-slate-300 bg-slate-50/90 text-xs font-bold text-slate-900">
+                      <td colSpan={4} className="py-2.5 px-3.5 text-slate-800 whitespace-nowrap">
+                        <span className="uppercase tracking-wider text-[11px] text-slate-500 font-bold block">Total / Overall</span>
+                        <span className="text-[11px] text-slate-400 font-normal">
+                          ({profitItemRows.length} items sold across {profitKpis.validOrdersCount} valid invoices)
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
+                        {formatCurrency(profitKpis.netSales)}
+                      </td>
+                      <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-700 whitespace-nowrap">
+                        {formatCurrency(profitKpis.cogs)}
+                      </td>
+                      <td className={`py-2.5 px-3.5 text-right font-extrabold whitespace-nowrap ${profitKpis.grossProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
                         {formatCurrency(profitKpis.grossProfit)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 block uppercase font-medium">Overall Margin</span>
-                      <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
-                        {profitKpis.grossProfitMargin}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                      </td>
+                      <td className="py-2.5 px-3.5 text-center whitespace-nowrap">
+                        <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+                          {profitKpis.grossProfitMargin}%
+                        </span>
+                      </td>
+                    </tr>
+                  }
+                />
 
                 {/* Pagination Controls */}
                 <div className="p-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
                   <span>
                     Page {currentPage} of {totalPages} ({profitItemRows.length} total items)
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={currentPage <= 1}
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      className="px-2.5 py-1 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      disabled={currentPage >= totalPages}
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      className="px-2.5 py-1 rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-slate-50 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ==================== TAB 5: FINANCIAL SUMMARY (PROFIT & LOSS STYLE) ==================== */}
+      {activeTab === 'FinancialSummary' && (
+        <div className="space-y-5">
+          {/* 1. Top Executive KPI Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5 sm:gap-3">
+            <KPICard
+              size="sm"
+              title="Total Collected"
+              value={formatCurrency(financialSummaryReport.statement.totalCollected)}
+              color="blue"
+              icon={CreditCard}
+              showArrow={false}
+            />
+            <KPICard
+              size="sm"
+              title="Net Revenue"
+              value={formatCurrency(financialSummaryReport.statement.netRevenue)}
+              color="green"
+              icon={DollarSign}
+              showArrow={false}
+            />
+            <KPICard
+              size="sm"
+              title="Total COGS"
+              value={canViewCosts ? formatCurrency(financialSummaryReport.statement.totalCOGS) : 'Restricted'}
+              color="slate"
+              icon={canViewCosts ? Layers : Lock}
+              showArrow={false}
+            />
+            <KPICard
+              size="sm"
+              title="Gross Profit"
+              value={
+                canViewCosts
+                  ? formatCurrency(financialSummaryReport.statement.grossProfit)
+                  : 'Restricted'
+              }
+              color={canViewCosts && financialSummaryReport.statement.grossProfit >= 0 ? 'green' : 'red'}
+              icon={canViewCosts ? TrendingUp : Lock}
+              showArrow={false}
+            />
+            <KPICard
+              size="sm"
+              title="Gross Margin"
+              value={
+                canViewCosts
+                  ? `${financialSummaryReport.statement.grossProfitMargin}%`
+                  : 'Restricted'
+              }
+              color="purple"
+              icon={canViewCosts ? Percent : Lock}
+              showArrow={false}
+            />
+            <KPICard
+              size="sm"
+              title="Tax Collected"
+              value={formatCurrency(financialSummaryReport.statement.taxCollected)}
+              color="orange"
+              icon={Receipt}
+              showArrow={false}
+            />
+          </div>
+
+          {/* 3. Summary Cards Layout (Section 10) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Card Left: REVENUE, COST OF SALES & GROSS PROFIT */}
+            <Card className="flex flex-col justify-between">
+              <CardHeader className="flex-row items-center justify-between pb-3 border-b border-slate-100">
+                <div>
+                  <CardTitle className="text-base font-bold text-slate-900">
+                    Statement of Profit & Loss
+                  </CardTitle>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Revenue, Cost of Goods Sold & Gross Margins
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Badge variant="outline" size="sm" className="font-semibold text-slate-600">
+                    PKR
+                  </Badge>
+                  <FileText className="w-4 h-4 text-slate-400" />
+                </div>
+              </CardHeader>
+
+              <CardContent className="pt-4 space-y-6">
+                {/* A. REVENUE SECTION */}
+                <div>
+                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
+                    <span className="text-xs font-bold text-slate-900 tracking-wider uppercase">
+                      REVENUE
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-medium italic">
+                      Tax Excluded
+                    </span>
+                  </div>
+                  <div className="divide-y divide-slate-100 text-xs">
+                    <div className="flex items-center justify-between py-2 text-slate-700">
+                      <span>Gross Sales</span>
+                      <span className="font-semibold text-slate-900">
+                        {formatCurrency(financialSummaryReport.statement.grossSales)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between py-2 text-slate-700">
+                      <span>Less: Discounts</span>
+                      <span className="font-semibold text-rose-600">
+                        {financialSummaryReport.statement.discounts > 0
+                          ? `-${formatCurrency(financialSummaryReport.statement.discounts)}`
+                          : 'Rs 0'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between py-2 text-slate-700">
+                      <span>Less: Reversal Effect</span>
+                      <span className="font-semibold text-rose-600">
+                        {financialSummaryReport.statement.reversalEffect > 0
+                          ? `-${formatCurrency(financialSummaryReport.statement.reversalEffect)}`
+                          : 'Rs 0'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between py-2.5 font-bold text-xs bg-emerald-50/70 px-2 rounded-lg border-y-2 border-emerald-500/80 text-emerald-950">
+                      <span className="uppercase tracking-wide">NET REVENUE</span>
+                      <span className="text-sm font-extrabold text-emerald-700">
+                        {formatCurrency(financialSummaryReport.statement.netRevenue)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* B. COST OF SALES SECTION */}
+                <div>
+                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
+                    <span className="text-xs font-bold text-slate-900 tracking-wider uppercase">
+                      COST OF SALES (COGS)
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-medium italic">
+                      Historical Snapshots
+                    </span>
+                  </div>
+
+                  {canViewCosts ? (
+                    <div className="divide-y divide-slate-100 text-xs">
+                      <div className="flex items-center justify-between py-2 text-slate-700">
+                        <span>Food / Item Cost</span>
+                        <span className="font-semibold text-slate-800">
+                          {formatCurrency(financialSummaryReport.statement.foodCOGS)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between py-2 text-slate-700">
+                        <span>Add-on Cost</span>
+                        <span className="font-semibold text-slate-800">
+                          {formatCurrency(financialSummaryReport.statement.addonCOGS)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between py-2 text-slate-700">
+                        <span>Deal Cost</span>
+                        <span className="font-semibold text-slate-800">
+                          {formatCurrency(financialSummaryReport.statement.dealCOGS)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between py-2.5 font-bold text-xs bg-slate-100/80 px-2 rounded-lg border-y-2 border-slate-400 text-slate-900">
+                        <span className="uppercase tracking-wide">TOTAL COGS</span>
+                        <span className="text-sm font-extrabold text-slate-900">
+                          {formatCurrency(financialSummaryReport.statement.totalCOGS)}
+                        </span>
+                      </div>
+
+                      {financialSummaryReport.statement.hasIncompleteCosts && (
+                        <div className="mt-2.5 p-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] flex items-center gap-2">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span>
+                            {financialSummaryReport.statement.missingCostCount} items have missing historical cost snapshots (marked as unavailable/incomplete).
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="py-6 px-3 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-1.5">
+                      <Lock className="w-4 h-4 text-slate-400" />
+                      <span className="font-semibold text-slate-700">Cost of Sales Restricted</span>
+                      <span className="text-[11px] text-slate-400">
+                        Wholesale costs and COGS records are visible to Administrator role only.
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* C. GROSS PROFIT SECTION */}
+                <div>
+                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
+                    <span className="text-xs font-bold text-slate-900 tracking-wider uppercase">
+                      GROSS PROFIT
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-medium italic">
+                      Net Revenue - Total COGS
+                    </span>
+                  </div>
+
+                  {canViewCosts ? (
+                    <div className="divide-y divide-slate-100 text-xs">
+                      <div className="flex items-center justify-between py-3 font-bold text-xs bg-emerald-50/60 px-3 rounded-xl border border-emerald-200 text-emerald-950 mt-1">
+                        <div>
+                          <span className="block text-xs uppercase tracking-wide">GROSS PROFIT</span>
+                          <span className="text-[10px] text-emerald-700 font-normal">
+                            Net contribution before operational overheads
+                          </span>
+                        </div>
+                        <span
+                          className={`text-base font-extrabold ${
+                            financialSummaryReport.statement.grossProfit >= 0
+                              ? 'text-emerald-700'
+                              : 'text-rose-700'
+                          }`}
+                        >
+                          {formatCurrency(financialSummaryReport.statement.grossProfit)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between py-2 text-slate-700 mt-1 px-1">
+                        <span className="font-semibold">Gross Profit Margin</span>
+                        <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                          {financialSummaryReport.statement.grossProfitMargin}%
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="py-6 px-3 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-1.5">
+                      <Lock className="w-4 h-4 text-slate-400" />
+                      <span className="font-semibold text-slate-700">Profit Margins Restricted</span>
+                      <span className="text-[11px] text-slate-400">
+                        Gross Profit and profit margin percentages require Administrator access.
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Card Right: TAX SUMMARY, PAYMENT COLLECTION & AUDIT */}
+            <Card className="flex flex-col justify-between">
+              <CardHeader className="flex-row items-center justify-between pb-3 border-b border-slate-100">
+                <div>
+                  <CardTitle className="text-base font-bold text-slate-900">
+                    Tax & Payment Reconciliation
+                  </CardTitle>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Separated tax liability, collected tenders & reversal audit
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Badge variant="outline" size="sm" className="font-semibold text-slate-600">
+                    Reconciled
+                  </Badge>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                </div>
+              </CardHeader>
+
+              <CardContent className="pt-4 space-y-6">
+                {/* A. TAX SUMMARY SECTION */}
+                <div>
+                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
+                    <span className="text-xs font-bold text-slate-900 tracking-wider uppercase">
+                      TAX SUMMARY
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-medium italic">
+                      Tax is NOT Revenue
+                    </span>
+                  </div>
+                  <div className="divide-y divide-slate-100 text-xs">
+                    <div className="flex items-center justify-between py-2.5 font-bold text-xs bg-amber-50/70 px-2 rounded-lg border-y-2 border-amber-400 text-amber-950 mt-1">
+                      <div>
+                        <span className="block uppercase tracking-wide">TAX COLLECTED</span>
+                        <span className="text-[10px] text-amber-700 font-normal">
+                          Stored tax liability from valid non-reversed invoices
+                        </span>
+                      </div>
+                      <span className="text-sm font-extrabold text-amber-800">
+                        {formatCurrency(financialSummaryReport.statement.taxCollected)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* B. PAYMENT COLLECTION SECTION */}
+                <div>
+                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
+                    <span className="text-xs font-bold text-slate-900 tracking-wider uppercase">
+                      PAYMENT COLLECTION
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-medium italic">
+                      Completed Tenders
+                    </span>
+                  </div>
+                  <div className="divide-y divide-slate-100 text-xs">
+                    {financialSummaryReport.statement.paymentBreakdownList.map((pm) => (
+                      <div key={pm.method} className="flex items-center justify-between py-2 text-slate-700">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-slate-800">{pm.method}</span>
+                          <span className="text-[10px] text-slate-400">({pm.count} txns)</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-[11px] text-slate-500 font-medium">{pm.percentage}%</span>
+                          <span className="font-semibold text-slate-900 w-24 text-right">
+                            {formatCurrency(pm.amount)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between py-2.5 font-bold text-xs bg-blue-50/70 px-2 rounded-lg border-y-2 border-blue-500/80 text-blue-950 mt-1">
+                      <div>
+                        <span className="uppercase tracking-wide">TOTAL COLLECTED</span>
+                        <span className="text-[10px] text-blue-700 font-normal block">
+                          Actual money received from customers
+                        </span>
+                      </div>
+                      <span className="text-sm font-extrabold text-blue-800">
+                        {formatCurrency(financialSummaryReport.statement.totalCollected)}
+                      </span>
+                    </div>
+
+                    {Number(financialSummaryReport.statement.totalOutstanding) > 0 && (
+                      <div className="flex items-center justify-between py-2 text-xs bg-amber-50/80 px-2 rounded-lg border border-amber-300 text-amber-950 mt-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                          <span className="font-bold text-amber-900 uppercase tracking-wide">
+                            Outstanding Receivables (کل بقیہ رقم)
+                          </span>
+                          <span className="text-[10.5px] text-amber-700 font-normal">
+                            ({financialSummaryReport.statement.outstandingCount} bills pending)
+                          </span>
+                        </div>
+                        <span className="text-xs font-extrabold text-amber-800">
+                          {formatCurrency(financialSummaryReport.statement.totalOutstanding)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* C. REVERSALS & DISCOUNTS AUDIT */}
+                <div>
+                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
+                    <span className="text-xs font-bold text-slate-900 tracking-wider uppercase">
+                      REVERSALS & DISCOUNTS AUDIT
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-medium italic">
+                      Contra-Revenue Log
+                    </span>
+                  </div>
+                  <div className="divide-y divide-slate-100 text-xs">
+                    <div className="flex items-center justify-between py-2 text-slate-700">
+                      <span>Total Discounts Given</span>
+                      <span className="font-semibold text-rose-600">
+                        {formatCurrency(financialSummaryReport.statement.totalDiscounts)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between py-2 text-slate-700">
+                      <span>Reversed Invoices Count</span>
+                      <span className="font-semibold text-slate-800">
+                        {financialSummaryReport.statement.reversalCount} invoices
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between py-2 text-slate-700">
+                      <span>Total Reversal Value (Incl. Tax)</span>
+                      <span className="font-semibold text-rose-600">
+                        {formatCurrency(financialSummaryReport.statement.reversalValue)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between py-2 text-slate-700">
+                      <span>Net Reversal Impact (Excl. Tax)</span>
+                      <span className="font-semibold text-rose-700">
+                        {formatCurrency(financialSummaryReport.statement.reversalNetValue)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+
+          {/* 4. Detailed Records Tables (Items & Invoices) */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
+            <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex p-0.5 bg-slate-100 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFinancialTableTab('items');
+                      setCurrentPage(1);
+                    }}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      financialTableTab === 'items'
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-900'
+                    }`}
+                  >
+                    Item Profitability Records ({financialSummaryReport.itemRows.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFinancialTableTab('orders');
+                      setCurrentPage(1);
+                    }}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      financialTableTab === 'orders'
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-900'
+                    }`}
+                  >
+                    Invoice Sales Records ({filteredOrders.length})
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 flex-wrap">
+                {/* Sort Controls (Item View only) */}
+                {financialTableTab === 'items' && (
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                    <span className="font-semibold text-slate-600">Sort:</span>
+                    <select
+                      value={profitSortBy}
+                      onChange={(e) => {
+                        setProfitSortBy(e.target.value);
+                        setCurrentPage(1);
+                      }}
+                      className="h-7 px-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none cursor-pointer hover:border-slate-300 transition-colors"
+                    >
+                      <option value="recent">Recently Sold (Latest First)</option>
+                      <option value="sales">Net Sales (Highest First)</option>
+                      {canViewCosts && (
+                        <>
+                          <option value="profit">Gross Profit (Highest First)</option>
+                          <option value="margin">Profit Margin %</option>
+                        </>
+                      )}
+                      <option value="qty">Qty Sold (Highest First)</option>
+                    </select>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                  <span>Rows:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="h-7 px-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                  >
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {activeDataset.length === 0 ? (
+              <div className="p-12 text-center text-xs text-slate-400">
+                {financialTableTab === 'items'
+                  ? 'No items sold for the selected date range and filters.'
+                  : 'No sales invoices recorded for the selected date range and filters.'}
+              </div>
+            ) : (
+              <>
+                <DataTable
+                  columns={financialTableTab === 'orders' ? salesTableColumns : financialSummaryTableColumns}
+                  data={paginatedData}
+                  keyField="id"
+                  footer={
+                    financialTableTab === 'orders' ? (
+                      <tr className="border-t-2 border-slate-300 bg-slate-50/90 text-xs font-bold text-slate-900">
+                        <td colSpan={4} className="py-2.5 px-3.5 text-slate-800 whitespace-nowrap">
+                          <span className="uppercase tracking-wider text-[11px] text-slate-500 font-bold block">
+                            Statement Reconciled Total
+                          </span>
+                          <span className="text-[11px] text-slate-400 font-normal">
+                            ({filteredOrders.length} valid sales invoices)
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
+                          {formatCurrency(filteredOrders.reduce((s, o) => s + (Number(o.subtotal) || 0), 0))}
+                        </td>
+                        <td className="py-2.5 px-3.5 text-right font-extrabold text-rose-600 whitespace-nowrap">
+                          {filteredOrders.reduce((s, o) => s + (Number(o.discountAmount) || 0), 0) > 0
+                            ? `-${formatCurrency(filteredOrders.reduce((s, o) => s + (Number(o.discountAmount) || 0), 0))}`
+                            : 'Rs 0'}
+                        </td>
+                        <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-700 whitespace-nowrap">
+                          {formatCurrency(filteredOrders.reduce((s, o) => s + (Number(o.taxAmount) || 0), 0))}
+                        </td>
+                        <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
+                          {formatCurrency(filteredOrders.reduce((s, o) => s + (Number(o.grandTotal) || 0), 0))}
+                        </td>
+                        <td colSpan={3} className="py-2.5 px-3.5" />
+                      </tr>
+                    ) : (
+                      <tr className="border-t-2 border-slate-300 bg-slate-50/90 text-xs font-bold text-slate-900">
+                        <td colSpan={3} className="py-2.5 px-3.5 text-slate-800 whitespace-nowrap">
+                          <span className="uppercase tracking-wider text-[11px] text-slate-500 font-bold block">
+                            Statement Reconciled Total
+                          </span>
+                          <span className="text-[11px] text-slate-400 font-normal">
+                            ({financialSummaryReport.itemRows.length} items sold across {financialSummaryReport.kpis.validOrdersCount} valid invoices)
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
+                          {formatCurrency(financialSummaryReport.statement.netRevenue)}
+                        </td>
+                        {canViewCosts && (
+                          <>
+                            <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-700 whitespace-nowrap">
+                              {formatCurrency(financialSummaryReport.statement.totalCOGS)}
+                            </td>
+                            <td className={`py-2.5 px-3.5 text-right font-extrabold whitespace-nowrap ${financialSummaryReport.statement.grossProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                              {formatCurrency(financialSummaryReport.statement.grossProfit)}
+                            </td>
+                            <td className="py-2.5 px-3.5 text-center whitespace-nowrap">
+                              <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+                                {financialSummaryReport.statement.grossProfitMargin}%
+                              </span>
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    )
+                  }
+                />
+
+                {/* Pagination Controls */}
+                <div className="p-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                  <span>
+                    Page {currentPage} of {totalPages} ({activeDataset.length} total records)
                   </span>
                   <div className="flex items-center gap-1.5">
                     <button

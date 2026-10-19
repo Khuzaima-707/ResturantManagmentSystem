@@ -6,6 +6,7 @@ import {
   PlusCircle,
   ChefHat,
   AlertCircle,
+  Wallet,
 } from 'lucide-react';
 import { Modal } from '../../../components/ui/Modal';
 import { formatCurrency } from '../../../domain/calculations';
@@ -14,6 +15,7 @@ import { downloadInvoicePdf } from '../../../services/pdf/invoicePdfGenerator';
 import { getImage } from '../../../services/persistence/imageStorage';
 import { useAppStore } from '../../../store';
 import { ReversalModal } from './ReversalModal';
+import { SettleBalanceModal } from './SettleBalanceModal';
 
 /**
  * InvoiceModal Component
@@ -22,15 +24,30 @@ import { ReversalModal } from './ReversalModal';
  * restaurant badge, metadata block, item table, totals, payment details, and dashed footer.
  */
 export const InvoiceModal = ({
-  order,
+  order: initialOrder,
   isOpen,
   onClose,
   onInvoiceUpdated,
   isReadOnly = false,
 }) => {
   const { settings, reversals } = useAppStore();
+  const [internalOrder, setInternalOrder] = useState(initialOrder);
   const [isReversalModalOpen, setIsReversalModalOpen] = useState(false);
+  const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
   const [logoUrl, setLogoUrl] = useState(null);
+
+  React.useEffect(() => {
+    setInternalOrder(initialOrder);
+  }, [initialOrder]);
+
+  const order = internalOrder || initialOrder;
+
+  const handleBalanceSettled = (updatedOrder) => {
+    setInternalOrder(updatedOrder);
+    if (typeof onInvoiceUpdated === 'function') {
+      onInvoiceUpdated(updatedOrder);
+    }
+  };
 
   const logoRef = settings?.business?.logoRef || settings?.logoRef || null;
 
@@ -110,7 +127,7 @@ export const InvoiceModal = ({
   return (
     <>
       <Modal
-        isOpen={isOpen}
+        isOpen={isOpen && !isSettleModalOpen}
         onClose={onClose}
         title="Invoice Preview"
         hideCloseButton={false}
@@ -122,6 +139,18 @@ export const InvoiceModal = ({
           {/* Action Toolbar - Fully visible pills, no clipping */}
           <div className="flex items-center justify-between gap-1.5 p-1.5 rounded-2xl bg-slate-50 border border-slate-200/80 no-print">
             <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap">
+              {Number(order?.balanceDue) > 0 && !isReversed && (
+                <button
+                  type="button"
+                  onClick={() => setIsSettleModalOpen(true)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border border-amber-300 hover:border-amber-400 text-amber-800 bg-amber-50 hover:bg-amber-100 text-[11px] font-bold cursor-pointer transition-all shadow-2xs whitespace-nowrap"
+                  title="Settle remaining balance"
+                >
+                  <Wallet className="w-3 h-3 text-amber-700" />
+                  <span>Pay Balance</span>
+                </button>
+              )}
+
               {eligibleForReversal && (
                 <button
                   type="button"
@@ -226,9 +255,16 @@ export const InvoiceModal = ({
                 </div>
 
                 <div className="text-right shrink-0">
-                  <span className="inline-block px-2.5 py-0.5 rounded-full border border-orange-200 bg-orange-50/50 text-[#FF5C28] text-[11px] font-semibold">
-                    {order.orderType || 'Dine-In'}
-                  </span>
+                  <div className="flex items-center gap-1 justify-end">
+                    <span className="inline-block px-2.5 py-0.5 rounded-full border border-orange-200 bg-orange-50/50 text-[#FF5C28] text-[11px] font-semibold">
+                      {order.orderType || 'Dine-In'}
+                    </span>
+                    {Number(order.balanceDue) > 0 && (
+                      <span className="inline-block px-2 py-0.5 rounded-full border border-amber-300 bg-amber-50 text-amber-800 text-[10px] font-bold">
+                        Partial Due
+                      </span>
+                    )}
+                  </div>
                   <span className="font-extrabold text-xs sm:text-sm text-[#FF5C28] block mt-1">
                     #{order.invoiceNumber}
                   </span>
@@ -397,7 +433,9 @@ export const InvoiceModal = ({
                   <div className="flex justify-between items-center">
                     <span>Payment Method</span>
                     <span className="font-bold text-slate-900">
-                      {(order.paymentMethod || 'Cash').toUpperCase()}
+                      {order.paymentMethod === 'Split'
+                        ? `Split (Cash: Rs ${order.splitDetails?.cashAmount || 0} + ${order.splitDetails?.secondaryMethod || 'Card'}: Rs ${order.splitDetails?.secondaryAmount || 0})`
+                        : (order.paymentMethod || 'Cash').toUpperCase()}
                       {order.paymentMethod === 'Card' && order.cardNetwork && ` (${order.cardNetwork})`}
                       {order.paymentMethod === 'Online' && order.onlineChannel && ` (${order.onlineChannel})`}
                     </span>
@@ -417,12 +455,42 @@ export const InvoiceModal = ({
                     </div>
                   )}
 
+                  {order.customerName && (
+                    <div className="flex justify-between items-center text-[10px] text-slate-500">
+                      <span>Customer / Ref</span>
+                      <span className="font-semibold text-slate-800">{order.customerName}</span>
+                    </div>
+                  )}
+
                   <div className="flex justify-between items-center">
                     <span>Amount Received</span>
                     <span className="font-bold text-slate-900">
                       {formatCurrency(order.amountReceived || order.grandTotal || 0)}
                     </span>
                   </div>
+
+                  {Number(order.balanceDue) > 0 && (
+                    <div className="flex justify-between items-center font-bold text-amber-800 bg-amber-50/90 px-2.5 py-1.5 rounded-xl border border-amber-200">
+                      <div>
+                        <span className="block text-xs font-bold">Balance Due (بقیہ رقم)</span>
+                        <span className="text-[10px] text-amber-600 font-normal">Pending collection</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-extrabold text-amber-900">
+                          {formatCurrency(order.balanceDue)}
+                        </span>
+                        {!isReversed && (
+                          <button
+                            type="button"
+                            onClick={() => setIsSettleModalOpen(true)}
+                            className="px-2 py-0.5 rounded-lg bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white text-[10px] font-bold shadow-2xs cursor-pointer transition-all no-print"
+                          >
+                            Pay Now
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {order.paymentMethod === 'Cash' && Number(order.changeAmount) > 0 && (
                     <div className="flex justify-between items-center">
@@ -634,12 +702,28 @@ export const InvoiceModal = ({
           <div className="receipt-payment text-[10.5px] space-y-0.5 pt-1">
             <div className="flex justify-between items-center">
               <span>Payment Method:</span>
-              <span className="font-semibold">{(order.paymentMethod || 'Cash').toUpperCase()}</span>
+              <span className="font-semibold">
+                {order.paymentMethod === 'Split'
+                  ? `SPLIT (Cash + ${order.splitDetails?.secondaryMethod || 'Card'})`
+                  : (order.paymentMethod || 'Cash').toUpperCase()}
+              </span>
             </div>
+            {order.customerName && (
+              <div className="flex justify-between items-center">
+                <span>Customer / Ref:</span>
+                <span>{order.customerName}</span>
+              </div>
+            )}
             <div className="flex justify-between items-center">
               <span>Amount Received:</span>
               <span className="font-mono font-medium">{formatCurrency(order.amountReceived || order.grandTotal || 0)}</span>
             </div>
+            {Number(order.balanceDue) > 0 && (
+              <div className="flex justify-between items-center font-bold text-[11px] pt-0.5 border-t border-black border-dashed">
+                <span>BALANCE DUE (بقیہ):</span>
+                <span className="font-mono font-extrabold">{formatCurrency(order.balanceDue)}</span>
+              </div>
+            )}
             {order.paymentMethod === 'Cash' && Number(order.changeAmount) > 0 && (
               <div className="flex justify-between items-center font-bold">
                 <span>Change:</span>
@@ -670,6 +754,16 @@ export const InvoiceModal = ({
               onInvoiceUpdated(rev);
             }
           }}
+        />
+      )}
+
+      {/* Settle Outstanding Balance Modal */}
+      {Number(order?.balanceDue) > 0 && (
+        <SettleBalanceModal
+          order={order}
+          isOpen={isSettleModalOpen}
+          onClose={() => setIsSettleModalOpen(false)}
+          onSettled={handleBalanceSettled}
         />
       )}
     </>

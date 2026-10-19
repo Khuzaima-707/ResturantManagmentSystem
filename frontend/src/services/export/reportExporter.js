@@ -152,10 +152,10 @@ export async function exportSalesReportExcel({ orders = [], kpis = {}, filters =
   });
 
   // --- ROWS 9-10: Executive KPI Summary Cards Row ---
-  const kpiLabels = ['Gross Sales', 'Valid Net Sales', 'Valid Orders', 'Average Order Val', 'Items Sold', 'Discounts Given'];
+  const kpiLabels = ['Total Sale', 'Valid Net Sales', 'Valid Orders', 'Average Order Val', 'Items Sold', 'Discounts Given'];
   const validOrderCount = kpis.validOrderCount !== undefined ? kpis.validOrderCount : (kpis.completedOrders || 0);
   const kpiValues = [
-    `Rs ${formatNumber(kpis.grossSales || 0)}`,
+    `Rs ${formatNumber(kpis.validBilledSales || kpis.totalSale || kpis.grossSales || 0)}`,
     `Rs ${formatNumber(kpis.validNetSales || 0)}`,
     Number(validOrderCount),
     Number(Math.round(kpis.averageOrderValue || 0)),
@@ -1114,7 +1114,7 @@ export function exportSalesReportCsv({ orders = [], kpis = {}, filters = {}, set
     ['Business Name:', restName, 'Date Scope:', dateScope, 'Generated:', dateStr, '', '', '', '', '', '', '', 'Currency: PKR'],
     [],
     ['--- 1. SALES PERFORMANCE KPI SUMMARY ---', '', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['Gross Sales (PKR):', Number((kpis.grossSales || 0).toFixed(2)), 'Valid Net Sales (PKR):', Number((kpis.validNetSales || 0).toFixed(2)), 'Completed Orders:', Number(kpis.validOrderCount !== undefined ? kpis.validOrderCount : (kpis.completedOrders || 0)), 'AOV (PKR):', Number((kpis.averageOrderValue || 0).toFixed(2)), 'Items Sold:', Number(kpis.itemsSold || 0), 'Discounts (PKR):', Number((kpis.discountsGiven || 0).toFixed(2)), '', ''],
+    ['Total Sale (PKR):', Number((kpis.validBilledSales || kpis.totalSale || kpis.grossSales || 0).toFixed(2)), 'Valid Net Sales (PKR):', Number((kpis.validNetSales || 0).toFixed(2)), 'Completed Orders:', Number(kpis.validOrderCount !== undefined ? kpis.validOrderCount : (kpis.completedOrders || 0)), 'AOV (PKR):', Number((kpis.averageOrderValue || 0).toFixed(2)), 'Items Sold:', Number(kpis.itemsSold || 0), 'Discounts (PKR):', Number((kpis.discountsGiven || 0).toFixed(2)), '', ''],
     [],
     ['--- 2. DETAILED TRANSACTIONS LEDGER ---', '', '', '', '', '', '', '', '', '', '', '', '', ''],
     ['Invoice #', 'Date / Time', 'Order Type', 'Category', 'Payment', 'Items', 'Gross Sales', 'Net Revenue', 'Tax', 'Status', 'Valid Net', 'Valid Gross', 'Valid Items', 'Valid Discount'],
@@ -1247,64 +1247,558 @@ export function exportProfitReportCsv({ itemRows = [], kpis = {}, filters = {}, 
   exportReportToCsv(filename, rows);
 }
 
-export function downloadReportPdf({ reportType = 'Sales', kpis = {}, filters = {}, settings = {} }) {
+export function downloadReportPdf({
+  reportType = 'Sales',
+  kpis = {},
+  filters = {},
+  settings = {},
+  statement = null,
+  itemRows = [],
+  user = {},
+  canViewCosts = true,
+}) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 18;
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 14;
   let y = margin;
 
+  const restaurantName = settings?.business?.name || settings?.restaurantName || 'SpiceHub Restaurant & Grill';
+
+  // Header Title
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.setTextColor(26, 32, 44);
-  doc.text(settings.restaurantName || 'SpiceHub Restaurant', pageWidth / 2, y, { align: 'center' });
-  y += 6;
+  doc.setFontSize(15);
+  doc.setTextColor(11, 25, 44);
+  doc.text(restaurantName, pageWidth / 2, y, { align: 'center' });
+  y += 5.5;
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
+  doc.setFontSize(9.5);
   doc.setTextColor(100, 116, 139);
-  doc.text(`${reportType} Analytical Report • Filter: ${filters.datePreset || 'This Week'}`, pageWidth / 2, y, { align: 'center' });
-  y += 5;
-  doc.text(`Generated on ${new Date().toLocaleString()}`, pageWidth / 2, y, { align: 'center' });
-  y += 7;
+  doc.text(`${reportType} Report • Period: ${filters.datePreset || 'All Dates'}`, pageWidth / 2, y, { align: 'center' });
+  y += 4.5;
+  const genUser = user?.name || user?.username || 'Authorized Staff';
+  doc.text(`Generated on ${new Date().toLocaleString()} by ${genUser}`, pageWidth / 2, y, { align: 'center' });
+  y += 6;
 
-  doc.setDrawColor(226, 232, 240);
-  doc.line(margin, y, pageWidth - margin, y);
-  y += 8;
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.setTextColor(234, 88, 12);
-  doc.text('Key Performance Indicators', margin, y);
-  y += 7;
-
-  doc.setFontSize(9);
-  Object.entries(kpis).forEach(([key, val]) => {
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(71, 85, 105);
-    const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase());
-    doc.text(label, margin + 4, y);
-
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(30, 41, 59);
-    const valText = typeof val === 'number' && key.toLowerCase().includes('count')
-      ? formatNumber(val)
-      : typeof val === 'number'
-      ? formatCurrency(val)
-      : String(val);
-
-    doc.text(valText, pageWidth - margin - 4, y, { align: 'right' });
-    y += 6;
-  });
-
-  y += 8;
   doc.setDrawColor(226, 232, 240);
   doc.line(margin, y, pageWidth - margin, y);
   y += 6;
 
-  doc.setFont('helvetica', 'italic');
-  doc.setFontSize(8);
-  doc.setTextColor(148, 163, 184);
-  doc.text('Report generated directly from canonical transaction ledger snapshots.', pageWidth / 2, y, { align: 'center' });
+  // If this is Financial Summary with statement object
+  if (reportType === 'Financial Summary' && statement) {
+    // Statement Sections
+    const printSectionHeader = (title) => {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      doc.setTextColor(255, 92, 40); // Orange
+      doc.text(title, margin, y);
+      y += 5;
+    };
 
-  doc.save(`${reportType}_Report_${Date.now()}.pdf`);
+    const printLine = (label, val, isBold = false, isIndented = true, isCurrency = true) => {
+      doc.setFont('helvetica', isBold ? 'bold' : 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(isBold ? 15 : 71, isBold ? 23 : 85, isBold ? 42 : 105);
+      doc.text(label, margin + (isIndented ? 4 : 0), y);
+      const valStr = isCurrency && typeof val === 'number'
+        ? formatCurrency(val)
+        : String(val);
+      doc.text(valStr, pageWidth - margin, y, { align: 'right' });
+      y += 4.5;
+    };
+
+    // 1. REVENUE
+    printSectionHeader('REVENUE');
+    printLine('Gross Sales', statement.grossSales);
+    printLine('Less: Discounts', Number(statement.discounts) > 0 ? `-${formatCurrency(statement.discounts)}` : 'Rs 0', false, true, false);
+    printLine('Less: Reversals Effect', Number(statement.reversalEffect) > 0 ? `-${formatCurrency(statement.reversalEffect)}` : 'Rs 0', false, true, false);
+    doc.setDrawColor(203, 213, 225);
+    doc.line(margin + 4, y, pageWidth - margin, y);
+    y += 2;
+    printLine('NET REVENUE', statement.netRevenue, true, false);
+    y += 2;
+
+    // 2. COST OF SALES & GROSS PROFIT (Admin only)
+    if (canViewCosts) {
+      printSectionHeader('COST OF SALES (COGS)');
+      printLine('Food / Item Cost', statement.foodCOGS);
+      printLine('Add-on Cost', statement.addonCOGS);
+      printLine('Deal Cost', statement.dealCOGS);
+      doc.line(margin + 4, y, pageWidth - margin, y);
+      y += 2;
+      printLine('TOTAL COGS', statement.totalCOGS, true, false);
+      y += 2;
+
+      printSectionHeader('GROSS PROFIT');
+      printLine('Gross Profit (Net Revenue - Total COGS)', statement.grossProfit, true, false);
+      printLine('Gross Margin %', `${statement.grossProfitMargin}%`, true, false, false);
+      y += 2;
+    }
+
+    // 3. TAX SUMMARY
+    printSectionHeader('TAX SUMMARY');
+    printLine('Tax Collected (Excluded from revenue & profit)', statement.taxCollected, true, false);
+    y += 2;
+
+    // 4. PAYMENT COLLECTION
+    printSectionHeader('PAYMENT COLLECTION');
+    printLine('Cash', statement.cashTotal);
+    printLine('Card', statement.cardTotal);
+    printLine('Online', statement.onlineTotal);
+    if (statement.otherTotal > 0) {
+      printLine('Other', statement.otherTotal);
+    }
+    doc.line(margin + 4, y, pageWidth - margin, y);
+    y += 2;
+    printLine('TOTAL COLLECTED', statement.totalCollected, true, false);
+    y += 4;
+
+    // 5. ITEM PROFITABILITY SUMMARY TABLE (Top 15 items if space permits)
+    if (Array.isArray(itemRows) && itemRows.length > 0 && y < pageHeight - 35) {
+      printSectionHeader('ITEM PROFITABILITY SUMMARY');
+      doc.setFillColor(241, 245, 249);
+      doc.rect(margin, y, pageWidth - margin * 2, 5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(30, 41, 59);
+
+      doc.text('Item', margin + 2, y + 3.5);
+      doc.text('Category', margin + 45, y + 3.5);
+      doc.text('Qty/Wt', margin + 75, y + 3.5);
+      doc.text('Net Sales', margin + 105, y + 3.5, { align: 'right' });
+      if (canViewCosts) {
+        doc.text('COGS', margin + 135, y + 3.5, { align: 'right' });
+        doc.text('Profit', margin + 158, y + 3.5, { align: 'right' });
+        doc.text('Margin', pageWidth - margin - 2, y + 3.5, { align: 'right' });
+      }
+      y += 6;
+
+      const topItems = itemRows.slice(0, 18);
+      topItems.forEach((item) => {
+        if (y > pageHeight - 15) return;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(71, 85, 105);
+
+        const truncName = item.name.length > 20 ? `${item.name.substring(0, 19)}…` : item.name;
+        doc.text(truncName, margin + 2, y + 3);
+        doc.text(item.category || '', margin + 45, y + 3);
+        doc.text(item.qtyWeightDisplay || `${item.qtySold} pcs`, margin + 75, y + 3);
+        doc.text(formatCurrency(item.netSales), margin + 105, y + 3, { align: 'right' });
+
+        if (canViewCosts) {
+          const cogsStr = item.hasCost && item.cogs !== null ? formatCurrency(item.cogs) : 'Missing';
+          const profStr = item.hasCost && item.grossProfit !== null ? formatCurrency(item.grossProfit) : 'N/A';
+          const marginStr = item.hasCost && item.margin !== null ? `${item.margin}%` : '—';
+
+          doc.text(cogsStr, margin + 135, y + 3, { align: 'right' });
+          doc.text(profStr, margin + 158, y + 3, { align: 'right' });
+          doc.text(marginStr, pageWidth - margin - 2, y + 3, { align: 'right' });
+        }
+        y += 4.2;
+      });
+    }
+  } else {
+    // Standard KPI list fallback
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(234, 88, 12);
+    doc.text('Key Performance Indicators', margin, y);
+    y += 7;
+
+    doc.setFontSize(9);
+    Object.entries(kpis).forEach(([key, val]) => {
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(71, 85, 105);
+      const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase());
+      doc.text(label, margin + 4, y);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(30, 41, 59);
+      const valText = typeof val === 'number' && key.toLowerCase().includes('count')
+        ? formatNumber(val)
+        : typeof val === 'number'
+        ? formatCurrency(val)
+        : String(val);
+
+      doc.text(valText, pageWidth - margin - 4, y, { align: 'right' });
+      y += 6;
+    });
+  }
+
+  y = Math.min(pageHeight - 8, y + 5);
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(7.5);
+  doc.setTextColor(148, 163, 184);
+  doc.text('Report generated directly from canonical transaction ledger snapshots. Tax is excluded from revenue.', pageWidth / 2, y, { align: 'center' });
+
+  const safeFilename = `Financial_Summary_${(filters.datePreset || 'Report').replace(/\s+/g, '_')}_${Date.now()}.pdf`;
+  doc.save(safeFilename);
 }
+
+// =========================================================================
+// 5. FINANCIAL SUMMARY EXCEL EXPORT (Chartered Accountant VIP Format)
+// =========================================================================
+
+export async function exportFinancialSummaryExcel({
+  statement = {},
+  itemRows = [],
+  filters = {},
+  settings = {},
+  user = {},
+  canViewCosts = true,
+}) {
+  const restaurantName = settings?.business?.name || settings?.restaurantName || 'SpiceHub Restaurant & Grill';
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'SpiceHub POS System';
+  workbook.created = new Date();
+
+  const ws = workbook.addWorksheet('Financial Summary', {
+    views: [{ showGridLines: true }],
+  });
+
+  const numCols = canViewCosts ? 7 : 4;
+  ws.columns = [
+    { key: 'colA', width: 28 }, // Item / Section
+    { key: 'colB', width: 18 }, // Category / Detail
+    { key: 'colC', width: 16 }, // Qty / Weight
+    { key: 'colD', width: 18 }, // Net Sales
+    ...(canViewCosts
+      ? [
+          { key: 'colE', width: 18 }, // COGS
+          { key: 'colF', width: 18 }, // Gross Profit
+          { key: 'colG', width: 16 }, // Margin %
+        ]
+      : []),
+  ];
+
+  const lastColLetter = canViewCosts ? 'G' : 'D';
+
+  // 1. Title Banner
+  ws.mergeCells(`A1:${lastColLetter}1`);
+  const tCell = ws.getCell('A1');
+  tCell.value = `${restaurantName} — Financial Summary Report`;
+  tCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_NAVY } };
+  tCell.font = { name: 'Arial', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+  tCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+  ws.getRow(1).height = 26;
+
+  ws.mergeCells(`A2:${lastColLetter}2`);
+  const sCell = ws.getCell('A2');
+  sCell.value = 'Professional Profit & Loss Statement & Item Profitability Ledger • Tax Strictly Excluded from Revenue • Amounts in PKR';
+  sCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_NAVY } };
+  sCell.font = { name: 'Arial', size: 9.5, color: { argb: COLOR_NAVY_SUB } };
+  sCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+  ws.getRow(2).height = 18;
+
+  // 2. Metadata Audit Block
+  const metaConfig = [
+    { row: 4, label: 'Report Period', val: filters.datePreset || 'All Dates' },
+    { row: 5, label: 'Category Filter', val: filters.category || 'All Categories' },
+    { row: 6, label: 'Payment Method', val: filters.paymentMethod || 'All Methods' },
+    { row: 7, label: 'Generated By', val: user?.name || user?.username || 'Admin User' },
+    { row: 8, label: 'Generated Date/Time', val: formatExcelDateTime(Date.now(), true) },
+  ];
+  metaConfig.forEach(({ row, label, val }) => {
+    ws.getCell(`A${row}`).value = label;
+    ws.getCell(`A${row}`).font = { name: 'Arial', size: 9.5, bold: true, color: { argb: 'FF334155' } };
+    ws.getCell(`B${row}`).value = val;
+    ws.getCell(`B${row}`).font = { name: 'Arial', size: 9.5, color: { argb: 'FF0F172A' } };
+    ws.getRow(row).height = 18;
+  });
+
+  // 3. Statement Header Banner
+  let curRow = 10;
+  ws.mergeCells(`A${curRow}:${lastColLetter}${curRow}`);
+  const stHead = ws.getCell(`A${curRow}`);
+  stHead.value = 'FINANCIAL STATEMENT SUMMARY';
+  stHead.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_ORANGE } };
+  stHead.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+  stHead.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+  ws.getRow(curRow).height = 22;
+  curRow += 1;
+
+  const addStatementLine = (lineLabel, lineVal, isHeader = false, isLedgerTotal = false, isCurrency = true) => {
+    const row = ws.getRow(curRow);
+    row.height = isHeader ? 20 : isLedgerTotal ? 22 : 18;
+    const cA = row.getCell(1);
+    const cB = row.getCell(2);
+
+    cA.value = lineLabel;
+    if (isHeader) {
+      cA.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: 'FF1E293B' } };
+      cA.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+    } else {
+      cA.font = { name: 'Arial', size: 9, bold: isLedgerTotal, color: { argb: isLedgerTotal ? 'FF0F172A' : 'FF475569' } };
+    }
+
+    if (lineVal !== null && lineVal !== undefined) {
+      cB.value = lineVal;
+      if (isCurrency && typeof lineVal === 'number') {
+        cB.numFmt = '"Rs "#,##0';
+        cB.alignment = { horizontal: 'right', vertical: 'middle' };
+      } else {
+        cB.alignment = { horizontal: 'right', vertical: 'middle' };
+      }
+      cB.font = { name: 'Arial', size: 9.5, bold: isLedgerTotal, color: { argb: isLedgerTotal ? COLOR_ACTIVE_TEXT : 'FF0F172A' } };
+    }
+
+    if (isLedgerTotal) {
+      cA.border = { top: { style: 'thin', color: { argb: 'FF94A3B8' } }, bottom: { style: 'double', color: { argb: 'FF0F172A' } } };
+      cB.border = { top: { style: 'thin', color: { argb: 'FF94A3B8' } }, bottom: { style: 'double', color: { argb: 'FF0F172A' } } };
+    }
+
+    curRow += 1;
+  };
+
+  // REVENUE
+  addStatementLine('REVENUE', null, true);
+  addStatementLine('   Gross Sales', statement.grossSales);
+  addStatementLine('   Less: Discounts Given', statement.discounts > 0 ? -statement.discounts : 0);
+  addStatementLine('   Less: Reversal Effect', statement.reversalEffect > 0 ? -statement.reversalEffect : 0);
+  addStatementLine('NET REVENUE', statement.netRevenue, false, true);
+
+  // COST OF SALES (Admin Only)
+  if (canViewCosts) {
+    addStatementLine('COST OF SALES (COGS)', null, true);
+    addStatementLine('   Food / Item Cost', statement.foodCOGS);
+    addStatementLine('   Add-on Cost', statement.addonCOGS);
+    addStatementLine('   Deal Cost', statement.dealCOGS);
+    addStatementLine('TOTAL COGS', statement.totalCOGS, false, true);
+
+    addStatementLine('GROSS PROFIT', statement.grossProfit, false, true);
+    addStatementLine('   Gross Profit Margin', `${statement.grossProfitMargin || 0}%`, false, false, false);
+  }
+
+  // TAX SUMMARY
+  addStatementLine('TAX SUMMARY', null, true);
+  addStatementLine('   Tax Collected (Excluded from Revenue)', statement.taxCollected);
+
+  // PAYMENT COLLECTION
+  addStatementLine('PAYMENT COLLECTION', null, true);
+  addStatementLine('   Cash Collected', statement.cashTotal);
+  addStatementLine('   Card Collected', statement.cardTotal);
+  addStatementLine('   Online Collected', statement.onlineTotal);
+  if (statement.otherTotal > 0) {
+    addStatementLine('   Other Methods', statement.otherTotal);
+  }
+  addStatementLine('TOTAL COLLECTED', statement.totalCollected, false, true);
+
+  // REVERSALS & AUDIT
+  addStatementLine('REVERSALS & AUDIT', null, true);
+  addStatementLine('   Total Discounts', statement.totalDiscounts);
+  addStatementLine('   Reversed Invoices Count', statement.reversalCount, false, false, false);
+  addStatementLine('   Total Reversal Value (Incl. Tax)', statement.reversalValue);
+
+  curRow += 2;
+
+  // 4. ITEM PROFITABILITY TABLE
+  ws.mergeCells(`A${curRow}:${lastColLetter}${curRow}`);
+  const itemHead = ws.getCell(`A${curRow}`);
+  itemHead.value = 'ITEM PROFITABILITY BREAKDOWN';
+  itemHead.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_ORANGE } };
+  itemHead.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+  itemHead.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+  ws.getRow(curRow).height = 22;
+  curRow += 1;
+
+  const tableHeaders = [
+    'Item',
+    'Category',
+    'Qty / Weight Sold',
+    'Net Sales',
+    ...(canViewCosts ? ['COGS', 'Gross Profit', 'Profit Margin %'] : []),
+  ];
+
+  const thRow = ws.getRow(curRow);
+  thRow.height = 22;
+  tableHeaders.forEach((h, idx) => {
+    const c = thRow.getCell(idx + 1);
+    c.value = h;
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_KPI_BG } };
+    c.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF334155' } };
+    c.alignment = { horizontal: idx >= 3 ? 'right' : idx === 2 ? 'center' : 'left', vertical: 'middle' };
+    applyCellBorder(c);
+  });
+  curRow += 1;
+
+  itemRows.forEach((r) => {
+    const row = ws.getRow(curRow);
+    row.height = 19;
+
+    const c1 = row.getCell(1);
+    c1.value = r.name;
+    c1.font = { name: 'Arial', size: 9, bold: true, color: { argb: COLOR_TEXT_DARK } };
+    applyCellBorder(c1);
+
+    const c2 = row.getCell(2);
+    c2.value = r.category;
+    c2.font = { name: 'Arial', size: 9, color: { argb: COLOR_TEXT_DARK } };
+    applyCellBorder(c2);
+
+    const c3 = row.getCell(3);
+    c3.value = r.qtyWeightDisplay || `${r.qtySold} pcs`;
+    c3.font = { name: 'Arial', size: 9 };
+    c3.alignment = { horizontal: 'center', vertical: 'middle' };
+    applyCellBorder(c3);
+
+    const c4 = row.getCell(4);
+    c4.value = Number(r.netSales) || 0;
+    c4.numFmt = '"Rs "#,##0';
+    c4.font = { name: 'Arial', size: 9 };
+    c4.alignment = { horizontal: 'right', vertical: 'middle' };
+    applyCellBorder(c4);
+
+    if (canViewCosts) {
+      const c5 = row.getCell(5);
+      if (r.hasCost && r.cogs !== null) {
+        c5.value = Number(r.cogs) || 0;
+        c5.numFmt = '"Rs "#,##0';
+        c5.font = { name: 'Arial', size: 9 };
+        c5.alignment = { horizontal: 'right', vertical: 'middle' };
+      } else {
+        c5.value = 'Cost Missing';
+        c5.font = { name: 'Arial', size: 8.5, italic: true, color: { argb: COLOR_REV_TEXT } };
+        c5.alignment = { horizontal: 'center', vertical: 'middle' };
+      }
+      applyCellBorder(c5);
+
+      const c6 = row.getCell(6);
+      if (r.hasCost && r.grossProfit !== null) {
+        c6.value = Number(r.grossProfit) || 0;
+        c6.numFmt = '"Rs "#,##0';
+        c6.font = { name: 'Arial', size: 9, bold: true, color: { argb: r.grossProfit >= 0 ? COLOR_ACTIVE_TEXT : COLOR_REV_TEXT } };
+        c6.alignment = { horizontal: 'right', vertical: 'middle' };
+      } else {
+        c6.value = 'Unavailable';
+        c6.font = { name: 'Arial', size: 8.5, italic: true, color: { argb: COLOR_REV_TEXT } };
+        c6.alignment = { horizontal: 'center', vertical: 'middle' };
+      }
+      applyCellBorder(c6);
+
+      const c7 = row.getCell(7);
+      if (r.hasCost && r.margin !== null) {
+        c7.value = `${r.margin}%`;
+        c7.font = { name: 'Arial', size: 9, bold: true };
+        c7.alignment = { horizontal: 'center', vertical: 'middle' };
+      } else {
+        c7.value = 'N/A';
+        c7.font = { name: 'Arial', size: 8.5, italic: true, color: { argb: COLOR_MUTED } };
+        c7.alignment = { horizontal: 'center', vertical: 'middle' };
+      }
+      applyCellBorder(c7);
+    }
+
+    curRow += 1;
+  });
+
+  // Table Totals Row
+  const totRow = ws.getRow(curRow);
+  totRow.height = 22;
+  for (let c = 1; c <= numCols; c += 1) {
+    totRow.getCell(c).border = {
+      top: { style: 'thin', color: { argb: 'FF94A3B8' } },
+      bottom: { style: 'double', color: { argb: COLOR_TEXT_DARK } },
+    };
+  }
+  totRow.getCell(1).value = 'TOTAL / OVERALL';
+  totRow.getCell(1).font = { name: 'Arial', size: 9.5, bold: true, color: { argb: COLOR_TEXT_DARK } };
+
+  const cNet = totRow.getCell(4);
+  cNet.value = Number(statement.netRevenue || 0);
+  cNet.numFmt = '"Rs "#,##0';
+  cNet.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: COLOR_TEXT_DARK } };
+  cNet.alignment = { horizontal: 'right', vertical: 'middle' };
+
+  if (canViewCosts) {
+    const cCogs = totRow.getCell(5);
+    cCogs.value = Number(statement.totalCOGS || 0);
+    cCogs.numFmt = '"Rs "#,##0';
+    cCogs.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: COLOR_TEXT_DARK } };
+    cCogs.alignment = { horizontal: 'right', vertical: 'middle' };
+
+    const cProfit = totRow.getCell(6);
+    cProfit.value = Number(statement.grossProfit || 0);
+    cProfit.numFmt = '"Rs "#,##0';
+    cProfit.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: statement.grossProfit >= 0 ? COLOR_ACTIVE_TEXT : COLOR_REV_TEXT } };
+    cProfit.alignment = { horizontal: 'right', vertical: 'middle' };
+
+    const cMargin = totRow.getCell(7);
+    cMargin.value = `${statement.grossProfitMargin || 0}%`;
+    cMargin.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: COLOR_TEXT_DARK } };
+    cMargin.alignment = { horizontal: 'center', vertical: 'middle' };
+  }
+
+  const filename = `Financial_Summary_${(filters.datePreset || 'All_Dates').replace(/\s+/g, '_')}_${Date.now()}`;
+  await saveWorkbook(workbook, filename);
+}
+
+export function exportFinancialSummaryCsv({
+  statement = {},
+  itemRows = [],
+  filters = {},
+  settings = {},
+  user = {},
+  canViewCosts = true,
+}) {
+  const restaurantName = settings?.business?.name || settings?.restaurantName || 'SpiceHub Restaurant & Grill';
+  const rows = [
+    [restaurantName, 'Financial Summary Report'],
+    ['Report Period', filters.datePreset || 'All Dates'],
+    ['Generated By', user?.name || user?.username || 'Admin'],
+    ['Generated Date/Time', new Date().toLocaleString()],
+    [],
+    ['STATEMENT SECTION', 'AMOUNT (PKR)'],
+    ['Gross Sales', statement.grossSales || 0],
+    ['Less: Discounts', statement.discounts ? `-${statement.discounts}` : 0],
+    ['Less: Reversal Effect', statement.reversalEffect ? `-${statement.reversalEffect}` : 0],
+    ['NET REVENUE', statement.netRevenue || 0],
+    ...(canViewCosts
+      ? [
+          ['Food / Item COGS', statement.foodCOGS || 0],
+          ['Add-on COGS', statement.addonCOGS || 0],
+          ['Deal COGS', statement.dealCOGS || 0],
+          ['TOTAL COGS', statement.totalCOGS || 0],
+          ['GROSS PROFIT', statement.grossProfit || 0],
+          ['GROSS PROFIT MARGIN %', `${statement.grossProfitMargin || 0}%`],
+        ]
+      : []),
+    ['Tax Collected', statement.taxCollected || 0],
+    ['Cash Collected', statement.cashTotal || 0],
+    ['Card Collected', statement.cardTotal || 0],
+    ['Online Collected', statement.onlineTotal || 0],
+    ['TOTAL COLLECTED', statement.totalCollected || 0],
+    ['Total Discounts Given', statement.totalDiscounts || 0],
+    ['Reversal Count', statement.reversalCount || 0],
+    ['Reversal Value', statement.reversalValue || 0],
+    [],
+    [
+      'Item',
+      'Category',
+      'Qty / Weight Sold',
+      'Net Sales',
+      ...(canViewCosts ? ['COGS', 'Gross Profit', 'Profit Margin %'] : []),
+    ],
+  ];
+
+  itemRows.forEach((r) => {
+    rows.push([
+      r.name,
+      r.category,
+      r.qtyWeightDisplay || `${r.qtySold} pcs`,
+      r.netSales,
+      ...(canViewCosts
+        ? [
+            r.hasCost && r.cogs !== null ? r.cogs : 'Cost Missing',
+            r.hasCost && r.grossProfit !== null ? r.grossProfit : 'Unavailable',
+            r.hasCost && r.margin !== null ? `${r.margin}%` : 'N/A',
+          ]
+        : []),
+    ]);
+  });
+
+  const filename = `Financial_Summary_${(filters.datePreset || 'All_Dates').replace(/\s+/g, '_')}_${Date.now()}`;
+  exportReportToCsv(filename, rows);
+}
+

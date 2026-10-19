@@ -44,6 +44,46 @@ function toSafeDate(val) {
   return null;
 }
 
+export function getInvoiceSequenceNumber(record) {
+  if (!record) return 0;
+  if (record.sequenceNumber != null && !isNaN(Number(record.sequenceNumber)) && Number(record.sequenceNumber) > 0) {
+    return Number(record.sequenceNumber);
+  }
+  const str = String(record.invoiceNumber || record.originalInvoiceNumber || record.id || '');
+  const matches = str.match(/(\d+)/g);
+  if (matches && matches.length > 0) {
+    return parseInt(matches[matches.length - 1], 10) || 0;
+  }
+  return 0;
+}
+
+export function sortInvoicesDescending(a, b) {
+  // 1. Numeric sequence descending (INV-0005 -> 5, INV-0004 -> 4, etc.)
+  const seqA = getInvoiceSequenceNumber(a);
+  const seqB = getInvoiceSequenceNumber(b);
+  if (seqA !== 0 && seqB !== 0 && seqB !== seqA) {
+    return seqB - seqA;
+  }
+
+  // 2. Completion / creation timestamp descending
+  const timeA = new Date(a.completedAt || a.createdAt || a.reversedAt || 0).getTime();
+  const timeB = new Date(b.completedAt || b.createdAt || b.reversedAt || 0).getTime();
+  if (timeB !== timeA) {
+    return timeB - timeA;
+  }
+
+  // 3. Natural numeric string comparison
+  return String(b.invoiceNumber || b.originalInvoiceNumber || b.id || '').localeCompare(
+    String(a.invoiceNumber || a.originalInvoiceNumber || a.id || ''),
+    undefined,
+    { numeric: true }
+  );
+}
+
+export function sortInvoicesAscending(a, b) {
+  return sortInvoicesDescending(b, a);
+}
+
 /**
  * 1. Filter Orders by comprehensive report filters:
  * - datePreset ('Today' | 'This Week' | 'This Month' | 'All Time' | 'Custom')
@@ -74,7 +114,7 @@ export function filterReportOrders(orders = [], filters = {}) {
 
   const query = (searchQuery || '').trim().toLowerCase();
 
-  return orders.filter((order) => {
+  const filtered = orders.filter((order) => {
     // Date filter
     if (interval) {
       const dateVal = order.completedAt || order.createdAt;
@@ -92,7 +132,18 @@ export function filterReportOrders(orders = [], filters = {}) {
     // Status filter
     if (status && status !== 'All') {
       const orderStatus = (order.status || 'completed').toLowerCase();
-      if (orderStatus !== status.toLowerCase()) return false;
+      const isPartial =
+        (Number(order.balanceDue) > 0 || (order.paymentStatus || '').toLowerCase() === 'partial') &&
+        orderStatus !== 'reversed';
+      const target = status.toLowerCase();
+
+      if (target === 'partial' || target === 'outstanding') {
+        if (!isPartial) return false;
+      } else if (target === 'completed') {
+        if (orderStatus !== 'completed' || isPartial) return false;
+      } else if (orderStatus !== target) {
+        return false;
+      }
     }
 
     // Payment method filter
@@ -147,6 +198,9 @@ export function filterReportOrders(orders = [], filters = {}) {
 
     return true;
   });
+
+  // Tarteeb: Always sort chronologically by newest invoice sequence/timestamp first
+  return filtered.sort(sortInvoicesDescending);
 }
 
 /**
@@ -185,7 +239,7 @@ export function filterReportReversals(reversals = [], filters = {}) {
 
   const query = (searchQuery || '').trim().toLowerCase();
 
-  return deduped.filter((rev) => {
+  const filtered = deduped.filter((rev) => {
     // Date filter
     if (interval) {
       const dateVal = rev.reversedAt || rev.createdAt;
@@ -216,6 +270,8 @@ export function filterReportReversals(reversals = [], filters = {}) {
 
     return true;
   });
+
+  return filtered.sort(sortInvoicesDescending);
 }
 
 /**
@@ -275,14 +331,22 @@ export function deriveSalesReport(filteredOrders = [], filteredReversals = []) {
     });
   });
 
+  const taxCollected = validOrders.reduce((sum, o) => sum + (Number(o.taxAmount) || 0), 0);
+  const totalTax = filteredOrders.reduce((sum, o) => sum + (Number(o.taxAmount) || 0), 0);
+
   return {
     grossSales,
+    validBilledSales,
+    totalSale: validBilledSales,
     validNetSales,
     completedOrders,
     validOrderCount,
     averageOrderValue,
     itemsSold,
     discountsGiven,
+    totalDiscounts: discountsGiven,
+    taxCollected: totalTax,
+    validTaxCollected: taxCollected,
     dealsSold,
     dealRevenue,
     dealCost,
@@ -335,13 +399,30 @@ export function deriveRevenueReport(filteredOrders = [], filteredReversals = [])
     ? Math.round(netRevenue / validOrderCount)
     : 0;
 
+  const validBilled = validOrders.reduce((sum, o) => sum + (Number(o.grandTotal) || 0), 0);
+  const totalCollected = validOrders.reduce((sum, o) => {
+    const grand = Number(o.grandTotal) || 0;
+    const due = Math.max(0, Number(o.balanceDue != null ? o.balanceDue : (o.amountReceived != null ? Math.max(0, grand - Number(o.amountReceived)) : 0)));
+    return sum + Math.max(0, grand - due);
+  }, 0);
+  const outstandingDue = validOrders.reduce((sum, o) => {
+    const due = o.balanceDue != null
+      ? Number(o.balanceDue)
+      : (o.amountReceived != null ? Math.max(0, (Number(o.grandTotal) || 0) - Number(o.amountReceived)) : 0);
+    return sum + Math.max(0, due || 0);
+  }, 0);
+
   return {
     grossBilled,
+    validBilled,
+    totalSale: validBilled,
     totalDiscounts,
     taxCollected,
     reversalsIncludingTax,
     reversedTax,
     netRevenue,
+    totalCollected,
+    outstandingDue,
     avgNetRevenuePerOrder,
     validOrderCount,
   };
@@ -1203,5 +1284,352 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
       totalItemsCount: totalItemsSold,
     },
     itemRows,
+  };
+}
+
+/**
+ * 9. Financial Trend By Date Selector
+ * Returns clean daily/monthly points for Net Revenue, Total COGS, and Gross Profit.
+ */
+export function groupFinancialTrendByDate(
+  filteredOrders = [],
+  filteredReversals = [],
+  datePreset = 'This Week',
+  customRange = null,
+  referenceDate = new Date(),
+  itemsMaster = [],
+  addonsMaster = []
+) {
+  const interval = (datePreset !== 'All Time' && datePreset !== 'All Dates')
+    ? getDateIntervalForPreset(datePreset, customRange, referenceDate)
+    : null;
+
+  const reversedIds = new Set(
+    filteredReversals.flatMap((r) => [r.originalOrderId, r.orderId, r.originalInvoiceNumber]).filter(Boolean)
+  );
+
+  let days = [];
+  const isAstronomical =
+    !interval ||
+    datePreset === 'All Time' ||
+    datePreset === 'All Dates' ||
+    interval.start.getFullYear() < 2000 ||
+    interval.end.getFullYear() > 2100;
+
+  if (isAstronomical) {
+    const allDates = [
+      ...filteredOrders.map((o) => o.completedAt || o.createdAt),
+      ...filteredReversals.map((r) => r.reversedAt || r.createdAt),
+    ]
+      .filter(Boolean)
+      .map((d) => toSafeDate(d))
+      .filter((d) => d && !isNaN(d.getTime()));
+
+    if (allDates.length === 0) {
+      days = [startOfDay(referenceDate)];
+    } else {
+      const timestamps = allDates.map((d) => startOfDay(d).getTime());
+      const minDate = new Date(Math.min(...timestamps));
+      const maxDate = new Date(Math.max(...timestamps));
+      const dayDiff = Math.round((maxDate - minDate) / (1000 * 60 * 60 * 24));
+
+      if (dayDiff <= 31) {
+        days = eachDayOfInterval({ start: minDate, end: maxDate });
+      } else {
+        const uniqueDayTimes = Array.from(new Set(timestamps)).sort((a, b) => a - b);
+        days = uniqueDayTimes.map((t) => new Date(t));
+      }
+    }
+  } else {
+    try {
+      days = eachDayOfInterval({ start: interval.start, end: interval.end });
+    } catch {
+      days = [startOfDay(referenceDate)];
+    }
+  }
+
+  // Cap day count to 31 for chart legibility
+  const slicedDays = days.slice(-31);
+
+  return slicedDays.map((d) => {
+    const dayLabel = format(d, 'dd MMM');
+
+    const ordersOnDay = filteredOrders.filter((o) => {
+      const dateVal = o.completedAt || o.createdAt;
+      const orderDate = toSafeDate(dateVal);
+      if (!orderDate) return false;
+      return isSameDay(d, orderDate);
+    });
+
+    const validOrdersOnDay = ordersOnDay.filter(
+      (o) => o.status !== 'reversed' && !reversedIds.has(o.id) && !reversedIds.has(o.invoiceNumber)
+    );
+
+    const netRevenue = validOrdersOnDay.reduce((sum, o) => {
+      const grand = Number(o.grandTotal) || 0;
+      const tax = Number(o.taxAmount) || 0;
+      return sum + (grand - tax);
+    }, 0);
+
+    // Derive day's COGS from valid orders
+    let dayCOGS = 0;
+    validOrdersOnDay.forEach((o) => {
+      (o.lines || []).forEach((l) => {
+        if (l.totalCOGS !== undefined && l.totalCOGS !== null) {
+          dayCOGS += Number(l.totalCOGS);
+        } else if (l.itemCOGS !== undefined && l.itemCOGS !== null) {
+          dayCOGS += Number(l.itemCOGS) + (Number(l.addonCOGS) || 0);
+        } else if (l.costPriceSnapshot !== undefined && l.costPriceSnapshot !== null) {
+          const qty = Math.max(1, Number(l.quantity || 1));
+          dayCOGS += Number(l.costPriceSnapshot) * qty;
+        }
+      });
+    });
+
+    const grossProfit = netRevenue - dayCOGS;
+
+    return {
+      date: format(d, 'yyyy-MM-dd'),
+      label: dayLabel,
+      netRevenue,
+      cogs: dayCOGS,
+      grossProfit,
+    };
+  });
+}
+
+/**
+ * 10. Financial Summary / Profit & Loss Report Selector
+ * Reconciles 100% with:
+ * - Revenue Section: Gross Sales - Discounts - Reversals = Net Revenue (Tax strictly excluded)
+ * - Cost of Sales: Food COGS + Add-on COGS + Deal COGS = Total COGS (Historical sale snapshots)
+ * - Gross Profit: Net Revenue - Total COGS
+ * - Gross Margin %: (Gross Profit / Net Revenue) * 100 (Safe against zero revenue)
+ * - Tax Summary: Tax Collected strictly separated
+ * - Payment Collection: Cash, Card, Online, Other reconciled with completed transactions
+ * - Reversals & Discounts Audit
+ * - Item Profitability Table with proper weights for weight items
+ */
+export function deriveFinancialSummaryReport(
+  orders = [],
+  reversals = [],
+  filters = {},
+  itemsMaster = [],
+  addonsMaster = []
+) {
+  const filteredOrders = filterReportOrders(orders, filters);
+  const filteredReversals = filterReportReversals(reversals, filters);
+  const validOrders = getValidNonReversedOrders(filteredOrders, filteredReversals);
+
+  // 1. REVENUE SECTION
+  // Gross Sales = Sum of all completed orders' subtotal (before discounts and before tax)
+  const grossSales = filteredOrders.reduce((sum, o) => {
+    const sub = Number(o.subtotal);
+    if (!isNaN(sub) && sub > 0) return sum + sub;
+    const linesGross = (o.lines || []).reduce((lSum, l) => lSum + (Number(l.lineSubtotal) || (Number(l.unitPrice || 0) * Math.max(1, Number(l.quantity || 1)))), 0);
+    return sum + linesGross;
+  }, 0);
+
+  // Discounts = Total discounts across all completed orders in range
+  const totalDiscounts = filteredOrders.reduce((sum, o) => sum + (Number(o.discountAmount) || 0), 0);
+
+  // Net Revenue = Sum of valid non-reversed sales excluding tax (grandTotal - taxAmount)
+  const netRevenue = validOrders.reduce((sum, o) => {
+    const grand = Number(o.grandTotal) || 0;
+    const tax = Number(o.taxAmount) || 0;
+    return sum + (grand - tax);
+  }, 0);
+
+  // Reversal Effect on Net Revenue = (Gross Sales - Discounts) - Net Revenue
+  // Guarantees: Gross Sales - Discounts - Reversal Effect === Net Revenue 100% exact!
+  const reversalEffect = Math.max(0, (grossSales - totalDiscounts) - netRevenue);
+
+  // 2. COST OF SALES & ITEM PROFITABILITY
+  // Reuse getProfitAndCostReportData for historical snapshot consistency
+  const profitData = getProfitAndCostReportData(
+    orders,
+    reversals,
+    { ...filters, viewType: 'all', sortBy: filters.sortBy || 'sales' },
+    itemsMaster,
+    addonsMaster
+  );
+
+  const primaryItemRows = (profitData.itemRows || []).filter((r) => !r.isDealComponent);
+
+  let foodCOGS = 0;
+  let dealCOGS = 0;
+  let addonCOGS = 0;
+
+  primaryItemRows.forEach((r) => {
+    const cogsVal = r.hasCost && r.cogs !== null ? Number(r.cogs) : 0;
+    if (r.isDeal) {
+      dealCOGS += cogsVal;
+    } else if (r.isAddon) {
+      addonCOGS += cogsVal;
+    } else {
+      foodCOGS += cogsVal;
+    }
+  });
+
+  const totalCOGS = foodCOGS + dealCOGS + addonCOGS;
+  const missingCostCount = profitData.kpis?.missingCostCount || 0;
+  const hasIncompleteCosts = profitData.kpis?.hasMissingCosts || missingCostCount > 0;
+
+  // 3. GROSS PROFIT
+  const grossProfit = netRevenue - totalCOGS;
+  const grossProfitMargin = netRevenue > 0
+    ? Number(((grossProfit / netRevenue) * 100).toFixed(2))
+    : 0;
+
+  // 4. TAX SUMMARY (Strictly excluded from Revenue and Profit)
+  const taxCollected = validOrders.reduce((sum, o) => sum + (Number(o.taxAmount) || 0), 0);
+
+  // 5. PAYMENT COLLECTION (Reconciles actual collected tenders with completed valid transactions)
+  let cashTotal = 0;
+  let cardTotal = 0;
+  let onlineTotal = 0;
+  let otherTotal = 0;
+  let cashCount = 0;
+  let cardCount = 0;
+  let onlineCount = 0;
+  let otherCount = 0;
+
+  validOrders.forEach((o) => {
+    const grand = Number(o.grandTotal) || 0;
+    const due = Math.max(0, Number(o.balanceDue != null ? o.balanceDue : (o.amountReceived != null ? Math.max(0, grand - Number(o.amountReceived)) : 0)));
+    const collected = Math.max(0, grand - due);
+    const method = String(o.paymentMethod || 'Cash').trim().toLowerCase();
+    if (method === 'cash') {
+      cashTotal += collected;
+      cashCount += 1;
+    } else if (method === 'card') {
+      cardTotal += collected;
+      cardCount += 1;
+    } else if (method === 'online') {
+      onlineTotal += collected;
+      onlineCount += 1;
+    } else {
+      otherTotal += collected;
+      otherCount += 1;
+    }
+  });
+
+  const totalCollected = validOrders.reduce((sum, o) => {
+    const grand = Number(o.grandTotal) || 0;
+    const due = Math.max(0, Number(o.balanceDue != null ? o.balanceDue : (o.amountReceived != null ? Math.max(0, grand - Number(o.amountReceived)) : 0)));
+    return sum + Math.max(0, grand - due);
+  }, 0);
+
+  const paymentBreakdownList = [
+    { method: 'Cash', amount: cashTotal, count: cashCount, percentage: totalCollected > 0 ? Math.round((cashTotal / totalCollected) * 100) : 0 },
+    { method: 'Card', amount: cardTotal, count: cardCount, percentage: totalCollected > 0 ? Math.round((cardTotal / totalCollected) * 100) : 0 },
+    { method: 'Online', amount: onlineTotal, count: onlineCount, percentage: totalCollected > 0 ? Math.round((onlineTotal / totalCollected) * 100) : 0 },
+    ...(otherTotal > 0 || otherCount > 0
+      ? [{ method: 'Other', amount: otherTotal, count: otherCount, percentage: totalCollected > 0 ? Math.round((otherTotal / totalCollected) * 100) : 0 }]
+      : []),
+  ];
+
+  // 6. OUTSTANDING RECEIVABLES & VALID BILLED RECONCILIATION
+  const totalOutstanding = validOrders.reduce((sum, o) => {
+    const due = o.balanceDue != null
+      ? Number(o.balanceDue)
+      : (o.amountReceived != null ? Math.max(0, (Number(o.grandTotal) || 0) - Number(o.amountReceived)) : 0);
+    return sum + Math.max(0, due || 0);
+  }, 0);
+  const outstandingCount = validOrders.filter((o) => {
+    const due = o.balanceDue != null
+      ? Number(o.balanceDue)
+      : (o.amountReceived != null ? Math.max(0, (Number(o.grandTotal) || 0) - Number(o.amountReceived)) : 0);
+    return due > 0;
+  }).length;
+  const validBilled = validOrders.reduce((sum, o) => sum + (Number(o.grandTotal) || 0), 0);
+
+  // 7. REVERSALS AUDIT
+  const reversalCount = filteredReversals.length;
+  const reversalValue = filteredReversals.reduce(
+    (sum, r) => sum + (Number(r.totalReversedIncludingTax) || 0),
+    0
+  );
+  const reversalNetValue = filteredReversals.reduce(
+    (sum, r) => sum + ((Number(r.totalReversedIncludingTax) || 0) - (Number(r.taxReversed) || 0)),
+    0
+  );
+
+  // 8. DAILY TREND POINTS (One clean chart)
+  const trendPoints = groupFinancialTrendByDate(
+    filteredOrders,
+    filteredReversals,
+    filters.datePreset,
+    filters.customRange,
+    filters.referenceDate || new Date(),
+    itemsMaster,
+    addonsMaster
+  );
+
+  return {
+    statement: {
+      // Revenue
+      grossSales,
+      validBilled,
+      discounts: totalDiscounts,
+      reversalEffect,
+      netRevenue,
+
+      // Cost of Sales
+      foodCOGS,
+      addonCOGS,
+      dealCOGS,
+      totalCOGS,
+      hasIncompleteCosts,
+      missingCostCount,
+
+      // Profit
+      grossProfit,
+      grossProfitMargin,
+
+      // Tax
+      taxCollected,
+
+      // Payments
+      cashTotal,
+      cardTotal,
+      onlineTotal,
+      otherTotal,
+      totalCollected,
+      paymentBreakdownList,
+      totalOutstanding,
+      outstandingCount,
+
+      // Reversals & Discounts
+      totalDiscounts,
+      reversalCount,
+      reversalValue,
+      reversalNetValue,
+    },
+    itemRows: primaryItemRows,
+    trendPoints,
+    kpis: {
+      grossSales,
+      validBilled,
+      discounts: totalDiscounts,
+      reversalEffect,
+      netRevenue,
+      foodCOGS,
+      addonCOGS,
+      dealCOGS,
+      totalCOGS,
+      grossProfit,
+      grossProfitMargin,
+      taxCollected,
+      totalCollected,
+      totalOutstanding,
+      outstandingCount,
+      reversalCount,
+      reversalValue,
+      hasIncompleteCosts,
+      missingCostCount,
+      completedOrdersCount: filteredOrders.length,
+      validOrdersCount: validOrders.length,
+    },
   };
 }

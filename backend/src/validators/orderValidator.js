@@ -69,6 +69,9 @@ export const createOrderSchema = z
     taxRateSnapshot: z.number().min(0).max(100).default(0),
     paymentMethod: z.enum(['Cash', 'Card', 'Online']).default('Cash'),
     amountReceived: z.number().min(0, 'Amount received must be non-negative'),
+    allowPartialPayment: z.boolean().optional().default(false),
+    balanceDue: z.number().min(0).optional().default(0),
+    paymentStatus: z.enum(['paid', 'partial', 'unpaid']).optional().default('paid'),
   })
   .refine(
     (data) => {
@@ -85,6 +88,8 @@ export const createOrderSchema = z
       const grandTotal = Math.max(0, taxableAmount + taxAmount);
 
       if (data.paymentMethod === 'Cash') {
+        const isPartial = data.allowPartialPayment === true || data.paymentStatus === 'partial' || (data.balanceDue || 0) > 0;
+        if (isPartial) return true;
         return (data.amountReceived || 0) >= grandTotal;
       }
       return true;

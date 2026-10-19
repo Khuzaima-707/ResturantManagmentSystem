@@ -396,6 +396,22 @@ export function downloadInvoicePdf(order, settings = {}, reversal = null) {
   doc.text(formatCurrency(order.amountReceived || order.grandTotal || 0), summaryRightX, y, { align: 'right' });
   y += 4.5;
 
+  if (Number(order.balanceDue) > 0) {
+    doc.setTextColor(225, 29, 72); // rose-600
+    doc.setFont('helvetica', 'bold');
+    doc.text('Balance Due (Pending):', summaryLeftX, y);
+    doc.text(formatCurrency(order.balanceDue), summaryRightX, y, { align: 'right' });
+    y += 4.5;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+  }
+
+  if (order.customerName) {
+    doc.text('Customer / Ref:', summaryLeftX, y);
+    doc.text(String(order.customerName), summaryRightX, y, { align: 'right' });
+    y += 4.5;
+  }
+
   if (hasChange) {
     doc.text('Change Given:', summaryLeftX, y);
     doc.text(formatCurrency(order.changeAmount), summaryRightX, y, { align: 'right' });

@@ -52,12 +52,12 @@ export const DealCard = ({ deal, onAddToCart, showImage = true }) => {
   return (
     <div
       onClick={handleAdd}
-      className="group relative bg-white rounded-2xl border-2 border-orange-200/80 p-3.5 shadow-2xs hover:shadow-md hover:border-[#FF5C28] transition-all duration-150 flex flex-col justify-between cursor-pointer select-none ring-1 ring-orange-50"
+      className="group relative bg-white rounded-xl border-2 border-orange-200/80 p-2 sm:p-2.5 shadow-2xs hover:shadow-xs hover:border-[#FF5C28] transition-all duration-150 flex flex-col justify-between cursor-pointer select-none ring-1 ring-orange-50"
     >
       {/* Top Image Preview & Badge */}
       {showImage && (
-        <div className="relative mb-2.5">
-          <div className="w-full h-44 sm:h-52 rounded-xl bg-orange-50/50 flex items-center justify-center text-slate-300 overflow-hidden relative border border-orange-100/70">
+        <div className="relative mb-1.5">
+          <div className="w-full h-20 sm:h-22 rounded-lg bg-orange-50/50 flex items-center justify-center text-slate-300 overflow-hidden relative border border-orange-100/70">
             {deal.imageRef ? (
               <img
                 src={deal.imageRef}
@@ -66,20 +66,20 @@ export const DealCard = ({ deal, onAddToCart, showImage = true }) => {
               />
             ) : (
               <div className="flex flex-col items-center gap-1 text-[#FF5C28]">
-                <Tag className="w-10 h-10 stroke-[1.8]" />
-                <span className="text-[10px] font-bold uppercase tracking-wider">Special Deal</span>
+                <Tag className="w-5 h-5 stroke-[1.8]" />
+                <span className="text-[8px] font-bold uppercase tracking-wider">Deal</span>
               </div>
             )}
-            <span className="absolute inset-0 bg-gradient-to-t from-slate-900/15 via-transparent to-transparent pointer-events-none" />
+            <span className="absolute inset-0 bg-gradient-to-t from-slate-900/10 via-transparent to-transparent pointer-events-none" />
           </div>
 
-          <div className="absolute top-2 left-2 flex items-center gap-1">
-            <span className="px-2 py-0.5 rounded-full bg-[#FF5C28] text-white text-[10px] font-extrabold shadow-xs flex items-center gap-1">
+          <div className="absolute top-1.5 left-1.5 flex items-center gap-1">
+            <span className="px-1.5 py-0.2 rounded-full bg-[#FF5C28] text-white text-[9px] font-extrabold shadow-xs flex items-center gap-1">
               <Sparkles className="w-2.5 h-2.5" />
               <span>DEAL</span>
             </span>
             {financials.customerSaving > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full bg-emerald-600 text-white text-[9px] font-bold shadow-xs">
+              <span className="px-1.5 py-0.2 rounded-full bg-emerald-600 text-white text-[9px] font-bold shadow-xs">
                 Save Rs {financials.customerSaving}
               </span>
             )}
@@ -88,45 +88,45 @@ export const DealCard = ({ deal, onAddToCart, showImage = true }) => {
       )}
 
       {/* Deal Details */}
-      <div className="mb-2">
+      <div className="mb-1.5">
         {!showImage && (
           <div className="flex items-center gap-1 mb-1">
-            <span className="px-2 py-0.5 rounded-full bg-[#FF5C28] text-white text-[10px] font-extrabold">
+            <span className="px-1.5 py-0.2 rounded-md bg-[#FF5C28] text-white text-[9px] font-extrabold">
               DEAL
             </span>
             {financials.customerSaving > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-bold">
+              <span className="px-1.5 py-0.2 rounded-md bg-emerald-100 text-emerald-800 text-[9px] font-bold">
                 Save Rs {financials.customerSaving}
               </span>
             )}
           </div>
         )}
 
-        <h3 className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-[#FF5C28] transition-colors line-clamp-1">
+        <h3 className="text-xs font-bold text-slate-900 group-hover:text-[#FF5C28] transition-colors line-clamp-1 leading-snug">
           {deal.name}
         </h3>
 
         {/* Short included items summary */}
-        <div className="mt-1 space-y-0.5">
-          {incItems.slice(0, 3).map((inc, i) => (
-            <p key={i} className="text-[10px] text-slate-500 font-medium truncate leading-tight">
+        <div className="mt-0.5 space-y-0.5">
+          {incItems.slice(0, 2).map((inc, i) => (
+            <p key={i} className="text-[9px] text-slate-500 font-medium truncate leading-tight">
               • {inc.name}{inc.portion ? ` (${inc.portion})` : ''}{inc.quantity && inc.quantity > 1 ? ` x${inc.quantity}` : ''}
             </p>
           ))}
-          {incItems.length > 3 && (
-            <p className="text-[9px] text-[#FF5C28] font-bold leading-tight">
-              +{incItems.length - 3} more items
+          {incItems.length > 2 && (
+            <p className="text-[8px] text-[#FF5C28] font-bold leading-tight">
+              +{incItems.length - 2} more items
             </p>
           )}
         </div>
       </div>
 
       {/* Pricing & Add Button */}
-      <div className="flex items-center justify-between pt-2 border-t border-slate-100 mt-auto">
-        <div className="text-xs font-bold text-slate-900">
-          <span className="text-sm font-extrabold text-[#FF5C28]">{formatCurrency(deal.dealPrice || 0)}</span>
+      <div className="flex items-center justify-between pt-1.5 border-t border-slate-100 mt-auto gap-1">
+        <div className="min-w-0 flex-1 text-xs font-bold text-slate-900 leading-tight">
+          <span className="text-xs font-extrabold text-[#FF5C28]">{formatCurrency(deal.dealPrice || 0)}</span>
           {financials.regularPrice > (deal.dealPrice || 0) && (
-            <span className="text-[10px] text-slate-400 line-through ml-1.5 font-normal">
+            <span className="text-[9px] text-slate-400 line-through ml-1 font-normal whitespace-nowrap">
               {formatCurrency(financials.regularPrice)}
             </span>
           )}
@@ -135,11 +135,11 @@ export const DealCard = ({ deal, onAddToCart, showImage = true }) => {
         <button
           type="button"
           onClick={handleAdd}
-          className="w-7 h-7 rounded-full bg-[#FF5C28] hover:bg-[#E04D1D] active:bg-[#D83F0E] text-white flex items-center justify-center shadow-xs transition-transform active:scale-95 cursor-pointer"
+          className="w-5.5 h-5.5 sm:w-6 sm:h-6 rounded-full bg-[#FF5C28] hover:bg-[#E04D1D] active:bg-[#D83F0E] text-white flex items-center justify-center shadow-2xs transition-transform active:scale-95 cursor-pointer shrink-0 ml-1"
           title={`Add ${deal.name} to order`}
           aria-label={`Add ${deal.name} to order`}
         >
-          <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+          <Plus className="w-3 h-3 stroke-[2.5]" />
         </button>
       </div>
     </div>

@@ -118,6 +118,25 @@ export const OrderRepository = {
     storage.set(STORAGE_KEY, updated);
     return updated.find((o) => o.id === id);
   },
+
+  settleBalance: async (id, { amountPaid, paymentMethod = 'Cash', receivedBy = 'Cashier', note = '' } = {}) => {
+    try {
+      const res = await api.patch(`/orders/${id}/settle-balance`, {
+        amountPaid,
+        paymentMethod,
+        receivedBy,
+        note,
+      });
+      if (res && res.success && res.data) {
+        const all = storage.get(STORAGE_KEY, []) || [];
+        storage.set(STORAGE_KEY, all.map((o) => (o.id === id || o.invoiceNumber === id ? res.data : o)));
+        return res.data;
+      }
+    } catch (err) {
+      console.warn('[OrderRepository] settleBalance live sync warning:', err.message);
+    }
+    return null;
+  },
 };
 
 export default OrderRepository;

@@ -13,6 +13,7 @@ export const DataTable = ({
   emptyMessage = 'No records found',
   className,
   onRowClick,
+  footer,
 }) => {
   return (
     <div className={cn('w-full bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.02),0_2px_8px_-2px_rgba(15,23,42,0.03)]', className)}>
@@ -24,7 +25,7 @@ export const DataTable = ({
                 <th
                   key={col.key || index}
                   className={cn(
-                    'py-2.5 px-3.5 font-semibold select-none text-xs',
+                    'py-2.5 px-3.5 font-semibold select-none text-xs whitespace-nowrap',
                     col.align === 'right' && 'text-right',
                     col.align === 'center' && 'text-center',
                     col.headerClassName
@@ -66,8 +67,8 @@ export const DataTable = ({
                       key={col.key || colIndex}
                       className={cn(
                         'py-2.5 px-3.5 align-middle text-slate-800 text-xs',
-                        col.align === 'right' && 'text-right',
-                        col.align === 'center' && 'text-center',
+                        col.align === 'right' && 'text-right whitespace-nowrap',
+                        col.align === 'center' && 'text-center whitespace-nowrap',
                         col.cellClassName
                       )}
                     >
@@ -80,6 +81,11 @@ export const DataTable = ({
               ))
             )}
           </tbody>
+          {footer && (
+            <tfoot className="border-t-2 border-slate-300 bg-slate-50/90 text-xs font-bold text-slate-900">
+              {footer}
+            </tfoot>
+          )}
         </table>
       </div>
     </div>

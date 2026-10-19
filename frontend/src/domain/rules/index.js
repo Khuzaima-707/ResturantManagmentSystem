@@ -913,6 +913,13 @@ export function getItemTier(item, categories = []) {
 export function sortMenuItems(items = [], categories = []) {
   if (!Array.isArray(items)) return [];
   return [...items].sort((a, b) => {
+    // 1. Items created later strictly append to the end of the menu
+    const timeA = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const timeB = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+    if (timeA && timeB && timeA !== timeB) {
+      return timeA - timeB;
+    }
+
     const tierA = getItemTier(a, categories);
     const tierB = getItemTier(b, categories);
 

@@ -23,6 +23,8 @@ import {
   format,
   eachDayOfInterval,
   isSameDay,
+  subWeeks,
+  subMonths,
 } from 'date-fns';
 
 /**
@@ -65,6 +67,15 @@ export function getDateIntervalForPreset(datePreset, customRange = null, referen
     };
   }
 
+  if (datePreset === 'Last Week') {
+    const prevWeek = subWeeks(ref, 1);
+    return {
+      start: startOfWeek(prevWeek, { weekStartsOn: 1 }),
+      end: endOfWeek(prevWeek, { weekStartsOn: 1 }),
+      label: 'Last Week',
+    };
+  }
+
   if (datePreset === 'This Month') {
     return {
       start: startOfMonth(ref),
@@ -73,7 +84,16 @@ export function getDateIntervalForPreset(datePreset, customRange = null, referen
     };
   }
 
-  if (datePreset === 'Custom' && customRange?.startDate && customRange?.endDate) {
+  if (datePreset === 'Last Month') {
+    const prevMonth = subMonths(ref, 1);
+    return {
+      start: startOfMonth(prevMonth),
+      end: endOfMonth(prevMonth),
+      label: 'Last Month',
+    };
+  }
+
+  if ((datePreset === 'Custom' || datePreset === 'Custom Date Range') && customRange?.startDate && customRange?.endDate) {
     try {
       const s = typeof customRange.startDate === 'string' ? parseISO(customRange.startDate) : customRange.startDate;
       const e = typeof customRange.endDate === 'string' ? parseISO(customRange.endDate) : customRange.endDate;
@@ -283,6 +303,36 @@ export function calculateTotalCustomers(orders = [], reversals = []) {
 export const calculateCustomers = calculateTotalCustomers;
 
 /**
+ * 10. Total Collected:
+ * Actual money received from customers across valid non-reversed orders.
+ * Partial payment only counts the amount actually received.
+ * Formula: sum(grandTotal - max(0, balanceDue))
+ */
+export function calculateTotalCollected(orders = [], reversals = []) {
+  const validOrders = getValidNonReversedOrders(orders, reversals);
+  return validOrders.reduce((sum, o) => {
+    const grand = Number(o.grandTotal) || 0;
+    const due = Math.max(0, Number(o.balanceDue != null ? o.balanceDue : (o.amountReceived != null ? Math.max(0, grand - Number(o.amountReceived)) : 0)));
+    return sum + Math.max(0, grand - due);
+  }, 0);
+}
+
+/**
+ * 11. Outstanding Due:
+ * Total unpaid receivables balance across valid non-reversed orders.
+ * Formula: sum(balanceDue)
+ */
+export function calculateOutstandingDue(orders = [], reversals = []) {
+  const validOrders = getValidNonReversedOrders(orders, reversals);
+  return validOrders.reduce((sum, o) => {
+    const due = o.balanceDue != null
+      ? Number(o.balanceDue)
+      : (o.amountReceived != null ? Math.max(0, (Number(o.grandTotal) || 0) - Number(o.amountReceived)) : 0);
+    return sum + Math.max(0, due || 0);
+  }, 0);
+}
+
+/**
  * Computes all 8+ KPI metrics in a single clean selector
  */
 export function deriveKPIMetrics(orders = [], reversals = []) {
@@ -303,17 +353,32 @@ export function deriveKPIMetrics(orders = [], reversals = []) {
   const validOrders = getValidNonReversedOrders(orders, dedupedReversals);
   const validGrossSales = calculateGrossSales(validOrders);
   const totalCustomers = calculateTotalCustomers(orders, dedupedReversals);
+  const netRevenue = calculateNetRevenue(orders, dedupedReversals);
+  const taxCollected = calculateTaxCollected(orders, dedupedReversals);
+  const totalCollected = calculateTotalCollected(orders, dedupedReversals);
+  const outstandingDue = calculateOutstandingDue(orders, dedupedReversals);
+  const outstandingBills = validOrders.filter((o) => {
+    const due = o.balanceDue != null
+      ? Number(o.balanceDue)
+      : (o.amountReceived != null ? (Number(o.grandTotal) || 0) - Number(o.amountReceived) : 0);
+    return due > 0;
+  });
 
   return {
     grossSales: calculateGrossSales(orders),
+    validBilled: validGrossSales,
+    totalSale: validGrossSales,
     netSales: validGrossSales,
     completedOrders: calculateCompletedOrders(orders),
     activeOrdersCount: validOrders.length,
     validNonReversedOrdersCount: validOrders.length,
-    netRevenue: calculateNetRevenue(orders, dedupedReversals),
+    netRevenue,
+    taxCollected,
+    totalCollected,
+    outstandingDue,
+    outstandingBillsCount: outstandingBills.length,
     reversalsIncludingTax: calculateReversalTotal(dedupedReversals),
     averageOrderValue: calculateAverageOrderValue(orders, dedupedReversals),
-    taxCollected: calculateTaxCollected(orders, dedupedReversals),
     discountsGiven: calculateDiscountTotal(orders, dedupedReversals),
     itemsSold: calculateItemsSold(orders, dedupedReversals),
     reversalsCount: dedupedReversals.length,
@@ -404,6 +469,8 @@ export function groupSalesByDate(
       }
     });
 
+    const validDayOrders = getValidNonReversedOrders(dayOrders, dayReversals);
+    const validBilled = calculateGrossSales(validDayOrders);
     const grossSales = calculateGrossSales(dayOrders);
     const netRevenue = calculateNetRevenue(dayOrders, dayReversals);
     const ordersCount = calculateCompletedOrders(dayOrders);
@@ -413,11 +480,14 @@ export function groupSalesByDate(
       day: format(dayDate, 'EEE'), // 'Mon', 'Tue'
       date: format(dayDate, 'dd MMM'), // '08 Oct'
       fullDate: format(dayDate, 'yyyy-MM-dd'),
-      grossSales,
+      grossSales: validBilled,
+      validBilled,
+      totalSale: validBilled,
       netRevenue,
       tax,
+      historicalGrossSales: grossSales,
       orders: ordersCount,
-      hasData: grossSales > 0 || netRevenue > 0,
+      hasData: validBilled > 0 || netRevenue > 0,
     };
   });
 }

@@ -6,6 +6,7 @@ import {
   seedOrders,
   updateKitchenStatus,
   getNextInvoiceNumberHandler,
+  settleOrderBalance,
 } from '../controllers/orderController.js';
 import {
   createOrderSchema,
@@ -27,5 +28,6 @@ router.post('/seed', seedOrders);
 // Single order routes
 router.get('/:id', getOrderById);
 router.patch('/:id/kitchen-status', updateKitchenStatus);
+router.patch('/:id/settle-balance', settleOrderBalance);
 
 export default router;

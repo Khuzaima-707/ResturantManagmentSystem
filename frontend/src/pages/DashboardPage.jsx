@@ -93,6 +93,15 @@ export const DashboardPage = () => {
     );
   }, [effectiveOrders, effectiveReversals, effectiveDatePreset, customDateRange, isCashier]);
 
+  // Outstanding receivables summary
+  const outstandingSummary = useMemo(() => {
+    const pendings = (effectiveOrders || []).filter(
+      (o) => Number(o.balanceDue) > 0 && (o.status || '').toLowerCase() !== 'reversed'
+    );
+    const totalDue = pendings.reduce((sum, o) => sum + (Number(o.balanceDue) || 0), 0);
+    return { count: pendings.length, totalDue };
+  }, [effectiveOrders]);
+
   // Derive Gross Profit for management dashboard KPI indicator (Hidden for Cashier)
   const activeProfit = useMemo(() => {
     if (isCashier) return null;
@@ -197,15 +206,16 @@ export const DashboardPage = () => {
   const revenueDays = useMemo(() => {
     if (chartData && chartData.length > 0) {
       const isMonthly = chartData.length > 7;
-      const maxGross = Math.max(...chartData.map((d) => d.grossSales || 0), 0);
+      const maxSale = Math.max(...chartData.map((d) => (d.validBilled !== undefined ? d.validBilled : (d.totalSale !== undefined ? d.totalSale : d.grossSales)) || 0), 0);
       return chartData.map((d, idx) => {
+        const saleVal = Number(d.validBilled !== undefined ? d.validBilled : (d.totalSale !== undefined ? d.totalSale : d.grossSales)) || 0;
         // Every day has a baseline visible height so the hatched bar pattern is always present
-        const heightPercent = maxGross > 0
-          ? Math.round(((d.grossSales || 0) / maxGross) * 70) + (isMonthly ? 15 : 18)
+        const heightPercent = maxSale > 0
+          ? Math.round((saleVal / maxSale) * 70) + (isMonthly ? 15 : 18)
           : (isMonthly ? 15 : 18);
         const grossVal = Number(d.grossSales) || 0;
         const netVal = Number(d.netRevenue) || 0;
-        const taxVal = d.tax !== undefined ? Number(d.tax) : Math.max(0, grossVal - netVal);
+        const taxVal = d.tax !== undefined ? Number(d.tax) : Math.max(0, saleVal - netVal);
         const uniqueKey = d.fullDate || `${d.day}-${d.date || idx}-${idx}`;
 
         // Parse date number directly from fullDate string to prevent timezone offset shifts
@@ -228,13 +238,16 @@ export const DashboardPage = () => {
           fullDate: d.fullDate,
           dateNumber,
           height: heightPercent,
-          grossSales: formatCurrency(grossVal),
+          totalSale: formatCurrency(saleVal),
+          validBilled: formatCurrency(saleVal),
+          grossSales: formatCurrency(saleVal),
+          grossHistorical: formatCurrency(grossVal),
           netRevenue: formatCurrency(netVal),
           tax: formatCurrency(taxVal),
           splitTop: formatCurrency(taxVal),
           splitBottom: formatCurrency(netVal),
-          total: formatCurrency(grossVal),
-          hasData: grossVal > 0,
+          total: formatCurrency(saleVal),
+          hasData: saleVal > 0,
         };
       });
     }
@@ -319,6 +332,21 @@ export const DashboardPage = () => {
               {kpis.reversalsCount > 0 ? 'Net of Reversals' : 'Gross Billed'}
             </span>
           </div>
+
+          {outstandingSummary.totalDue > 0 && (
+            <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10.5px]">
+              <span className="text-amber-700 font-medium flex items-center gap-1">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                Outstanding Due:
+              </span>
+              <span className="font-bold text-amber-800">
+                {formatCurrency(outstandingSummary.totalDue)}
+                <span className="text-[9.5px] font-normal text-amber-600 ml-1">
+                  ({outstandingSummary.count} bills)
+                </span>
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Card 2: Revenue(Net) */}
@@ -507,10 +535,10 @@ export const DashboardPage = () => {
             <div className="flex h-48 sm:h-52 w-full">
               {/* Y-Axis Labels */}
               <div className="w-12 pr-2 shrink-0 flex flex-col justify-between text-[10px] font-medium text-slate-400 select-none pb-5 text-right">
-                <span>{kpis.grossSales > 0 ? formatCurrency(kpis.grossSales) : 'Rs 0'}</span>
-                <span>{kpis.grossSales > 0 ? formatCurrency(Math.round(kpis.grossSales * 0.75)) : ''}</span>
-                <span>{kpis.grossSales > 0 ? formatCurrency(Math.round(kpis.grossSales * 0.5)) : ''}</span>
-                <span>{kpis.grossSales > 0 ? formatCurrency(Math.round(kpis.grossSales * 0.25)) : ''}</span>
+                <span>{(kpis.validBilled || kpis.totalSale || kpis.netSales) > 0 ? formatCurrency(kpis.validBilled || kpis.totalSale || kpis.netSales) : 'Rs 0'}</span>
+                <span>{(kpis.validBilled || kpis.totalSale || kpis.netSales) > 0 ? formatCurrency(Math.round((kpis.validBilled || kpis.totalSale || kpis.netSales) * 0.75)) : ''}</span>
+                <span>{(kpis.validBilled || kpis.totalSale || kpis.netSales) > 0 ? formatCurrency(Math.round((kpis.validBilled || kpis.totalSale || kpis.netSales) * 0.5)) : ''}</span>
+                <span>{(kpis.validBilled || kpis.totalSale || kpis.netSales) > 0 ? formatCurrency(Math.round((kpis.validBilled || kpis.totalSale || kpis.netSales) * 0.25)) : ''}</span>
                 <span>0</span>
               </div>
 
@@ -566,7 +594,7 @@ export const DashboardPage = () => {
                       key={item.id}
                       onClick={() => setActiveCandleKey(item.id)}
                       onMouseEnter={() => setActiveCandleKey(item.id)}
-                      className={`relative z-10 flex flex-col items-center justify-end h-full cursor-pointer group ${
+                      className={`relative ${isSingleCandle ? 'z-40' : 'z-10'} flex flex-col items-center justify-end h-full cursor-pointer group ${
                         isMonthly
                           ? 'flex-1 min-w-[5px] max-w-[22px]'
                           : 'w-8 sm:w-11'
@@ -575,7 +603,7 @@ export const DashboardPage = () => {
                       {/* Floating Tooltip ONLY on the single active candle when data exists */}
                       {isSingleCandle && item.hasData && (
                         <div
-                          className={`absolute -top-3 ${tooltipAlignClass} bg-[#0B0F19]/95 backdrop-blur-xs text-white px-3 py-2 rounded-xl shadow-2xl border border-slate-700/80 text-[11px] z-30 transition-all pointer-events-none whitespace-nowrap animate-in fade-in zoom-in-95 duration-150 min-w-[145px]`}
+                          className={`absolute -top-5 ${tooltipAlignClass} bg-[#0B0F19] text-white px-3 py-2 rounded-xl shadow-2xl border border-slate-700/80 text-[11px] z-50 transition-all pointer-events-none whitespace-nowrap animate-in fade-in zoom-in-95 duration-150 min-w-[145px]`}
                         >
                           <div className="text-[10px] font-semibold text-slate-400 pb-1 mb-1.5 border-b border-slate-800 flex items-center justify-between gap-2">
                             <span>{item.day}</span>
@@ -585,9 +613,9 @@ export const DashboardPage = () => {
                             <div className="flex items-center justify-between gap-3">
                               <span className="flex items-center gap-1.5 text-slate-300">
                                 <span className="w-1.5 h-1.5 rounded-full bg-[#3B82F6]" />
-                                Gross Sales:
+                                Total Sale:
                               </span>
-                              <span className="font-bold text-white">{item.grossSales}</span>
+                              <span className="font-bold text-white">{item.totalSale || item.validBilled || item.grossSales}</span>
                             </div>
                             <div className="flex items-center justify-between gap-3">
                               <span className="flex items-center gap-1.5 text-slate-300">

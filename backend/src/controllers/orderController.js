@@ -371,19 +371,33 @@ export async function createOrder(req, res, next) {
     let amountReceived = Number(body.amountReceived) || 0;
     let changeAmount = 0;
 
+    let balanceDue = 0;
+    let paymentStatus = 'paid';
+
     if (body.paymentMethod === 'Cash') {
+      const isPartialAllowed = body.allowPartialPayment === true || body.paymentStatus === 'partial' || Number(body.balanceDue) > 0;
       if (amountReceived < grandTotal) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            message: `Insufficient cash received. Required: Rs ${grandTotal}, Received: Rs ${amountReceived}`,
-          },
-        });
+        if (!isPartialAllowed) {
+          return res.status(400).json({
+            success: false,
+            error: {
+              message: `Insufficient cash received. Required: Rs ${grandTotal}, Received: Rs ${amountReceived}`,
+            },
+          });
+        }
+        balanceDue = Math.max(0, grandTotal - amountReceived);
+        paymentStatus = amountReceived > 0 ? 'partial' : 'unpaid';
+        changeAmount = 0;
+      } else {
+        changeAmount = Math.max(0, amountReceived - grandTotal);
+        balanceDue = 0;
+        paymentStatus = 'paid';
       }
-      changeAmount = Math.max(0, amountReceived - grandTotal);
     } else {
       amountReceived = grandTotal;
       changeAmount = 0;
+      balanceDue = 0;
+      paymentStatus = 'paid';
     }
 
     // 3. Generate sequential invoice number atomically on the server
@@ -427,6 +441,8 @@ export async function createOrder(req, res, next) {
       paymentMethod: body.paymentMethod || 'Cash',
       amountReceived,
       changeAmount,
+      balanceDue,
+      paymentStatus,
       completedAt: new Date(),
     };
 
@@ -782,6 +798,88 @@ export async function seedOrders(req, res, next) {
       message: 'Sample orders seeded successfully in MongoDB Atlas.',
       count: sampleOrders.length,
       data: sampleOrders,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * PATCH /api/orders/:id/settle-balance
+ * Settle or partially pay the outstanding balance for an order
+ */
+export async function settleOrderBalance(req, res, next) {
+  try {
+    if (!isDbConnected()) {
+      return res.status(503).json({
+        success: false,
+        error: { message: 'Database connection currently unavailable.' },
+      });
+    }
+
+    const {
+      amountPaid,
+      paymentMethod = 'Cash',
+      receivedBy = 'Cashier',
+      cardNetwork,
+      cardSlipNumber,
+      onlineChannel,
+      onlineTransactionId,
+      note = '',
+    } = req.body;
+
+    let order = await Order.findOne({ id });
+    if (!order && mongoose.Types.ObjectId.isValid(id)) {
+      order = await Order.findById(id);
+    }
+    if (!order) {
+      order = await Order.findOne({ invoiceNumber: id.toUpperCase() });
+    }
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: { message: `Order '${id}' not found` },
+      });
+    }
+
+    const grandTotal = Number(order.grandTotal) || 0;
+    const prevReceived = Number(order.amountReceived) || 0;
+    const prevDue = Number(order.balanceDue != null ? order.balanceDue : Math.max(0, grandTotal - prevReceived));
+    const pay = Math.max(0, Number(amountPaid) || 0);
+
+    const actualPay = Math.min(prevDue, pay);
+    const newDue = Math.max(0, prevDue - actualPay);
+    const newReceived = prevReceived + actualPay;
+
+    order.amountReceived = newReceived;
+    order.balanceDue = newDue;
+    order.paymentStatus = newDue === 0 ? 'paid' : 'partial';
+
+    if (!Array.isArray(order.settlementHistory)) {
+      order.settlementHistory = [];
+    }
+    order.settlementHistory.push({
+      id: `stl-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      amountPaid: actualPay,
+      previousBalance: prevDue,
+      remainingBalance: newDue,
+      paymentMethod,
+      cardNetwork: paymentMethod === 'Card' ? cardNetwork : undefined,
+      cardSlipNumber: paymentMethod === 'Card' ? cardSlipNumber : undefined,
+      onlineChannel: paymentMethod === 'Online' ? onlineChannel : undefined,
+      onlineTransactionId: paymentMethod === 'Online' ? onlineTransactionId : undefined,
+      settledAt: new Date(),
+      settledBy: receivedBy,
+      note,
+    });
+
+    await order.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `Balance settled. Paid: Rs ${actualPay}, Remaining: Rs ${newDue}`,
+      data: order,
     });
   } catch (error) {
     next(error);

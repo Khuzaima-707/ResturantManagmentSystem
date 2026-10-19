@@ -805,8 +805,22 @@ export const useAppStore = create((set, get) => ({
         }
       }
       const enriched = enrichOrderLines(deduped);
-      storage.set('orders', enriched);
-      return enriched;
+      const sorted = [...enriched].sort((a, b) => {
+        const getSeq = (o) => {
+          if (o.sequenceNumber != null && !isNaN(Number(o.sequenceNumber)) && Number(o.sequenceNumber) > 0) return Number(o.sequenceNumber);
+          const m = String(o.invoiceNumber || o.id || '').match(/(\d+)/g);
+          return m && m.length > 0 ? parseInt(m[m.length - 1], 10) || 0 : 0;
+        };
+        const sA = getSeq(a);
+        const sB = getSeq(b);
+        if (sA !== 0 && sB !== 0 && sB !== sA) return sB - sA;
+        const tA = new Date(a.completedAt || a.createdAt || 0).getTime();
+        const tB = new Date(b.completedAt || b.createdAt || 0).getTime();
+        if (tB !== tA) return tB - tA;
+        return String(b.invoiceNumber || b.id || '').localeCompare(String(a.invoiceNumber || a.id || ''), undefined, { numeric: true });
+      });
+      storage.set('orders', sorted);
+      return sorted;
     }
     return [];
   })(),
@@ -1050,7 +1064,20 @@ export const useAppStore = create((set, get) => ({
       return order;
     }
 
-    const updated = [order, ...currentOrders];
+    const getSeq = (o) => {
+      if (o.sequenceNumber != null && !isNaN(Number(o.sequenceNumber)) && Number(o.sequenceNumber) > 0) return Number(o.sequenceNumber);
+      const m = String(o.invoiceNumber || o.id || '').match(/(\d+)/g);
+      return m && m.length > 0 ? parseInt(m[m.length - 1], 10) || 0 : 0;
+    };
+    const updated = [order, ...currentOrders].sort((a, b) => {
+      const sA = getSeq(a);
+      const sB = getSeq(b);
+      if (sA !== 0 && sB !== 0 && sB !== sA) return sB - sA;
+      const tA = new Date(a.completedAt || a.createdAt || 0).getTime();
+      const tB = new Date(b.completedAt || b.createdAt || 0).getTime();
+      if (tB !== tA) return tB - tA;
+      return String(b.invoiceNumber || b.id || '').localeCompare(String(a.invoiceNumber || a.id || ''), undefined, { numeric: true });
+    });
     storage.set('orders', updated);
 
     // Create real notification for each new order with user targeting
@@ -1076,23 +1103,123 @@ export const useAppStore = create((set, get) => ({
 
     set({ orders: updated, notifications: updatedNotifs });
 
-    // Live sync to MongoDB Atlas via OrderRepository
-    try {
-      const synced = await OrderRepository.create(order);
-      if (synced && synced.id) {
-        const liveOrders = get().orders || [];
-        const replaced = liveOrders.map((o) =>
-          o.id === order.id || o.id === synced.id ? { ...o, ...synced } : o
-        );
-        storage.set('orders', replaced);
-        set({ orders: replaced });
-        return synced;
-      }
-    } catch (err) {
-      console.warn('[Store] Order Atlas sync warning:', err.message);
-    }
+    // Live sync to MongoDB Atlas via OrderRepository (non-blocking for instant POS checkout)
+    OrderRepository.create(order)
+      .then((synced) => {
+        if (synced && synced.id) {
+          const liveOrders = get().orders || [];
+          const replaced = liveOrders.map((o) =>
+            o.id === order.id || o.id === synced.id ? { ...o, ...synced } : o
+          );
+          storage.set('orders', replaced);
+          set({ orders: replaced });
+        }
+      })
+      .catch((err) => {
+        console.warn('[Store] Order Atlas sync warning:', err.message);
+      });
 
     return order;
+  },
+
+  // Settle remaining balance for a partially paid order
+  settleOrderBalance: (
+    orderId,
+    {
+      amountPaid,
+      paymentMethod = 'Cash',
+      cardNetwork,
+      cardSlipNumber,
+      onlineChannel,
+      onlineTransactionId,
+      note = '',
+    } = {}
+  ) => {
+    const orders = get().orders || [];
+    const target = orders.find((o) => o.id === orderId || o.invoiceNumber === orderId);
+    if (!target) return null;
+
+    const grandTotal = Number(target.grandTotal) || 0;
+    const prevReceived = Number(target.amountReceived) || 0;
+    const prevDue = Number(target.balanceDue != null ? target.balanceDue : Math.max(0, grandTotal - prevReceived));
+    const pay = Math.max(0, Math.min(prevDue, Number(amountPaid) || 0));
+    const newDue = Math.max(0, prevDue - pay);
+    const newReceived = prevReceived + pay;
+    const isNowFullyPaid = newDue === 0;
+
+    const loggedInUser = get().user || {};
+    const settleRecord = {
+      id: `stl-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      amountPaid: pay,
+      previousBalance: prevDue,
+      remainingBalance: newDue,
+      paymentMethod,
+      cardNetwork: paymentMethod === 'Card' ? cardNetwork : undefined,
+      cardSlipNumber: paymentMethod === 'Card' ? cardSlipNumber : undefined,
+      onlineChannel: paymentMethod === 'Online' ? onlineChannel : undefined,
+      onlineTransactionId: paymentMethod === 'Online' ? onlineTransactionId : undefined,
+      settledAt: new Date().toISOString(),
+      settledBy: loggedInUser.name || loggedInUser.username || 'Cashier',
+      note: note || '',
+    };
+
+    const updatedOrder = {
+      ...target,
+      amountReceived: newReceived,
+      balanceDue: newDue,
+      paymentStatus: isNowFullyPaid ? 'paid' : 'partial',
+      status: isNowFullyPaid ? 'completed' : target.status,
+      // If settlement used Card or Online, attach payment channel details for invoice visibility
+      ...(paymentMethod === 'Card' ? { cardNetwork, posSlipNumber: cardSlipNumber } : {}),
+      ...(paymentMethod === 'Online' ? { onlineChannel, transactionId: onlineTransactionId } : {}),
+      settlementHistory: [...(target.settlementHistory || []), settleRecord],
+    };
+
+    const updatedOrders = orders.map((o) =>
+      o.id === target.id || o.invoiceNumber === target.invoiceNumber ? updatedOrder : o
+    );
+
+    storage.set('orders', updatedOrders);
+
+    // Create real notification
+    const channelDetail =
+      paymentMethod === 'Card' && cardNetwork
+        ? ` (${cardNetwork})`
+        : paymentMethod === 'Online' && onlineChannel
+        ? ` (${onlineChannel})`
+        : '';
+    const newNotif = {
+      id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      type: 'order',
+      title: `Balance Settled #${target.invoiceNumber}`,
+      description: `Received Rs ${pay} via ${paymentMethod}${channelDetail}. ${isNowFullyPaid ? 'Fully Paid' : `Remaining: Rs ${newDue}`}`,
+      orderId: target.id,
+      invoiceNumber: target.invoiceNumber,
+      amount: pay,
+      read: false,
+      timestamp: new Date().toISOString(),
+      targetRoles: ['admin', 'cashier'],
+    };
+    const updatedNotifs = [newNotif, ...(get().notifications || [])];
+    storage.set('notifications', updatedNotifs);
+
+    set({ orders: updatedOrders, notifications: updatedNotifs });
+
+    // Sync to backend non-blocking
+    OrderRepository.settleBalance(target.id, {
+      amountPaid: pay,
+      paymentMethod,
+      cardNetwork,
+      cardSlipNumber,
+      onlineChannel,
+      onlineTransactionId,
+      receivedBy: loggedInUser.name || loggedInUser.username || 'Cashier',
+      note,
+    }).catch((err) => {
+      console.warn('[Store] Order balance settle sync warning:', err.message);
+    });
+
+    return updatedOrder;
   },
 
   // Deletion & Audit History State
@@ -1402,7 +1529,7 @@ export const useAppStore = create((set, get) => ({
       createdAt: item.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    const updated = [newRecord, ...get().items];
+    const updated = [...get().items, newRecord];
     storage.set('menu_items', updated);
     set({ items: updated });
 

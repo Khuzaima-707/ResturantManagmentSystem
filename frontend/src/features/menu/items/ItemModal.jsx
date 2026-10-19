@@ -3,7 +3,7 @@ import { Plus, ChevronDown } from 'lucide-react';
 import { Modal } from '../../../components/ui/Modal';
 import { ImageUploader } from '../components/ImageUploader';
 import { useAppStore } from '../../../store';
-import { sortCategories, suggestCategory, suggestServingUnit } from '../../../domain/rules';
+import { sortCategories } from '../../../domain/rules';
 
 const STANDARD_UNITS = [
   'Unit',
@@ -163,10 +163,7 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
     if (!name.trim()) {
       errs.name = 'Item name is required';
     }
-    const resolvedCat =
-      categoryName.trim() ||
-      suggestCategory(name, categories)?.name ||
-      (availableCategories.length > 0 ? availableCategories[0] : '');
+    const resolvedCat = categoryName.trim();
     if (!resolvedCat) {
       errs.categoryName = 'Category is required';
     }
@@ -185,10 +182,7 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
 
     let trimmedCatName = categoryName.trim();
     if (!trimmedCatName) {
-      const suggested = suggestCategory(name, categories);
-      if (suggested && suggested.name) {
-        trimmedCatName = suggested.name;
-      } else if (availableCategories.length > 0) {
+      if (availableCategories.length > 0) {
         trimmedCatName = availableCategories[0];
       } else {
         trimmedCatName = 'Burgers';
@@ -340,19 +334,6 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
               const val = e.target.value;
               setName(val);
               if (errors.name) setErrors((prev) => ({ ...prev, name: null }));
-
-              // Auto-suggest matching category and serving unit based on typed item name
-              if (!hasUserChangedCategory && val.trim().length >= 2) {
-                const suggested = suggestCategory(val, categories);
-                if (suggested && suggested.name) {
-                  setCategoryName(suggested.name);
-                  if (errors.categoryName) setErrors((prev) => ({ ...prev, categoryName: null }));
-                  if (!hasUserChangedUnit) {
-                    const unit = suggestServingUnit(val, suggested.name);
-                    if (unit) setServingUnit(unit);
-                  }
-                }
-              }
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
@@ -398,7 +379,7 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
                   }
                 }}
                 onClick={() => setIsCategoryDropdownOpen(true)}
-                placeholder="Select or type category"
+                placeholder="Select Category"
                 className={`w-full h-8 pl-3 pr-7 rounded-full border bg-white text-xs font-semibold text-slate-800 placeholder:text-slate-400 outline-none focus:outline-none focus:ring-0 focus:border-slate-400 ${
                   errors.categoryName ? 'border-rose-500' : 'border-slate-300'
                 }`}

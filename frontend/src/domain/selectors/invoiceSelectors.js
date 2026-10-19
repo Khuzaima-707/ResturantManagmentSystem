@@ -28,16 +28,43 @@ export function getInvoiceById(orders = [], idOrNumber = '') {
   );
 }
 
+function getInvoiceSequenceNumber(record) {
+  if (!record) return 0;
+  if (record.sequenceNumber != null && !isNaN(Number(record.sequenceNumber)) && Number(record.sequenceNumber) > 0) {
+    return Number(record.sequenceNumber);
+  }
+  const str = String(record.invoiceNumber || record.originalInvoiceNumber || record.id || '');
+  const matches = str.match(/(\d+)/g);
+  if (matches && matches.length > 0) {
+    return parseInt(matches[matches.length - 1], 10) || 0;
+  }
+  return 0;
+}
+
+export function sortInvoicesDescending(a, b) {
+  const seqA = getInvoiceSequenceNumber(a);
+  const seqB = getInvoiceSequenceNumber(b);
+  if (seqA !== 0 && seqB !== 0 && seqB !== seqA) {
+    return seqB - seqA;
+  }
+  const dateA = new Date(a.completedAt || a.createdAt || a.reversedAt || 0).getTime();
+  const dateB = new Date(b.completedAt || b.createdAt || b.reversedAt || 0).getTime();
+  if (dateB !== dateA) {
+    return dateB - dateA;
+  }
+  return String(b.invoiceNumber || b.originalInvoiceNumber || b.id || '').localeCompare(
+    String(a.invoiceNumber || a.originalInvoiceNumber || a.id || ''),
+    undefined,
+    { numeric: true }
+  );
+}
+
 /**
- * Returns invoice history sorted by completion/creation date descending
+ * Returns invoice history sorted by sequence and completion/creation date descending
  */
 export function getInvoiceHistory(orders = []) {
   if (!Array.isArray(orders)) return [];
-  return [...orders].sort((a, b) => {
-    const dateA = new Date(a.completedAt || a.createdAt || 0).getTime();
-    const dateB = new Date(b.completedAt || b.createdAt || 0).getTime();
-    return dateB - dateA;
-  });
+  return [...orders].sort(sortInvoicesDescending);
 }
 
 /**
@@ -68,7 +95,7 @@ export function filterInvoices(orders = [], filters = {}) {
     ? getDateIntervalForPreset(datePreset, customRange, referenceDate)
     : null;
 
-  return orders.filter((order) => {
+  const filtered = orders.filter((order) => {
     // 1. Search Query Filter (Matches invoice number or item names in lines)
     if (query) {
       const matchInvoice = String(order.invoiceNumber || '')
@@ -85,7 +112,18 @@ export function filterInvoices(orders = [], filters = {}) {
     // 2. Status Filter
     if (status && status !== 'All') {
       const orderStatus = (order.status || 'completed').toLowerCase();
-      if (orderStatus !== status.toLowerCase()) return false;
+      const isPartial =
+        (Number(order.balanceDue) > 0 || (order.paymentStatus || '').toLowerCase() === 'partial') &&
+        orderStatus !== 'reversed';
+      const target = status.toLowerCase();
+
+      if (target === 'partial' || target === 'outstanding') {
+        if (!isPartial) return false;
+      } else if (target === 'completed') {
+        if (orderStatus !== 'completed' || isPartial) return false;
+      } else if (orderStatus !== target) {
+        return false;
+      }
     }
 
     // 3. Payment Method Filter
@@ -125,6 +163,8 @@ export function filterInvoices(orders = [], filters = {}) {
 
     return true;
   });
+
+  return filtered.sort(sortInvoicesDescending);
 }
 
 /**

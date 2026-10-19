@@ -6,7 +6,6 @@ import {
   Receipt,
   History,
   Calendar,
-  ChevronDown,
 } from 'lucide-react';
 import { SearchInput } from '../components/ui/SearchInput';
 import { Tabs } from '../components/ui/Tabs';
@@ -210,18 +209,52 @@ export const POSPage = ({ defaultTab = 'register' }) => {
     const normActive = activeCategory.trim().toLowerCase();
     const normActiveNoS = normActive.replace(/s$/, '');
 
+    // Resolve category object for the active tab (by name or id)
+    const activeCatObj = (categories || []).find(
+      (c) =>
+        c &&
+        (c.id === activeCategory ||
+          c.name?.trim().toLowerCase() === normActive ||
+          c.name?.trim().toLowerCase().replace(/s$/, '') === normActiveNoS)
+    );
+    const activeCatId = activeCatObj?.id;
+
     const list = activeMenuItems.filter((product) => {
       const resolved = resolveItemEffectiveCategory(product, categories);
       const effectiveCategoryName = resolved.name || '';
       const normEffective = effectiveCategoryName.trim().toLowerCase();
       const normEffectiveNoS = normEffective.replace(/s$/, '');
 
-      const matchesCategory =
-        activeCategory === 'All' ||
+      const itemCatName = (product.categoryName || '').trim().toLowerCase();
+      const itemCatNameNoS = itemCatName.replace(/s$/, '');
+      const pNameLower = (product.name || '').trim().toLowerCase();
+
+      // 1. Direct ID match
+      const idMatches =
+        Boolean(activeCatId && (product.categoryId === activeCatId || resolved.id === activeCatId)) ||
         product.categoryId === activeCategory ||
-        resolved.id === activeCategory ||
-        normEffective === normActive ||
-        (normEffectiveNoS.length >= 3 && normEffectiveNoS === normActiveNoS);
+        resolved.id === activeCategory;
+
+      // 2. Exact or singular/plural category name match
+      const nameMatches =
+        itemCatName === normActive ||
+        effectiveCategoryName.toLowerCase() === normActive ||
+        (normActiveNoS.length >= 3 && (itemCatNameNoS === normActiveNoS || normEffectiveNoS === normActiveNoS));
+
+      // 3. Substring / Word / Semantic match between active tab and item category (e.g. "Roll" in "Rolls & Wraps")
+      const categoryWordMatches =
+        (normActive.length >= 3 && (itemCatName.includes(normActive) || normEffective.includes(normActive))) ||
+        (itemCatName.length >= 3 && normActive.includes(itemCatName)) ||
+        (normEffective.length >= 3 && normActive.includes(normEffective));
+
+      // 4. Item Name contains the category word (e.g. active tab "Roll" and item name "Chicken Roll")
+      const itemNameWords = pNameLower.split(/[\s/\-_,&]+/).filter(Boolean);
+      const itemNameMatches =
+        normActive.length >= 3 &&
+        itemNameWords.some((w) => w === normActive || w === normActiveNoS || w.replace(/s$/, '') === normActiveNoS);
+
+      const matchesCategory =
+        activeCategory === 'All' || idMatches || nameMatches || categoryWordMatches || itemNameMatches;
 
       const query = searchQuery.trim().toLowerCase();
       const matchesSearch =
@@ -267,25 +300,25 @@ export const POSPage = ({ defaultTab = 'register' }) => {
           )}
         </div>
 
-        {/* Right Toolbar Controls: Matches Screenshot 2 */}
-        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap self-start sm:self-auto">
+        {/* Right Toolbar Controls: Enlarged History & Order Buttons */}
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap self-start sm:self-auto">
           {/* 1. History Button */}
           <button
             type="button"
             onClick={() => setActiveView(activeView === 'register' ? 'history' : 'register')}
-            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold transition-all cursor-pointer shadow-2xs ${
+            className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-[11px] font-bold transition-all cursor-pointer shadow-xs ${
               activeView === 'history'
-                ? 'bg-[#FF5C28] text-white border-[#FF5C28] shadow-xs'
-                : 'bg-white border-slate-200/90 text-slate-700 hover:bg-slate-50'
+                ? 'bg-[#FF5C28] text-white border-[#FF5C28] shadow-sm'
+                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
             }`}
           >
             <History className="w-3 h-3" />
             <span>History</span>
             {visibleOrdersCount > 0 && (
               <span
-                className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   activeView === 'history'
-                    ? 'bg-white/20 text-white'
+                    ? 'bg-white/25 text-white'
                     : 'bg-slate-100 text-slate-700'
                 }`}
               >
@@ -294,34 +327,21 @@ export const POSPage = ({ defaultTab = 'register' }) => {
             )}
           </button>
 
-          {/* 2. Order Cart Trigger Button: Matches Screenshot 2 [ 👜 Order (1) Rs 294 ] */}
+          {/* 2. Order Cart Trigger Button [ 👜 Order (1) Rs 294 ] */}
           <button
             type="button"
             onClick={() => setIsOrderDrawerOpen(true)}
-            className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border-2 border-[#FF5C28] text-[#FF5C28] bg-white hover:bg-orange-50/60 font-bold text-[11px] transition-all shadow-2xs cursor-pointer group"
+            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border-2 border-[#FF5C28] text-[#FF5C28] bg-white hover:bg-orange-50/80 font-bold text-[11px] transition-all shadow-xs cursor-pointer group"
           >
             <ShoppingBag className="w-3 h-3 text-[#FF5C28]" />
             <span>Order</span>
             <span className="w-4 h-4 rounded-full bg-[#FF5C28] text-white flex items-center justify-center text-[9px] font-black">
               {cart.length}
             </span>
-            <span className="font-bold text-slate-900 group-hover:text-[#FF5C28] transition-colors">
+            <span className="font-extrabold text-slate-900 group-hover:text-[#FF5C28] transition-colors">
               Rs {cartGrandTotal.toLocaleString('en-PK')}
             </span>
           </button>
-
-          {/* 3. Dine-In / Takeaway Selector: Matches Screenshot 2 */}
-          <div className="relative inline-flex items-center">
-            <select
-              value={orderType}
-              onChange={(e) => setOrderType(e.target.value)}
-              className="appearance-none pl-2 pr-5 py-0.5 rounded-full border border-slate-200/90 bg-white text-slate-700 text-[11px] font-semibold shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#FF5C28]/20 cursor-pointer"
-            >
-              <option value="Dine-In">Dine-In</option>
-              <option value="Takeaway">Takeaway</option>
-            </select>
-            <ChevronDown className="w-2.5 h-2.5 text-slate-400 absolute right-1.5 pointer-events-none" />
-          </div>
         </div>
       </div>
 
@@ -372,7 +392,7 @@ export const POSPage = ({ defaultTab = 'register' }) => {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 2xl:grid-cols-6 gap-2.5 sm:gap-3">
               {filteredDeals.map((deal) => (
                 <DealCard
                   key={`deal-${deal.id}`}
