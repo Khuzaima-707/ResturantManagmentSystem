@@ -285,7 +285,7 @@ export const DashboardPage = () => {
     return revenueDays[revenueDays.length - 1].id;
   }, [revenueDays, activeCandleKey]);
 
-  const presets = isCashier ? ['Today'] : ['Today', 'This Week', 'This Month'];
+  const presets = isCashier ? ['Today'] : ['All Dates', 'Today', 'This Week', 'This Month'];
 
   const toggleDropdown = (cardKey) => {
     if (isCashier) return;
@@ -380,7 +380,7 @@ export const DashboardPage = () => {
                   ? 'Profit This Week:'
                   : effectiveDatePreset === 'This Month'
                   ? 'Profit This Month:'
-                  : 'Est. Gross Profit:'}
+                  : 'Total Profit:'}
               </span>
               <span className="font-semibold text-emerald-700">
                 {formatCurrency(activeProfit.grossProfit || 0)}

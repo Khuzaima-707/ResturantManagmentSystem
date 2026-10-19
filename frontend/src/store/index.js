@@ -627,7 +627,7 @@ export const useAppStore = create((set, get) => ({
   },
 
   // Date Filter State for Dashboard & Reports
-  datePreset: 'This Week', // 'Today' | 'This Week' | 'This Month' | 'Custom'
+  datePreset: 'All Dates', // 'All Dates' | 'Today' | 'This Week' | 'This Month' | 'Custom'
   setDatePreset: (datePreset) => set({ datePreset }),
 
   customDateRange: {
