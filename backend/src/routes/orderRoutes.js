@@ -6,6 +6,7 @@ import {
   seedOrders,
   updateKitchenStatus,
   getNextInvoiceNumberHandler,
+  repairDuplicateInvoicesHandler,
   settleOrderBalance,
 } from '../controllers/orderController.js';
 import {
@@ -21,6 +22,7 @@ router.post('/', validate(createOrderSchema), createOrder);
 
 // Next invoice sequence endpoint (must be before /:id)
 router.get('/next-invoice-number', getNextInvoiceNumberHandler);
+router.post('/repair-invoices', repairDuplicateInvoicesHandler);
 
 // Seed sample orders
 router.post('/seed', seedOrders);

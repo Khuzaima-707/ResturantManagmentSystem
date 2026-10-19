@@ -64,7 +64,8 @@ export function sortInvoicesDescending(a, b) {
  */
 export function getInvoiceHistory(orders = []) {
   if (!Array.isArray(orders)) return [];
-  return [...orders].sort(sortInvoicesDescending);
+  const repaired = repairDuplicateInvoiceNumbersLocally(orders);
+  return [...repaired].sort(sortInvoicesDescending);
 }
 
 /**
@@ -491,6 +492,7 @@ export function repairDuplicateInvoiceNumbersLocally(orders = [], prefix = 'INV-
   });
 
   const invoiceMap = new Map();
+  const sequenceSet = new Set();
   let maxSeq = 0;
 
   for (const o of sorted) {
@@ -499,15 +501,20 @@ export function repairDuplicateInvoiceNumbersLocally(orders = [], prefix = 'INV-
       const num = parseInt(inv.replace(/\D/g, ''), 10);
       if (!isNaN(num) && num > maxSeq) maxSeq = num;
     }
-    if (o.sequenceNumber && Number(o.sequenceNumber) > maxSeq) {
+    if (o.sequenceNumber != null && !isNaN(Number(o.sequenceNumber)) && Number(o.sequenceNumber) > maxSeq) {
       maxSeq = Number(o.sequenceNumber);
     }
   }
 
   const repaired = sorted.map((o) => {
     const inv = String(o.invoiceNumber || '').trim();
-    if (!inv || !invoiceMap.has(inv)) {
-      if (inv) invoiceMap.set(inv, o.id);
+    const seq = o.sequenceNumber != null && !isNaN(Number(o.sequenceNumber)) ? Number(o.sequenceNumber) : null;
+    const isInvDup = Boolean(inv && invoiceMap.has(inv));
+    const isSeqDup = Boolean(seq !== null && sequenceSet.has(seq));
+
+    if (!isInvDup && !isSeqDup && inv) {
+      invoiceMap.set(inv, o.id);
+      if (seq !== null) sequenceSet.add(seq);
       return o;
     } else {
       // Duplicate detected! Assign next sequential number without deleting the order
@@ -515,6 +522,7 @@ export function repairDuplicateInvoiceNumbersLocally(orders = [], prefix = 'INV-
       const newSeq = maxSeq;
       const newInv = `${prefix}${String(newSeq).padStart(4, '0')}`;
       invoiceMap.set(newInv, o.id);
+      sequenceSet.add(newSeq);
       return {
         ...o,
         sequenceNumber: newSeq,
@@ -524,6 +532,15 @@ export function repairDuplicateInvoiceNumbersLocally(orders = [], prefix = 'INV-
   });
 
   return repaired;
+}
+
+/**
+ * Repairs duplicates and returns invoices sorted newest / highest sequence first
+ */
+export function repairAndSortInvoicesDescending(orders = [], prefix = 'INV-') {
+  if (!Array.isArray(orders) || orders.length === 0) return [];
+  const repaired = repairDuplicateInvoiceNumbersLocally(orders, prefix);
+  return [...repaired].sort(sortInvoicesDescending);
 }
 
 /**

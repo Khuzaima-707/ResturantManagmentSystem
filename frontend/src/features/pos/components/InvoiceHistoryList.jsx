@@ -22,6 +22,7 @@ import {
   isInvoiceReversible,
   getReversalByInvoice,
   filterOrdersByOwnership,
+  repairDuplicateInvoiceNumbersLocally,
 } from '../../../domain/selectors/invoiceSelectors';
 import { downloadInvoicePdf } from '../../../services/pdf/invoicePdfGenerator';
 import { InvoiceModal } from './InvoiceModal';
@@ -55,7 +56,8 @@ export const InvoiceHistoryList = () => {
 
   // Scoped orders based on role ownership
   const visibleOrders = useMemo(() => {
-    return filterOrdersByOwnership(orders, user);
+    const scoped = filterOrdersByOwnership(orders, user);
+    return repairDuplicateInvoiceNumbersLocally(scoped);
   }, [orders, user]);
 
   // Outstanding Invoices & Total Amount

@@ -47,7 +47,10 @@ import {
   groupSalesByDate,
   groupSalesByCategory,
 } from '../domain/selectors/dashboardSelectors';
-import { filterOrdersByOwnership } from '../domain/selectors/invoiceSelectors';
+import {
+  filterOrdersByOwnership,
+  repairDuplicateInvoiceNumbersLocally,
+} from '../domain/selectors/invoiceSelectors';
 import { formatCurrency, formatNumber } from '../utils/formatters';
 import {
   exportSalesReportExcel,
@@ -156,7 +159,8 @@ export const ReportsPage = () => {
 
   // Role-based visible datasets
   const visibleOrders = useMemo(() => {
-    return filterOrdersByOwnership(orders, user);
+    const scoped = filterOrdersByOwnership(orders, user);
+    return repairDuplicateInvoiceNumbersLocally(scoped);
   }, [orders, user]);
 
   const visibleReversals = useMemo(() => {

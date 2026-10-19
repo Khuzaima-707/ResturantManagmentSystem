@@ -196,6 +196,41 @@ describe('Role-Based Invoice Ownership & Invoice Number Uniqueness', () => {
     expect(repaired[2].grandTotal).toBe(1400);
   });
 
+  it('safely heals duplicate INV-0001 when a deal is added later and sorts it to the top (INV-0008)', () => {
+    // Exact scenario from user: 7 existing orders (INV-0001 to INV-0007),
+    // and a new deal order at 06:38 AM accidentally assigned duplicate INV-0001.
+    const ordersWithDuplicateDeal = [
+      { id: 'ord-1', invoiceNumber: 'INV-0001', sequenceNumber: 1, completedAt: '2026-10-19T06:01:00Z', grandTotal: 550, lines: [{ itemNameSnapshot: 'Zinger Burger' }] },
+      { id: 'ord-2', invoiceNumber: 'INV-0002', sequenceNumber: 2, completedAt: '2026-10-19T06:04:00Z', grandTotal: 1000, lines: [{ itemNameSnapshot: 'Chicken biryani' }] },
+      { id: 'ord-3', invoiceNumber: 'INV-0003', sequenceNumber: 3, completedAt: '2026-10-19T06:09:00Z', grandTotal: 200, status: 'reversed', lines: [{ itemNameSnapshot: 'Chicken Roll' }] },
+      { id: 'ord-4', invoiceNumber: 'INV-0004', sequenceNumber: 4, completedAt: '2026-10-19T06:14:00Z', grandTotal: 600, lines: [{ itemNameSnapshot: 'Kunafa' }] },
+      { id: 'ord-5', invoiceNumber: 'INV-0005', sequenceNumber: 5, completedAt: '2026-10-19T06:14:00Z', grandTotal: 263, lines: [{ itemNameSnapshot: '7up' }] },
+      { id: 'ord-6', invoiceNumber: 'INV-0006', sequenceNumber: 6, completedAt: '2026-10-19T06:16:00Z', grandTotal: 210, lines: [{ itemNameSnapshot: 'Chicken Roll' }] },
+      { id: 'ord-7', invoiceNumber: 'INV-0007', sequenceNumber: 7, completedAt: '2026-10-19T06:29:00Z', grandTotal: 126, lines: [{ itemNameSnapshot: 'Mountain Dew' }] },
+      { id: 'ord-deal-8', invoiceNumber: 'INV-0001', sequenceNumber: 1, completedAt: '2026-10-19T06:38:00Z', grandTotal: 788, lines: [{ itemNameSnapshot: 'New Deal', isDeal: true }] },
+    ];
+
+    const repaired = repairDuplicateInvoiceNumbersLocally(ordersWithDuplicateDeal, 'INV-');
+
+    // Zinger keeps INV-0001
+    const zinger = repaired.find((o) => o.id === 'ord-1');
+    expect(zinger.invoiceNumber).toBe('INV-0001');
+    expect(zinger.sequenceNumber).toBe(1);
+
+    // Deal is automatically resequenced to INV-0008
+    const deal = repaired.find((o) => o.id === 'ord-deal-8');
+    expect(deal.invoiceNumber).toBe('INV-0008');
+    expect(deal.sequenceNumber).toBe(8);
+    expect(deal.grandTotal).toBe(788);
+
+    // When sorted descending (newest / highest sequence first), deal is at row 1 (the very top)
+    const sorted = getInvoiceHistory(ordersWithDuplicateDeal);
+    expect(sorted[0].id).toBe('ord-deal-8');
+    expect(sorted[0].invoiceNumber).toBe('INV-0008');
+    expect(sorted[1].invoiceNumber).toBe('INV-0007');
+    expect(sorted[7].invoiceNumber).toBe('INV-0001');
+  });
+
   // ================= 5. SEQUENTIAL NUMBER GENERATOR =================
   it('generates the next sequential invoice number safely across existing orders', () => {
     const existing = [

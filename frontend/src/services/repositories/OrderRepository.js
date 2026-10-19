@@ -5,7 +5,10 @@
  */
 import { api } from '../adapters/apiClient';
 import { storage } from '../persistence/storage';
-import { generateNextSequentialInvoiceNumber } from '../../domain/selectors/invoiceSelectors';
+import {
+  generateNextSequentialInvoiceNumber,
+  repairDuplicateInvoiceNumbersLocally,
+} from '../../domain/selectors/invoiceSelectors';
 
 const STORAGE_KEY = 'orders';
 
@@ -36,8 +39,9 @@ export const OrderRepository = {
             return k && !backendKeys.has(k);
           });
           const merged = [...res.data, ...unsynced];
-          storage.set(STORAGE_KEY, merged);
-          return merged;
+          const healed = repairDuplicateInvoiceNumbersLocally(merged);
+          storage.set(STORAGE_KEY, healed);
+          return healed;
         } else if (local.length > 0) {
           return local;
         } else {
@@ -79,10 +83,16 @@ export const OrderRepository = {
       const res = await api.post('/orders', orderPayload);
       if (res && res.success && res.data) {
         const all = storage.get(STORAGE_KEY, []) || [];
-        const filtered = all.filter((o) => o.id !== res.data.id && o.id !== orderPayload.id);
-        const deduped = [res.data, ...filtered];
-        storage.set(STORAGE_KEY, deduped);
-        return res.data;
+        let finalOrder = res.data;
+        const otherOrders = all.filter((o) => o.id !== res.data.id && o.id !== orderPayload.id);
+        const hasCollision = otherOrders.some((o) => o.invoiceNumber === res.data.invoiceNumber);
+        if (hasCollision && orderPayload.invoiceNumber && !otherOrders.some((o) => o.invoiceNumber === orderPayload.invoiceNumber)) {
+          finalOrder = { ...res.data, invoiceNumber: orderPayload.invoiceNumber, sequenceNumber: orderPayload.sequenceNumber };
+        }
+        const deduped = [finalOrder, ...otherOrders];
+        const healed = repairDuplicateInvoiceNumbersLocally(deduped);
+        storage.set(STORAGE_KEY, healed);
+        return finalOrder;
       }
     } catch (err) {
       console.warn('[OrderRepository] Live API sync deferred, order safely stored locally:', err.message);

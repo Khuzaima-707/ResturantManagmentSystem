@@ -1108,11 +1108,28 @@ export const useAppStore = create((set, get) => ({
       .then((synced) => {
         if (synced && synced.id) {
           const liveOrders = get().orders || [];
+          let safeSynced = synced;
+          // Protect against backend downgrading sequence or returning duplicate invoice number
+          const otherOrders = liveOrders.filter((o) => o.id !== order.id && o.id !== synced.id);
+          const hasCollision = otherOrders.some((o) => o.invoiceNumber === synced.invoiceNumber);
+          if (hasCollision && order.invoiceNumber && !otherOrders.some((o) => o.invoiceNumber === order.invoiceNumber)) {
+            safeSynced = { ...synced, invoiceNumber: order.invoiceNumber, sequenceNumber: order.sequenceNumber };
+          }
           const replaced = liveOrders.map((o) =>
-            o.id === order.id || o.id === synced.id ? { ...o, ...synced } : o
+            o.id === order.id || o.id === synced.id ? { ...o, ...safeSynced } : o
           );
-          storage.set('orders', replaced);
-          set({ orders: replaced });
+          const healed = repairDuplicateInvoiceNumbersLocally(replaced);
+          const sorted = [...healed].sort((a, b) => {
+            const sA = getSeq(a);
+            const sB = getSeq(b);
+            if (sA !== 0 && sB !== 0 && sB !== sA) return sB - sA;
+            const tA = new Date(a.completedAt || a.createdAt || 0).getTime();
+            const tB = new Date(b.completedAt || b.createdAt || 0).getTime();
+            if (tB !== tA) return tB - tA;
+            return String(b.invoiceNumber || b.id || '').localeCompare(String(a.invoiceNumber || a.id || ''), undefined, { numeric: true });
+          });
+          storage.set('orders', sorted);
+          set({ orders: sorted });
         }
       })
       .catch((err) => {
@@ -1901,8 +1918,23 @@ export const useAppStore = create((set, get) => ({
             OrderRepository.create(loc).catch(() => {});
           }
         }
-        updates.orders = mergedOrds;
-        storage.set('orders', mergedOrds);
+        const healed = repairDuplicateInvoiceNumbersLocally(mergedOrds);
+        const getSeq = (o) => {
+          if (o.sequenceNumber != null && !isNaN(Number(o.sequenceNumber)) && Number(o.sequenceNumber) > 0) return Number(o.sequenceNumber);
+          const m = String(o.invoiceNumber || o.id || '').match(/(\d+)/g);
+          return m && m.length > 0 ? parseInt(m[m.length - 1], 10) || 0 : 0;
+        };
+        const sorted = [...healed].sort((a, b) => {
+          const sA = getSeq(a);
+          const sB = getSeq(b);
+          if (sA !== 0 && sB !== 0 && sB !== sA) return sB - sA;
+          const tA = new Date(a.completedAt || a.createdAt || 0).getTime();
+          const tB = new Date(b.completedAt || b.createdAt || 0).getTime();
+          if (tB !== tA) return tB - tA;
+          return String(b.invoiceNumber || b.id || '').localeCompare(String(a.invoiceNumber || a.id || ''), undefined, { numeric: true });
+        });
+        updates.orders = sorted;
+        storage.set('orders', sorted);
       }
 
       // 5. Reversals

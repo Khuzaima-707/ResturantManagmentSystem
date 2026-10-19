@@ -81,19 +81,48 @@ function resolveDateRange(datePreset, startDate, endDate) {
  * Safely generates the next sequential unique invoice number atomically from the database.
  * Prevents duplicate invoice numbers across multiple users, browser tabs, or concurrent sales.
  */
-export async function getNextInvoiceSequence(prefix = 'INV-') {
+/**
+ * Safely generates the next sequential unique invoice number atomically from the database.
+ * Prevents duplicate invoice numbers across multiple users, browser tabs, or concurrent sales.
+ * Respects client-preferred sequence (e.g. from POS offline/online ledger) if unique and higher.
+ */
+export async function getNextInvoiceSequence(prefix = 'INV-', preferredSeq = null, preferredInvoiceNumber = null) {
   const cleanPrefix = (prefix || 'INV-').trim();
+  const reqSeq = preferredSeq != null && !isNaN(Number(preferredSeq)) && Number(preferredSeq) > 0 ? Number(preferredSeq) : null;
+  const reqInv = preferredInvoiceNumber ? String(preferredInvoiceNumber).trim() : null;
 
   if (!isDbConnected()) {
+    if (reqInv && reqSeq) {
+      const existing = await Order.findOne({ invoiceNumber: reqInv }).lean();
+      if (!existing) {
+        return { sequenceNumber: reqSeq, invoiceNumber: reqInv };
+      }
+    }
     const highest = await Order.findOne().sort({ sequenceNumber: -1 }).lean();
-    const nextSeq = (highest?.sequenceNumber || 0) + 1;
+    const nextSeq = Math.max(highest?.sequenceNumber || 0, reqSeq || 0) + 1;
     return {
       sequenceNumber: nextSeq,
       invoiceNumber: `${cleanPrefix}${String(nextSeq).padStart(4, '0')}`,
     };
   }
 
-  // 1. Find highest numeric sequence currently in the Order collection to sync counter safely
+  // 1. If preferred sequence and invoiceNumber provided by POS, verify uniqueness and adopt safely
+  if (reqInv && reqSeq) {
+    const existing = await Order.findOne({ invoiceNumber: reqInv }, { _id: 1 }).lean();
+    if (!existing) {
+      await Counter.findOneAndUpdate(
+        { _id: 'order_invoice_sequence' },
+        { $max: { seq: reqSeq } },
+        { upsert: true }
+      );
+      return {
+        sequenceNumber: reqSeq,
+        invoiceNumber: reqInv,
+      };
+    }
+  }
+
+  // 2. Find highest numeric sequence currently in the Order collection to sync counter safely
   const highestOrderBySeq = await Order.findOne({}, { sequenceNumber: 1, invoiceNumber: 1 })
     .sort({ sequenceNumber: -1 })
     .lean();
@@ -107,6 +136,10 @@ export async function getNextInvoiceSequence(prefix = 'INV-') {
     }
   }
 
+  if (reqSeq && reqSeq > maxSeq) {
+    maxSeq = reqSeq;
+  }
+
   // Ensure counter is at least maxSeq
   await Counter.findOneAndUpdate(
     { _id: 'order_invoice_sequence' },
@@ -114,7 +147,7 @@ export async function getNextInvoiceSequence(prefix = 'INV-') {
     { upsert: true }
   );
 
-  // 2. Atomically increment counter and verify uniqueness against Order collection
+  // 3. Atomically increment counter and verify uniqueness against Order collection
   let attempts = 0;
   while (attempts < 50) {
     attempts++;
@@ -137,7 +170,7 @@ export async function getNextInvoiceSequence(prefix = 'INV-') {
     }
   }
 
-  // Fallback fallback guaranteed uniqueness
+  // Fallback guaranteed uniqueness
   const fallbackSeq = Date.now();
   return {
     sequenceNumber: fallbackSeq,
@@ -208,6 +241,23 @@ export async function getNextInvoiceNumberHandler(req, res, next) {
     return res.status(200).json({
       success: true,
       ...nextInvoice,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * POST /api/orders/repair-invoices
+ * Heals duplicate invoice numbers across all orders in MongoDB Atlas.
+ */
+export async function repairDuplicateInvoicesHandler(req, res, next) {
+  try {
+    const prefix = req.body?.prefix || req.query?.prefix || 'INV-';
+    const result = await repairDuplicateInvoiceNumbers(prefix);
+    return res.status(200).json({
+      success: true,
+      ...result,
     });
   } catch (error) {
     next(error);
@@ -402,7 +452,11 @@ export async function createOrder(req, res, next) {
 
     // 3. Generate sequential invoice number atomically on the server
     const invoicePrefix = body.invoicePrefix || 'INV-';
-    const { sequenceNumber, invoiceNumber } = await getNextInvoiceSequence(invoicePrefix);
+    const { sequenceNumber, invoiceNumber } = await getNextInvoiceSequence(
+      invoicePrefix,
+      body.sequenceNumber,
+      body.invoiceNumber
+    );
 
     // 4. Order ID
     const randomSuffix = Math.random().toString(36).substring(2, 6);
@@ -483,6 +537,19 @@ export async function getAllOrders(req, res, next) {
         },
         offline: true,
       });
+    }
+
+    // Auto-heal duplicate invoice numbers if any exist in the database
+    try {
+      const duplicates = await Order.aggregate([
+        { $group: { _id: '$invoiceNumber', count: { $sum: 1 } } },
+        { $match: { count: { $gt: 1 }, _id: { $ne: null } } },
+      ]);
+      if (duplicates && duplicates.length > 0) {
+        await repairDuplicateInvoiceNumbers();
+      }
+    } catch {
+      // Non-blocking auto-repair attempt
     }
 
     const {
