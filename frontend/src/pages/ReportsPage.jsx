@@ -1532,7 +1532,7 @@ export const ReportsPage = () => {
 
       {/* 3. Common Filter Toolbar (Single Shared Filter Source) */}
       <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-2xs space-y-2.5 no-print">
-        <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-2.5">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
           {/* Search Input */}
           <SearchInput
             value={searchQuery}
@@ -1551,7 +1551,7 @@ export const ReportsPage = () => {
           />
 
           {/* Filters Group */}
-          <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap text-xs">
+          <div className="flex items-center gap-1.5 flex-wrap text-xs">
             {/* Date Preset */}
             {isCashier ? (
               <div className="h-9 px-2.5 bg-amber-50 border border-amber-200 rounded-xl font-bold text-amber-800 flex items-center gap-1.5 text-xs select-none shrink-0">
@@ -1580,7 +1580,7 @@ export const ReportsPage = () => {
 
             {/* Custom Range Inputs */}
             {!isCashier && datePreset === 'Custom' && (
-              <div className="flex items-center gap-1.5 bg-slate-50 p-1 rounded-xl border border-slate-200 shrink-0">
+              <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-xl border border-slate-200 shrink-0">
                 <input
                   type="date"
                   value={customStartDate}
@@ -1588,7 +1588,7 @@ export const ReportsPage = () => {
                     setCustomStartDate(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className="h-7 px-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-700"
+                  className="h-7 px-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 max-w-[125px]"
                 />
                 <span className="text-slate-400 text-xs">to</span>
                 <input
@@ -1598,7 +1598,7 @@ export const ReportsPage = () => {
                     setCustomEndDate(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className="h-7 px-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-700"
+                  className="h-7 px-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 max-w-[125px]"
                 />
               </div>
             )}
@@ -1708,7 +1708,7 @@ export const ReportsPage = () => {
                 }}
                 className="h-9 px-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer text-xs shrink-0"
               >
-                <option value="All">All Statuses</option>
+                <option value="All">All Status</option>
                 <option value="completed">Completed</option>
                 <option value="partial">Partial</option>
                 <option value="reversed">Reversed</option>
@@ -1723,7 +1723,7 @@ export const ReportsPage = () => {
                   setSelectedReason(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="h-9 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer"
+                className="h-9 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer text-xs shrink-0"
               >
                 <option value="All">All Reasons</option>
                 <option value="Customer Cancelled">Customer Cancelled</option>
@@ -1733,6 +1733,26 @@ export const ReportsPage = () => {
                 <option value="Food Quality Issue">Food Quality Issue</option>
                 <option value="Other">Other</option>
               </select>
+            )}
+
+            {/* Reset Filters button */}
+            {(selectedStatus !== 'All' ||
+              selectedPaymentMethod !== 'All' ||
+              selectedOrderType !== 'All' ||
+              selectedCategory !== 'All' ||
+              (selectedItem && selectedItem !== 'All') ||
+              (selectedReason && selectedReason !== 'All') ||
+              datePreset !== (isCashier ? 'Today' : 'All Dates') ||
+              Boolean(searchQuery)) && (
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="h-9 px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold text-xs inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors"
+                title="Reset all filters"
+              >
+                <ResetIcon className="w-3.5 h-3.5" />
+                <span>Reset</span>
+              </button>
             )}
           </div>
         </div>
