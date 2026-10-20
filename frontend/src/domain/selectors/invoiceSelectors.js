@@ -422,6 +422,17 @@ export function isNotificationVisibleToUser(notification, user) {
   const currentUserId = String(user.id || (user.username ? `user_${user.username}` : '')).trim();
   if (!currentUserId) return false;
 
+  // Administrative / supervisory alerts (Balance Settled, Reversals, Deletions) are STRICTLY for Admin
+  const title = String(notification.title || '').toLowerCase();
+  if (
+    title.includes('balance settled') ||
+    title.includes('reversed') ||
+    title.includes('deleted') ||
+    notification.type === 'reversal'
+  ) {
+    return false;
+  }
+
   const notifCreatedByRole = String(notification.createdByRole || '').toLowerCase();
   const notifCreatedByUserId = String(notification.createdByUserId || '').trim();
   const notifTargetUserId = String(notification.targetUserId || '').trim();
@@ -429,29 +440,29 @@ export function isNotificationVisibleToUser(notification, user) {
     ? notification.targetRoles.map((r) => String(r).toLowerCase())
     : [];
 
+  // If created by an admin, cashier must NEVER see it
+  if (notifCreatedByRole === 'admin') {
+    return false;
+  }
+
   // If explicitly targeted to this specific user ID
   if (notifTargetUserId) {
     return notifTargetUserId === currentUserId;
   }
 
-  // If created by an admin and not explicitly broadcast to cashiers/all, hide from cashier
-  if (notifCreatedByRole === 'admin') {
-    const isBroadcastToCashier = targetRoles.includes('cashier') || targetRoles.includes('all');
-    return isBroadcastToCashier;
+  // If targetRoles is strictly admin, hide from cashier
+  if (targetRoles.length > 0 && !targetRoles.includes('cashier') && !targetRoles.includes('all')) {
+    return false;
   }
 
-  // If created by another cashier, hide from this cashier (unless broadcast)
+  // If created by another cashier, hide from this cashier
   if (notifCreatedByUserId) {
-    if (notifCreatedByUserId === currentUserId) {
-      return true;
-    }
-    const isBroadcast = targetRoles.includes('all') || targetRoles.includes('cashier');
-    return isBroadcast && !notifCreatedByRole.includes('admin');
+    return notifCreatedByUserId === currentUserId;
   }
 
-  // If targetRoles has 'cashier' or 'all'
-  if (targetRoles.length > 0) {
-    return targetRoles.includes('cashier') || targetRoles.includes('all');
+  // Broadcast announcements explicitly targeted to cashiers
+  if (notification.type === 'announcement' && (targetRoles.includes('cashier') || targetRoles.includes('all'))) {
+    return true;
   }
 
   // Default: hide untargeted admin/legacy notifications from cashier

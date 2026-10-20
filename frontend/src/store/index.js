@@ -1222,6 +1222,7 @@ export const useAppStore = create((set, get) => ({
         : paymentMethod === 'Online' && (onlineBankName || onlineChannel)
         ? ` (${onlineBankName || onlineChannel}${onlineAccountNumber ? ` - ${onlineAccountNumber}` : ''})`
         : '';
+    const isSettledByAdmin = String(loggedInUser.role || '').toLowerCase().includes('admin') || loggedInUser.username === 'admin';
     const newNotif = {
       id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       type: 'order',
@@ -1232,7 +1233,9 @@ export const useAppStore = create((set, get) => ({
       amount: pay,
       read: false,
       timestamp: new Date().toISOString(),
-      targetRoles: ['admin', 'cashier'],
+      createdByUserId: loggedInUser.id || (loggedInUser.username ? `user_${loggedInUser.username}` : null),
+      createdByRole: isSettledByAdmin ? 'admin' : 'cashier',
+      targetRoles: ['admin'],
     };
     const updatedNotifs = [newNotif, ...(get().notifications || [])];
     storage.set('notifications', updatedNotifs);
@@ -1401,6 +1404,8 @@ export const useAppStore = create((set, get) => ({
       amount: reversal.totalReversedIncludingTax,
       read: false,
       timestamp: new Date().toISOString(),
+      createdByRole: 'admin',
+      targetRoles: ['admin'],
     };
     const updatedNotifs = [newNotif, ...(get().notifications || [])];
     storage.set('notifications', updatedNotifs);
@@ -1472,6 +1477,8 @@ export const useAppStore = create((set, get) => ({
       amount: targetOrder.grandTotal,
       read: false,
       timestamp: new Date().toISOString(),
+      createdByRole: 'admin',
+      targetRoles: ['admin'],
     };
     const updatedNotifs = [newNotif, ...(get().notifications || [])];
     storage.set('notifications', updatedNotifs);

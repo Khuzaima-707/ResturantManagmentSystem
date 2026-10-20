@@ -301,5 +301,38 @@ describe('Role-Based Invoice Ownership & Invoice Number Uniqueness', () => {
       expect(isNotificationVisibleToUser(broadcastNotification, cashier1User)).toBe(true);
       expect(isNotificationVisibleToUser(broadcastNotification, cashier2User)).toBe(true);
     });
+
+    it('Cashier NEVER sees Balance Settled notifications (strictly Admin)', () => {
+      const balanceSettledNotif = {
+        id: 'notif-stl-1',
+        type: 'order',
+        title: 'Balance Settled #INV-0002',
+        description: 'Received Rs 25 via Cash. Fully Paid',
+        targetRoles: ['admin', 'cashier'],
+      };
+      expect(isNotificationVisibleToUser(balanceSettledNotif, cashier1User)).toBe(false);
+      expect(isNotificationVisibleToUser(balanceSettledNotif, cashier2User)).toBe(false);
+      expect(isNotificationVisibleToUser(balanceSettledNotif, adminUser)).toBe(true);
+    });
+
+    it('Cashier NEVER sees Reversal or Deletion notifications (strictly Admin)', () => {
+      const reversalNotif = {
+        id: 'notif-rev-1',
+        type: 'reversal',
+        title: 'Invoice Reversed #INV-0003',
+        description: 'Refund Rs 500',
+      };
+      const deleteNotif = {
+        id: 'notif-del-1',
+        type: 'reversal',
+        title: 'Invoice #INV-0004 Deleted',
+        description: 'Removed Rs 300',
+      };
+      expect(isNotificationVisibleToUser(reversalNotif, cashier1User)).toBe(false);
+      expect(isNotificationVisibleToUser(deleteNotif, cashier1User)).toBe(false);
+      expect(isNotificationVisibleToUser(reversalNotif, adminUser)).toBe(true);
+      expect(isNotificationVisibleToUser(deleteNotif, adminUser)).toBe(true);
+    });
   });
 });
+
