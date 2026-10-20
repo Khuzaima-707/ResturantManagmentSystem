@@ -704,8 +704,14 @@ export const ReportsPage = () => {
       align: 'center',
       cellClassName: 'text-center',
       render: (status, row) => {
-        const isRev = (status || '').toLowerCase() === 'reversed' || (row?.id && reversedOrderIds.has(row.id));
-        const isPartial = Number(row?.balanceDue) > 0 || (row?.paymentStatus || '').toLowerCase() === 'partial';
+        const isRev =
+          (status || '').toLowerCase() === 'reversed' ||
+          Boolean(row?.reversalId) ||
+          (row?.id && reversedOrderIds.has(String(row.id))) ||
+          (row?.invoiceNumber && reversedOrderIds.has(String(row.invoiceNumber).toUpperCase()));
+        const isPartial =
+          (Number(row?.balanceDue) > 0 || (row?.paymentStatus || '').toLowerCase() === 'partial') &&
+          !isRev;
         if (isRev) {
           return (
             <Badge variant="danger" size="sm">
@@ -920,11 +926,27 @@ export const ReportsPage = () => {
           Boolean(row?.reversalId) ||
           (row?.id && reversedOrderIds.has(String(row.id))) ||
           (row?.invoiceNumber && reversedOrderIds.has(String(row.invoiceNumber).toUpperCase()));
-        return isRev ? (
-          <Badge variant="danger" size="sm">
-            Reversed
-          </Badge>
-        ) : (
+        const isPartial =
+          (Number(row?.balanceDue) > 0 || (row?.paymentStatus || '').toLowerCase() === 'partial') &&
+          !isRev;
+        if (isRev) {
+          return (
+            <Badge variant="danger" size="sm">
+              Reversed
+            </Badge>
+          );
+        }
+        if (isPartial) {
+          return (
+            <span
+              className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-amber-100 text-amber-800 border border-amber-300"
+              title={`Balance Due: ${formatCurrency(row?.balanceDue || 0)}`}
+            >
+              Partial
+            </span>
+          );
+        }
+        return (
           <Badge variant="success" size="sm">
             Completed
           </Badge>
