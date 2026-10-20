@@ -283,7 +283,12 @@ export const InvoiceModal = ({
                     <span className="font-medium text-slate-700">{formattedDate}</span> • {formattedTime}
                   </div>
                   <div>
-                    Cashier: <span className="font-semibold text-slate-800">{order.cashierName || 'Admin User'}</span>
+                    {String(order.createdByRole || '').toLowerCase().includes('admin') || String(order.createdByName || order.cashierName || '').toLowerCase().includes('admin')
+                      ? 'Billed By: '
+                      : 'Cashier: '}
+                    <span className="font-semibold text-slate-800">
+                      {order.createdByName || order.cashierName || (String(order.createdByRole || '').toLowerCase().includes('admin') ? 'Admin' : 'Staff')}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -560,7 +565,11 @@ export const InvoiceModal = ({
             <span>{formattedDate} {formattedTime}</span>
           </div>
           <div className="flex justify-between items-center">
-            <span>Cashier: {order.cashierName || 'Staff'}</span>
+            <span>
+              {String(order.createdByRole || '').toLowerCase().includes('admin') || String(order.createdByName || order.cashierName || '').toLowerCase().includes('admin')
+                ? `Billed By: ${order.createdByName || order.cashierName || 'Admin'}`
+                : `Cashier: ${order.cashierName || order.createdByName || 'Staff'}`}
+            </span>
             <span>Payment: {(order.paymentMethod || 'Cash').toUpperCase()}</span>
           </div>
           {order.orderType && (

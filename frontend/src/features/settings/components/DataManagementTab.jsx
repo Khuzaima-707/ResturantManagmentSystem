@@ -14,12 +14,20 @@ import { useAppStore } from '../../../store';
 export const DataManagementTab = () => {
   const navigate = useNavigate();
   const store = useAppStore;
-  const { categories, items, addons, orders, reversals } = useAppStore();
+  const { categories, items, addons, orders, reversals, user } = useAppStore();
+
+  const isCashier = Boolean(
+    (user?.role?.toLowerCase().includes('cashier') && !user?.role?.toLowerCase().includes('admin')) ||
+    (user?.username?.toLowerCase() === 'cashier' && user?.username?.toLowerCase() !== 'admin')
+  );
 
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [resetSuccessMessage, setResetSuccessMessage] = useState('');
 
   const handlePerformReset = async () => {
+    if (isCashier) {
+      return;
+    }
     const result = await resetApplicationData(store);
     if (result.success) {
       setResetSuccessMessage('All restaurant operational data was permanently deleted.');
@@ -102,54 +110,68 @@ export const DataManagementTab = () => {
         </div>
       </div>
 
-      {/* Danger Zone */}
-      <div className="rounded-2xl border border-rose-200 bg-rose-50/40 p-5 sm:p-6 space-y-4 shadow-2xs">
-        <div className="flex items-start gap-3">
-          <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0 mt-0.5">
-            <Trash2 className="w-5 h-5" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-rose-800">
-              Danger Zone — Delete All Data
-            </h3>
-            <p className="text-xs text-rose-600/90 mt-1 leading-relaxed">
-              Permanently purges all menu items, categories, add-ons, orders, sales history, reversals, and cart data from local storage.
+      {/* Danger Zone — Admin Only */}
+      {isCashier ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 sm:p-5 text-xs text-amber-900 flex items-start gap-3 shadow-2xs">
+          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <h4 className="font-bold text-amber-900 text-xs">Access Restricted (Admin Only)</h4>
+            <p className="text-[11px] text-amber-700 leading-relaxed">
+              Operational data deletion and system reset permissions are strictly reserved for Administrator accounts.
             </p>
           </div>
         </div>
-
-        {/* Export Advisory per PRD Section 32 */}
-        <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50/80 border border-amber-200/80 text-amber-900 text-xs">
-          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-          <span>
-            <strong>Important:</strong> Export any important reports and download invoice PDFs before deleting all data. This action is irreversible.
-          </span>
-        </div>
-
-        {resetSuccessMessage && (
-          <div className="p-3 rounded-xl bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-semibold">
-            {resetSuccessMessage} Redirecting to Dashboard...
+      ) : (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50/40 p-5 sm:p-6 space-y-4 shadow-2xs">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0 mt-0.5">
+              <Trash2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-rose-800">
+                Danger Zone — Delete All Data
+              </h3>
+              <p className="text-xs text-rose-600/90 mt-1 leading-relaxed">
+                Permanently purges all menu items, categories, add-ons, orders, sales history, reversals, and cart data from local storage.
+              </p>
+            </div>
           </div>
-        )}
 
-        <div className="pt-1">
-          <Button
-            variant="danger"
-            size="md"
-            leftIcon={Trash2}
-            onClick={() => setIsDeleteModalOpen(true)}
-          >
-            Delete All Data
-          </Button>
+          {/* Export Advisory per PRD Section 32 */}
+          <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50/80 border border-amber-200/80 text-amber-900 text-xs">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <span>
+              <strong>Important:</strong> Export any important reports and download invoice PDFs before deleting all data. This action is irreversible.
+            </span>
+          </div>
+
+          {resetSuccessMessage && (
+            <div className="p-3 rounded-xl bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-semibold">
+              {resetSuccessMessage} Redirecting to Dashboard...
+            </div>
+          )}
+
+          <div className="pt-1">
+            <Button
+              variant="danger"
+              size="md"
+              leftIcon={Trash2}
+              onClick={() => setIsDeleteModalOpen(true)}
+            >
+              Delete All Data
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Two-step Confirmation Danger Modal */}
-      <DeleteDataModal
-        isOpen={isDeleteModalOpen}
-        onClose={() => setIsDeleteModalOpen(false)}
-        onConfirmReset={handlePerformReset}
-      />
+      {!isCashier && (
+        <DeleteDataModal
+          isOpen={isDeleteModalOpen}
+          onClose={() => setIsDeleteModalOpen(false)}
+          onConfirmReset={handlePerformReset}
+        />
+      )}
     </div>
   );
 };

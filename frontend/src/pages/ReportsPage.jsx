@@ -19,6 +19,7 @@ import {
   FileText,
   CheckCircle2,
   Layers,
+  User,
 } from 'lucide-react';
 import { KPICard } from '../components/ui/KPICard';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
@@ -737,6 +738,42 @@ export const ReportsPage = () => {
       },
     },
     {
+      key: 'billedBy',
+      title: 'Billed By',
+      headerClassName: 'w-28 text-center whitespace-nowrap',
+      align: 'center',
+      cellClassName: 'text-center whitespace-nowrap',
+      render: (_, row) => {
+        const role = String(row?.createdByRole || '').toLowerCase();
+        const rawName = String(row?.createdByName || row?.cashierName || '').trim();
+        const isAdmin = role.includes('admin') || rawName.toLowerCase().includes('admin');
+        const isCashierRole = role.includes('cashier') || rawName.toLowerCase().includes('cashier');
+
+        let displayLabel = 'Admin';
+        if (!isAdmin && (isCashierRole || role === 'cashier')) {
+          displayLabel = rawName ? (rawName.toLowerCase() === 'cashier' ? 'Cashier' : rawName) : 'Cashier';
+        } else if (isAdmin) {
+          displayLabel = rawName && rawName.toLowerCase() !== 'admin' ? rawName : 'Admin';
+        } else {
+          displayLabel = rawName || 'Admin';
+        }
+
+        return (
+          <span
+            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold ${
+              isAdmin
+                ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                : 'bg-blue-50 text-blue-700 border border-blue-200'
+            }`}
+            title={`Billed by: ${isAdmin ? `Admin (${displayLabel})` : `Cashier (${displayLabel})`}`}
+          >
+            <User className="w-3 h-3 shrink-0" />
+            <span>{displayLabel}</span>
+          </span>
+        );
+      },
+    },
+    {
       key: 'actions',
       title: 'Action',
       headerClassName: 'w-20 text-center',
@@ -950,6 +987,42 @@ export const ReportsPage = () => {
           <Badge variant="success" size="sm">
             Completed
           </Badge>
+        );
+      },
+    },
+    {
+      key: 'billedBy',
+      title: 'Billed By',
+      headerClassName: 'w-28 text-center whitespace-nowrap',
+      align: 'center',
+      cellClassName: 'text-center whitespace-nowrap',
+      render: (_, row) => {
+        const role = String(row?.createdByRole || '').toLowerCase();
+        const rawName = String(row?.createdByName || row?.cashierName || '').trim();
+        const isAdmin = role.includes('admin') || rawName.toLowerCase().includes('admin');
+        const isCashierRole = role.includes('cashier') || rawName.toLowerCase().includes('cashier');
+
+        let displayLabel = 'Admin';
+        if (!isAdmin && (isCashierRole || role === 'cashier')) {
+          displayLabel = rawName ? (rawName.toLowerCase() === 'cashier' ? 'Cashier' : rawName) : 'Cashier';
+        } else if (isAdmin) {
+          displayLabel = rawName && rawName.toLowerCase() !== 'admin' ? rawName : 'Admin';
+        } else {
+          displayLabel = rawName || 'Admin';
+        }
+
+        return (
+          <span
+            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold ${
+              isAdmin
+                ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                : 'bg-blue-50 text-blue-700 border border-blue-200'
+            }`}
+            title={`Billed by: ${isAdmin ? `Admin (${displayLabel})` : `Cashier (${displayLabel})`}`}
+          >
+            <User className="w-3 h-3 shrink-0" />
+            <span>{displayLabel}</span>
+          </span>
         );
       },
     },
@@ -1870,7 +1943,7 @@ export const ReportsPage = () => {
                       <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
                         {formatCurrency(validFilteredOrders.reduce((s, o) => s + (Number(o.grandTotal) || 0), 0))}
                       </td>
-                      <td colSpan={3} className="py-2.5 px-3.5" />
+                      <td colSpan={4} className="py-2.5 px-3.5" />
                     </tr>
                   }
                 />
@@ -2111,7 +2184,7 @@ export const ReportsPage = () => {
                       <td className="py-2.5 px-3.5 text-right font-extrabold text-emerald-700 whitespace-nowrap">
                         {formatCurrency(revenueKpis.netRevenue)}
                       </td>
-                      <td colSpan={2} className="py-2.5 px-3.5" />
+                      <td colSpan={3} className="py-2.5 px-3.5" />
                     </tr>
                   }
                 />
@@ -3010,7 +3083,7 @@ export const ReportsPage = () => {
                         <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
                           {formatCurrency(validFilteredOrders.reduce((s, o) => s + (Number(o.grandTotal) || 0), 0))}
                         </td>
-                        <td colSpan={3} className="py-2.5 px-3.5" />
+                        <td colSpan={4} className="py-2.5 px-3.5" />
                       </tr>
                     ) : (
                       <tr className="border-t-2 border-slate-300 bg-slate-50/90 text-xs font-bold text-slate-900">

@@ -28,13 +28,13 @@ export const SettingsPage = () => {
     { id: 'tax', label: 'Tax Settings' },
     { id: 'pos', label: 'POS Settings' },
     { id: 'invoice', label: 'Invoice Settings' },
-    { id: 'data', label: 'Data Management' },
+    ...(!isCashier ? [{ id: 'data', label: 'Data Management' }] : []),
     ...(!isCashier ? [{ id: 'history', label: 'Deletion History' }] : []),
   ];
 
-  // If cashier tries to stay on history tab, fallback to profile
+  // If cashier tries to stay on history or data tab, fallback to profile
   React.useEffect(() => {
-    if (isCashier && activeTab === 'history') {
+    if (isCashier && (activeTab === 'history' || activeTab === 'data')) {
       setActiveTab('profile');
     }
   }, [isCashier, activeTab]);
@@ -98,7 +98,7 @@ export const SettingsPage = () => {
         />
       )}
 
-      {activeTab === 'data' && (
+      {!isCashier && activeTab === 'data' && (
         <DataManagementTab />
       )}
 
