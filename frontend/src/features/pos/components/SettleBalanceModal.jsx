@@ -58,7 +58,7 @@ export const SettleBalanceModal = ({ order, isOpen, onClose, onSettled }) => {
       setError('');
       setIsSubmitting(false);
     }
-  }, [isOpen, order]);
+  }, [isOpen, order?.id]);
 
   if (!isOpen || !order) return null;
 
@@ -181,6 +181,7 @@ export const SettleBalanceModal = ({ order, isOpen, onClose, onSettled }) => {
             </span>
             <input
               type="number"
+              step="any"
               min={1}
               max={balanceDue}
               value={amountToPay}

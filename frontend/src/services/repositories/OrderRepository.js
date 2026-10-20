@@ -129,12 +129,28 @@ export const OrderRepository = {
     return updated.find((o) => o.id === id);
   },
 
-  settleBalance: async (id, { amountPaid, paymentMethod = 'Cash', receivedBy = 'Cashier', note = '' } = {}) => {
+  settleBalance: async (
+    id,
+    {
+      amountPaid,
+      paymentMethod = 'Cash',
+      receivedBy = 'Cashier',
+      cardNetwork,
+      cardSlipNumber,
+      onlineChannel,
+      onlineTransactionId,
+      note = '',
+    } = {}
+  ) => {
     try {
       const res = await api.patch(`/orders/${id}/settle-balance`, {
         amountPaid,
         paymentMethod,
         receivedBy,
+        cardNetwork,
+        cardSlipNumber,
+        onlineChannel,
+        onlineTransactionId,
         note,
       });
       if (res && res.success && res.data) {

@@ -376,6 +376,7 @@ export function deriveRevenueReport(filteredOrders = [], filteredReversals = [])
 
   const grossBilled = filteredOrders.reduce((sum, o) => sum + (Number(o.grandTotal) || 0), 0);
   const totalDiscounts = filteredOrders.reduce((sum, o) => sum + (Number(o.discountAmount) || 0), 0);
+  const validDiscounts = validOrders.reduce((sum, o) => sum + (Number(o.discountAmount) || 0), 0);
 
   // Tax Collected derives strictly from stored snapshots in valid non-reversed orders
   const taxCollected = validOrders.reduce((sum, o) => sum + (Number(o.taxAmount) || 0), 0);
@@ -416,6 +417,7 @@ export function deriveRevenueReport(filteredOrders = [], filteredReversals = [])
     grossBilled,
     validBilled,
     totalSale: validBilled,
+    validDiscounts,
     totalDiscounts,
     taxCollected,
     reversalsIncludingTax,

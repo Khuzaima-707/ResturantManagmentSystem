@@ -884,6 +884,8 @@ export async function settleOrderBalance(req, res, next) {
       });
     }
 
+    const { id } = req.params;
+
     const {
       amountPaid,
       paymentMethod = 'Cash',
@@ -922,6 +924,17 @@ export async function settleOrderBalance(req, res, next) {
     order.amountReceived = newReceived;
     order.balanceDue = newDue;
     order.paymentStatus = newDue === 0 ? 'paid' : 'partial';
+    if (newDue === 0 && order.status !== 'reversed') {
+      order.status = 'completed';
+    }
+
+    if (paymentMethod === 'Card') {
+      if (cardNetwork) order.cardNetwork = cardNetwork;
+      if (cardSlipNumber) order.posSlipNumber = cardSlipNumber;
+    } else if (paymentMethod === 'Online') {
+      if (onlineChannel) order.onlineChannel = onlineChannel;
+      if (onlineTransactionId) order.transactionId = onlineTransactionId;
+    }
 
     if (!Array.isArray(order.settlementHistory)) {
       order.settlementHistory = [];

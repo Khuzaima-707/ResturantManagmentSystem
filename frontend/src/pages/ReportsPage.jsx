@@ -211,17 +211,26 @@ export const ReportsPage = () => {
   }, [visibleReversals, effectiveDatePreset, effectiveCustomRange, selectedReason, searchQuery, invoiceSortOrder]);
 
   const reversedOrderIds = useMemo(() => {
-    return new Set(
-      Array.isArray(filteredReversals)
-        ? filteredReversals.map((r) => r.originalOrderId || r.orderId).filter(Boolean)
-        : []
-    );
-  }, [filteredReversals]);
+    const set = new Set();
+    const sourceReversals = Array.isArray(reversals) ? reversals : [];
+    sourceReversals.forEach((r) => {
+      if (r.originalOrderId) set.add(String(r.originalOrderId));
+      if (r.orderId) set.add(String(r.orderId));
+      if (r.originalInvoiceNumber) set.add(String(r.originalInvoiceNumber).toUpperCase());
+      if (r.invoiceNumber) set.add(String(r.invoiceNumber).toUpperCase());
+    });
+    return set;
+  }, [reversals]);
 
   const validFilteredOrders = useMemo(() => {
-    return filteredOrders.filter(
-      (o) => !reversedOrderIds.has(o.id) && (o.status || '').toLowerCase() !== 'reversed'
-    );
+    return filteredOrders.filter((o) => {
+      if (!o) return false;
+      if ((o.status || '').toLowerCase() === 'reversed') return false;
+      if (o.reversalId) return false;
+      if (o.id && reversedOrderIds.has(String(o.id))) return false;
+      if (o.invoiceNumber && reversedOrderIds.has(String(o.invoiceNumber).toUpperCase())) return false;
+      return true;
+    });
   }, [filteredOrders, reversedOrderIds]);
 
   // Reset Filters
@@ -608,9 +617,17 @@ export const ReportsPage = () => {
       headerClassName: 'w-24 text-right',
       align: 'right',
       cellClassName: 'text-right',
-      render: (sub) => (
-        <span className="text-xs text-slate-700">{formatCurrency(sub || 0)}</span>
-      ),
+      render: (sub, row) => {
+        const isRev =
+          (row?.status || '').toLowerCase() === 'reversed' ||
+          Boolean(row?.reversalId) ||
+          (row?.id && reversedOrderIds.has(String(row.id))) ||
+          (row?.invoiceNumber && reversedOrderIds.has(String(row.invoiceNumber).toUpperCase()));
+        if (isRev) {
+          return <span className="text-xs text-slate-400 line-through" title="Reversed sale excluded from valid sales total">{formatCurrency(sub || 0)}</span>;
+        }
+        return <span className="text-xs text-slate-700">{formatCurrency(sub || 0)}</span>;
+      },
     },
     {
       key: 'discountAmount',
@@ -618,11 +635,21 @@ export const ReportsPage = () => {
       headerClassName: 'w-20 text-right',
       align: 'right',
       cellClassName: 'text-right',
-      render: (disc) => (
-        <span className="text-xs text-rose-600">
-          {Number(disc) > 0 ? `-${formatCurrency(disc)}` : 'Rs 0'}
-        </span>
-      ),
+      render: (disc, row) => {
+        const isRev =
+          (row?.status || '').toLowerCase() === 'reversed' ||
+          Boolean(row?.reversalId) ||
+          (row?.id && reversedOrderIds.has(String(row.id))) ||
+          (row?.invoiceNumber && reversedOrderIds.has(String(row.invoiceNumber).toUpperCase()));
+        if (isRev) {
+          return <span className="text-xs text-slate-400 line-through">Rs 0</span>;
+        }
+        return (
+          <span className="text-xs text-rose-600">
+            {Number(disc) > 0 ? `-${formatCurrency(disc)}` : 'Rs 0'}
+          </span>
+        );
+      },
     },
     {
       key: 'taxAmount',
@@ -630,9 +657,17 @@ export const ReportsPage = () => {
       headerClassName: 'w-20 text-right',
       align: 'right',
       cellClassName: 'text-right',
-      render: (tax) => (
-        <span className="text-xs text-slate-500">{formatCurrency(tax || 0)}</span>
-      ),
+      render: (tax, row) => {
+        const isRev =
+          (row?.status || '').toLowerCase() === 'reversed' ||
+          Boolean(row?.reversalId) ||
+          (row?.id && reversedOrderIds.has(String(row.id))) ||
+          (row?.invoiceNumber && reversedOrderIds.has(String(row.invoiceNumber).toUpperCase()));
+        if (isRev) {
+          return <span className="text-xs text-slate-400 line-through">Rs 0</span>;
+        }
+        return <span className="text-xs text-slate-500">{formatCurrency(tax || 0)}</span>;
+      },
     },
     {
       key: 'grandTotal',
@@ -640,9 +675,17 @@ export const ReportsPage = () => {
       headerClassName: 'w-28 text-right font-bold',
       align: 'right',
       cellClassName: 'text-right',
-      render: (total) => (
-        <span className="font-bold text-xs text-slate-900">{formatCurrency(total || 0)}</span>
-      ),
+      render: (total, row) => {
+        const isRev =
+          (row?.status || '').toLowerCase() === 'reversed' ||
+          Boolean(row?.reversalId) ||
+          (row?.id && reversedOrderIds.has(String(row.id))) ||
+          (row?.invoiceNumber && reversedOrderIds.has(String(row.invoiceNumber).toUpperCase()));
+        if (isRev) {
+          return <span className="text-xs text-slate-400 line-through" title="Reversed sale excluded from valid sales total">{formatCurrency(total || 0)}</span>;
+        }
+        return <span className="font-bold text-xs text-slate-900">{formatCurrency(total || 0)}</span>;
+      },
     },
     {
       key: 'paymentMethod',
@@ -786,11 +829,25 @@ export const ReportsPage = () => {
       headerClassName: 'w-24 text-right',
       align: 'right',
       cellClassName: 'text-right',
-      render: (total, row) => (
-        <span className="text-xs font-semibold text-slate-800">
-          {formatCurrency(total ?? row.grandTotal ?? 0)}
-        </span>
-      ),
+      render: (total, row) => {
+        const isRev =
+          (row?.status || '').toLowerCase() === 'reversed' ||
+          Boolean(row?.reversalId) ||
+          (row?.id && reversedOrderIds.has(String(row.id))) ||
+          (row?.invoiceNumber && reversedOrderIds.has(String(row.invoiceNumber).toUpperCase()));
+        if (isRev) {
+          return (
+            <span className="text-xs text-slate-400 line-through" title="Reversed sale excluded from valid revenue total">
+              {formatCurrency(total ?? row?.grandTotal ?? 0)}
+            </span>
+          );
+        }
+        return (
+          <span className="text-xs font-semibold text-slate-800">
+            {formatCurrency(total ?? row?.grandTotal ?? 0)}
+          </span>
+        );
+      },
     },
     {
       key: 'discountAmount',
@@ -798,11 +855,21 @@ export const ReportsPage = () => {
       headerClassName: 'w-24 text-right',
       align: 'right',
       cellClassName: 'text-right',
-      render: (disc) => (
-        <span className="text-xs text-rose-600 font-medium">
-          {Number(disc) > 0 ? `-${formatCurrency(disc)}` : 'Rs 0'}
-        </span>
-      ),
+      render: (disc, row) => {
+        const isRev =
+          (row?.status || '').toLowerCase() === 'reversed' ||
+          Boolean(row?.reversalId) ||
+          (row?.id && reversedOrderIds.has(String(row.id))) ||
+          (row?.invoiceNumber && reversedOrderIds.has(String(row.invoiceNumber).toUpperCase()));
+        if (isRev) {
+          return <span className="text-xs text-slate-400 line-through">Rs 0</span>;
+        }
+        return (
+          <span className="text-xs text-rose-600 font-medium">
+            {Number(disc) > 0 ? `-${formatCurrency(disc)}` : 'Rs 0'}
+          </span>
+        );
+      },
     },
     {
       key: 'taxAmount',
@@ -811,7 +878,11 @@ export const ReportsPage = () => {
       align: 'right',
       cellClassName: 'text-right',
       render: (tax, row) => {
-        const isRev = (row.status || '').toLowerCase() === 'reversed' || (row?.id && reversedOrderIds.has(row.id));
+        const isRev =
+          (row?.status || '').toLowerCase() === 'reversed' ||
+          Boolean(row?.reversalId) ||
+          (row?.id && reversedOrderIds.has(String(row.id))) ||
+          (row?.invoiceNumber && reversedOrderIds.has(String(row.invoiceNumber).toUpperCase()));
         if (isRev) {
           return <span className="text-xs text-slate-400 line-through">Rs 0</span>;
         }
@@ -825,11 +896,15 @@ export const ReportsPage = () => {
       align: 'right',
       cellClassName: 'text-right',
       render: (_, row) => {
-        const isRev = (row.status || '').toLowerCase() === 'reversed' || (row?.id && reversedOrderIds.has(row.id));
+        const isRev =
+          (row?.status || '').toLowerCase() === 'reversed' ||
+          Boolean(row?.reversalId) ||
+          (row?.id && reversedOrderIds.has(String(row.id))) ||
+          (row?.invoiceNumber && reversedOrderIds.has(String(row.invoiceNumber).toUpperCase()));
         if (isRev) {
           return <span className="text-xs text-slate-400 line-through">Rs 0</span>;
         }
-        const net = Math.max(0, (row.grandTotal || 0) - (row.taxAmount || 0));
+        const net = Math.max(0, (row?.grandTotal || 0) - (row?.taxAmount || 0));
         return <span className="font-bold text-xs text-emerald-700">{formatCurrency(net)}</span>;
       },
     },
@@ -840,7 +915,11 @@ export const ReportsPage = () => {
       align: 'center',
       cellClassName: 'text-center',
       render: (status, row) => {
-        const isRev = (status || '').toLowerCase() === 'reversed' || (row?.id && reversedOrderIds.has(row.id));
+        const isRev =
+          (status || '').toLowerCase() === 'reversed' ||
+          Boolean(row?.reversalId) ||
+          (row?.id && reversedOrderIds.has(String(row.id))) ||
+          (row?.invoiceNumber && reversedOrderIds.has(String(row.invoiceNumber).toUpperCase()));
         return isRev ? (
           <Badge variant="danger" size="sm">
             Reversed
@@ -1973,14 +2052,16 @@ export const ReportsPage = () => {
                           Reconciled Revenue Total
                         </span>
                         <span className="text-[11px] text-slate-400 font-normal">
-                          ({filteredOrders.length} {filteredOrders.length === 1 ? 'sale' : 'sales'})
+                          ({validFilteredOrders.length} valid / {filteredOrders.length} total)
                         </span>
                       </td>
                       <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
-                        {formatCurrency(revenueKpis.grossBilled)}
+                        {formatCurrency(revenueKpis.validBilled !== undefined ? revenueKpis.validBilled : (revenueKpis.totalSale || revenueKpis.grossBilled))}
                       </td>
                       <td className="py-2.5 px-3.5 text-right font-extrabold text-rose-600 whitespace-nowrap">
-                        {revenueKpis.totalDiscounts > 0 ? `-${formatCurrency(revenueKpis.totalDiscounts)}` : 'Rs 0'}
+                        {(revenueKpis.validDiscounts !== undefined ? revenueKpis.validDiscounts : revenueKpis.totalDiscounts) > 0
+                          ? `-${formatCurrency(revenueKpis.validDiscounts !== undefined ? revenueKpis.validDiscounts : revenueKpis.totalDiscounts)}`
+                          : 'Rs 0'}
                       </td>
                       <td className="py-2.5 px-3.5 text-right font-extrabold text-amber-700 whitespace-nowrap">
                         {formatCurrency(revenueKpis.taxCollected)}
@@ -2870,22 +2951,22 @@ export const ReportsPage = () => {
                             Statement Reconciled Total
                           </span>
                           <span className="text-[11px] text-slate-400 font-normal">
-                            ({filteredOrders.length} valid sales invoices)
+                            ({validFilteredOrders.length} valid / {filteredOrders.length} total)
                           </span>
                         </td>
                         <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
-                          {formatCurrency(filteredOrders.reduce((s, o) => s + (Number(o.subtotal) || 0), 0))}
+                          {formatCurrency(validFilteredOrders.reduce((s, o) => s + (Number(o.subtotal) || 0), 0))}
                         </td>
                         <td className="py-2.5 px-3.5 text-right font-extrabold text-rose-600 whitespace-nowrap">
-                          {filteredOrders.reduce((s, o) => s + (Number(o.discountAmount) || 0), 0) > 0
-                            ? `-${formatCurrency(filteredOrders.reduce((s, o) => s + (Number(o.discountAmount) || 0), 0))}`
+                          {validFilteredOrders.reduce((s, o) => s + (Number(o.discountAmount) || 0), 0) > 0
+                            ? `-${formatCurrency(validFilteredOrders.reduce((s, o) => s + (Number(o.discountAmount) || 0), 0))}`
                             : 'Rs 0'}
                         </td>
                         <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-700 whitespace-nowrap">
-                          {formatCurrency(filteredOrders.reduce((s, o) => s + (Number(o.taxAmount) || 0), 0))}
+                          {formatCurrency(validFilteredOrders.reduce((s, o) => s + (Number(o.taxAmount) || 0), 0))}
                         </td>
                         <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
-                          {formatCurrency(filteredOrders.reduce((s, o) => s + (Number(o.grandTotal) || 0), 0))}
+                          {formatCurrency(validFilteredOrders.reduce((s, o) => s + (Number(o.grandTotal) || 0), 0))}
                         </td>
                         <td colSpan={3} className="py-2.5 px-3.5" />
                       </tr>

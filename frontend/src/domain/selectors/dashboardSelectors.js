@@ -165,13 +165,25 @@ export function getFilteredReversals(reversals = [], datePreset = 'This Week', c
 export function getValidNonReversedOrders(orders = [], reversals = []) {
   if (!Array.isArray(orders) || orders.length === 0) return [];
 
-  const reversedOrderIds = new Set(
-    Array.isArray(reversals) ? reversals.map((r) => r.originalOrderId || r.orderId) : []
-  );
+  const reversedOrderIds = new Set();
+  if (Array.isArray(reversals)) {
+    reversals.forEach((r) => {
+      if (r.originalOrderId) reversedOrderIds.add(String(r.originalOrderId));
+      if (r.orderId) reversedOrderIds.add(String(r.orderId));
+      if (r.originalInvoiceNumber) reversedOrderIds.add(String(r.originalInvoiceNumber).toUpperCase());
+      if (r.invoiceNumber) reversedOrderIds.add(String(r.invoiceNumber).toUpperCase());
+    });
+  }
 
-  return orders.filter(
-    (o) => o.status !== 'reversed' && !reversedOrderIds.has(o.id)
-  );
+  return orders.filter((o) => {
+    if (!o) return false;
+    const isRevStatus = (o.status || '').toLowerCase() === 'reversed';
+    if (isRevStatus) return false;
+    if (o.reversalId) return false;
+    if (o.id && reversedOrderIds.has(String(o.id))) return false;
+    if (o.invoiceNumber && reversedOrderIds.has(String(o.invoiceNumber).toUpperCase())) return false;
+    return true;
+  });
 }
 
 /**
