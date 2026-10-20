@@ -197,8 +197,10 @@ export function downloadInvoicePdf(order, settings = {}, reversal = null) {
   // Balanced Meta Row: Cashier (Left), Payment (Right)
   const paymentLabel = order.paymentMethod === 'Card' && order.cardNetwork
     ? `Card (${order.cardNetwork})`
-    : order.paymentMethod === 'Online' && order.onlineChannel
-    ? `Online (${order.onlineChannel})`
+    : order.paymentMethod === 'Online' && (order.onlineBankName || order.onlineChannel)
+    ? `Online (${order.onlineBankName || order.onlineChannel}${order.onlineAccountNumber ? ` - ${order.onlineAccountNumber}` : ''})`
+    : order.paymentMethod === 'Split'
+    ? `Split (Cash + ${order.splitDetails?.secondaryMethod || 'Online'})`
     : (order.paymentMethod || 'Cash');
 
   if (hasCashier) {

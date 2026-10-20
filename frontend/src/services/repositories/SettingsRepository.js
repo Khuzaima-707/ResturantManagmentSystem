@@ -44,6 +44,7 @@ export class SettingsRepository {
       invoicePrefix: merged.invoice?.invoicePrefix || merged.invoicePrefix,
       footerNote: merged.invoice?.footer || merged.footerNote,
       currencySymbol: merged.business?.currency || merged.invoice?.currencySymbol || merged.currencySymbol,
+      paymentAccounts: merged.paymentAccounts,
     }).catch((err) => console.warn('[SettingsRepository] API sync warning:', err.message));
 
     return merged;

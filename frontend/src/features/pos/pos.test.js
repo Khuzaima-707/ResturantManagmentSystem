@@ -399,6 +399,53 @@ describe('Batch 4 — POS & Billing Test Suite', () => {
     expect(stored.paymentVerified).toBe(true);
   });
 
+  // 24b. Partial Online payment and subsequent balance settlement
+  it('24b. records partial Online payment with remaining balance due and allows settlement', () => {
+    const partialOnlineOrder = {
+      id: 'ord-online-partial-1',
+      invoiceNumber: 'INV-0101',
+      status: 'completed',
+      paymentMethod: 'Online',
+      onlineChannel: 'EasyPaisa',
+      onlineAccountNumber: '03001234567',
+      onlineAccountTitle: 'Restaurant EasyPaisa',
+      onlineBankName: 'EasyPaisa',
+      transactionId: 'EP-554433',
+      paymentVerified: true,
+      amountReceived: 500,
+      balanceDue: 500,
+      paymentStatus: 'partial',
+      changeAmount: 0,
+      grandTotal: 1000,
+      completedAt: new Date().toISOString(),
+    };
+
+    useAppStore.getState().addOrder(partialOnlineOrder);
+    const stored = useAppStore.getState().orders.find((o) => o.id === 'ord-online-partial-1');
+    expect(stored).toBeDefined();
+    expect(stored.paymentMethod).toBe('Online');
+    expect(stored.paymentStatus).toBe('partial');
+    expect(stored.amountReceived).toBe(500);
+    expect(stored.balanceDue).toBe(500);
+    expect(stored.onlineAccountNumber).toBe('03001234567');
+
+    // Settle the remaining 500 balance via online
+    const settled = useAppStore.getState().settleOrderBalance('ord-online-partial-1', {
+      amountPaid: 500,
+      paymentMethod: 'Online',
+      onlineChannel: 'EasyPaisa',
+      onlineAccountNumber: '03001234567',
+      onlineTransactionId: 'EP-554434',
+    });
+
+    expect(settled.paymentStatus).toBe('paid');
+    expect(settled.balanceDue).toBe(0);
+    expect(settled.amountReceived).toBe(1000);
+    expect(settled.settlementHistory).toHaveLength(1);
+    expect(settled.settlementHistory[0].amountPaid).toBe(500);
+    expect(settled.settlementHistory[0].onlineAccountNumber).toBe('03001234567');
+  });
+
   // 25. items without user-added add-ons have zero add-ons
   it('25. strictly ensures an item without user-configured add-ons has no add-ons', () => {
     const unconfiguredItem = {

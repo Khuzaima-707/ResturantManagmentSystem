@@ -99,10 +99,9 @@ export const POSSettingsTab = ({ settings, onSave }) => {
               <Select
                 options={[
                   { value: 'Cash', label: 'Cash' },
-                  { value: 'Card', label: 'Card' },
                   { value: 'Online', label: 'Online / Transfer' },
                 ]}
-                value={defaultPaymentMethod}
+                value={defaultPaymentMethod === 'Card' ? 'Cash' : defaultPaymentMethod}
                 onChange={(e) => setDefaultPaymentMethod(e.target.value)}
               />
             </FormField>

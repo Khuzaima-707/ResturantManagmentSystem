@@ -4,7 +4,6 @@ import {
   Wallet,
   CheckCircle2,
   DollarSign,
-  CreditCard,
   Globe,
   Receipt,
   AlertCircle,
@@ -12,9 +11,10 @@ import {
 import { Modal } from '../../../components/ui/Modal';
 import { useAppStore } from '../../../store';
 import { formatCurrency } from '../../../utils/formatters';
+import { DEFAULT_PAYMENT_ACCOUNTS } from '../../../domain/rules/settingsRules';
 
 export const SettleBalanceModal = ({ order, isOpen, onClose, onSettled }) => {
-  const { settleOrderBalance } = useAppStore();
+  const { settleOrderBalance, settings } = useAppStore();
 
   const grandTotal = Number(order?.grandTotal) || 0;
   const currentReceived = Number(order?.amountReceived) || 0;
@@ -22,15 +22,21 @@ export const SettleBalanceModal = ({ order, isOpen, onClose, onSettled }) => {
     order?.balanceDue != null ? order.balanceDue : Math.max(0, grandTotal - currentReceived)
   );
 
+  const configuredAccounts = settings?.paymentAccounts?.length
+    ? settings.paymentAccounts
+    : DEFAULT_PAYMENT_ACCOUNTS;
+  const paymentAccounts = configuredAccounts.filter((a) => a.isActive !== false);
+  const defaultAccount =
+    paymentAccounts.find((a) => a.isDefault) || paymentAccounts[0] || null;
+
   const [amountToPay, setAmountToPay] = useState(balanceDue);
   const [paymentMethod, setPaymentMethod] = useState('Cash');
 
-  // Card payment options (matching POS checkout)
-  const [cardNetwork, setCardNetwork] = useState('Visa');
-  const [cardSlipNumber, setCardSlipNumber] = useState('');
-
-  // Online payment options (matching POS checkout)
-  const [onlineChannel, setOnlineChannel] = useState('JazzCash');
+  // Online payment options (dynamically derived from settings)
+  const [selectedAccountId, setSelectedAccountId] = useState(defaultAccount?.id || '');
+  const [onlineChannel, setOnlineChannel] = useState(
+    defaultAccount?.channel || defaultAccount?.bankName || 'JazzCash'
+  );
   const [onlineTransactionId, setOnlineTransactionId] = useState('');
 
   // Verification checkbox
@@ -39,6 +45,11 @@ export const SettleBalanceModal = ({ order, isOpen, onClose, onSettled }) => {
   const [note, setNote] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const selectedAccount =
+    paymentAccounts.find((a) => a.id === selectedAccountId) ||
+    paymentAccounts.find((a) => (a.channel || a.bankName) === onlineChannel) ||
+    defaultAccount;
 
   useEffect(() => {
     if (isOpen && order) {
@@ -49,9 +60,9 @@ export const SettleBalanceModal = ({ order, isOpen, onClose, onSettled }) => {
       );
       setAmountToPay(due);
       setPaymentMethod('Cash');
-      setCardNetwork('Visa');
-      setCardSlipNumber('');
-      setOnlineChannel('JazzCash');
+      const def = paymentAccounts.find((a) => a.isDefault) || paymentAccounts[0] || null;
+      setSelectedAccountId(def?.id || '');
+      setOnlineChannel(def?.channel || def?.bankName || 'JazzCash');
       setOnlineTransactionId('');
       setOperatorVerified(true);
       setNote('');
@@ -76,7 +87,7 @@ export const SettleBalanceModal = ({ order, isOpen, onClose, onSettled }) => {
       return;
     }
 
-    if ((paymentMethod === 'Card' || paymentMethod === 'Online') && !operatorVerified) {
+    if (paymentMethod === 'Online' && !operatorVerified) {
       setError('Please verify the payment on the machine/app before confirming.');
       return;
     }
@@ -86,9 +97,11 @@ export const SettleBalanceModal = ({ order, isOpen, onClose, onSettled }) => {
       const updated = settleOrderBalance(order.id, {
         amountPaid: numPay,
         paymentMethod,
-        cardNetwork: paymentMethod === 'Card' ? cardNetwork : undefined,
-        cardSlipNumber: paymentMethod === 'Card' ? cardSlipNumber.trim() : undefined,
-        onlineChannel: paymentMethod === 'Online' ? onlineChannel : undefined,
+        onlineChannel: paymentMethod === 'Online' ? (selectedAccount?.channel || onlineChannel) : undefined,
+        onlineAccountId: paymentMethod === 'Online' ? selectedAccount?.id : undefined,
+        onlineAccountNumber: paymentMethod === 'Online' ? selectedAccount?.accountNumber : undefined,
+        onlineAccountTitle: paymentMethod === 'Online' ? selectedAccount?.title : undefined,
+        onlineBankName: paymentMethod === 'Online' ? (selectedAccount?.bankName || selectedAccount?.channel) : undefined,
         onlineTransactionId: paymentMethod === 'Online' ? onlineTransactionId.trim() : undefined,
         note: note.trim(),
       });
@@ -164,15 +177,26 @@ export const SettleBalanceModal = ({ order, isOpen, onClose, onSettled }) => {
             <label className="text-xs font-semibold text-slate-700">
               Amount to Receive Now (Rs)
             </label>
-            {numPay !== balanceDue && (
-              <button
-                type="button"
-                onClick={() => setAmountToPay(balanceDue)}
-                className="text-[11px] font-bold text-[#FF5C28] hover:underline cursor-pointer"
-              >
-                Pay Full (Rs {balanceDue})
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {balanceDue > 1 && numPay !== Math.round(balanceDue / 2) && (
+                <button
+                  type="button"
+                  onClick={() => setAmountToPay(Math.round(balanceDue / 2))}
+                  className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 hover:underline cursor-pointer"
+                >
+                  Pay Half (Rs {Math.round(balanceDue / 2)})
+                </button>
+              )}
+              {numPay !== balanceDue && (
+                <button
+                  type="button"
+                  onClick={() => setAmountToPay(balanceDue)}
+                  className="text-[11px] font-bold text-[#FF5C28] hover:underline cursor-pointer"
+                >
+                  Pay Full (Rs {balanceDue})
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="relative">
@@ -207,14 +231,13 @@ export const SettleBalanceModal = ({ order, isOpen, onClose, onSettled }) => {
           </div>
         </div>
 
-        {/* Payment Method Selector */}
+        {/* Payment Method Selector (Cash & Online) */}
         <div className="space-y-1.5">
           <label className="text-xs font-semibold text-slate-700 block">Payment Method</label>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             {[
               { id: 'Cash', label: 'Cash', icon: DollarSign },
-              { id: 'Card', label: 'Card', icon: CreditCard },
-              { id: 'Online', label: 'Online', icon: Globe },
+              { id: 'Online', label: 'Online / Wallet', icon: Globe },
             ].map((m) => {
               const Icon = m.icon;
               const isSelected = paymentMethod === m.id;
@@ -240,75 +263,55 @@ export const SettleBalanceModal = ({ order, isOpen, onClose, onSettled }) => {
           </div>
         </div>
 
-        {/* Card Payment Options (matches POS checkout) */}
-        {paymentMethod === 'Card' && (
-          <div className="space-y-2 p-3 rounded-xl bg-slate-50/80 border border-slate-200 animate-fadeIn">
-            <div>
-              <span className="text-[11px] font-semibold text-slate-700 block mb-1">
-                Card Network
-              </span>
-              <div className="grid grid-cols-4 gap-1">
-                {['Visa', 'Mastercard', 'PayPak', 'UnionPay'].map((net) => (
-                  <button
-                    key={net}
-                    type="button"
-                    onClick={() => setCardNetwork(net)}
-                    className={`py-1 px-1 rounded-lg text-[11px] font-bold transition-all border cursor-pointer text-center ${
-                      cardNetwork === net
-                        ? 'bg-[#FF5C28] text-white border-[#FF5C28]'
-                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    {net}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <input
-              type="text"
-              value={cardSlipNumber}
-              onChange={(e) => setCardSlipNumber(e.target.value)}
-              placeholder="Slip # ya Last 4 Digits (1234)"
-              className="w-full h-8 px-2.5 text-xs bg-white rounded-lg border border-slate-200 text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#FF5C28]"
-            />
-
-            <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-slate-700 font-medium pt-0.5">
-              <input
-                type="checkbox"
-                checked={operatorVerified}
-                onChange={(e) => setOperatorVerified(e.target.checked)}
-                className="w-3.5 h-3.5 rounded text-[#FF5C28] border-slate-300 focus:ring-[#FF5C28] cursor-pointer accent-[#FF5C28]"
-              />
-              <span>Operator verified payment on machine</span>
-            </label>
-          </div>
-        )}
-
-        {/* Online Payment Options (matches POS checkout) */}
+        {/* Online Payment Options (dynamically loaded from Settings) */}
         {paymentMethod === 'Online' && (
           <div className="space-y-2 p-3 rounded-xl bg-slate-50/80 border border-slate-200 animate-fadeIn">
             <div>
               <span className="text-[11px] font-semibold text-slate-700 block mb-1">
-                Online Channel / Wallet
+                Select Account / Wallet
               </span>
-              <div className="grid grid-cols-4 gap-1">
-                {['JazzCash', 'EasyPaisa', 'Raast', 'Bank'].map((ch) => (
-                  <button
-                    key={ch}
-                    type="button"
-                    onClick={() => setOnlineChannel(ch)}
-                    className={`py-1 px-1 rounded-lg text-[11px] font-bold transition-all border cursor-pointer text-center ${
-                      onlineChannel === ch
-                        ? 'bg-[#FF5C28] text-white border-[#FF5C28]'
-                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    {ch}
-                  </button>
-                ))}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
+                {paymentAccounts.map((acc) => {
+                  const isSelected = selectedAccount?.id === acc.id || (onlineChannel === acc.channel && !selectedAccountId);
+                  return (
+                    <button
+                      key={acc.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedAccountId(acc.id);
+                        setOnlineChannel(acc.channel || acc.bankName || 'Online');
+                      }}
+                      className={`py-1 px-1.5 rounded-lg text-[11px] font-bold transition-all border cursor-pointer text-left flex items-center justify-between truncate ${
+                        isSelected
+                          ? 'bg-[#FF5C28] text-white border-[#FF5C28]'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                      }`}
+                      title={`${acc.bankName || acc.channel}: ${acc.accountNumber} (${acc.title})`}
+                    >
+                      <span className="truncate">{acc.bankName || acc.channel}</span>
+                      {acc.isDefault && (
+                        <span className={`text-[9px] px-1 rounded shrink-0 ${isSelected ? 'bg-white/20 text-white' : 'bg-orange-100 text-[#FF5C28]'}`}>
+                          ★
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
+
+            {selectedAccount && (
+              <div className="p-2 rounded-xl bg-orange-50/70 border border-orange-200/80 text-[11px] space-y-0.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-medium">{selectedAccount.bankName || selectedAccount.channel}:</span>
+                  <span className="font-mono font-bold text-slate-900 select-all">{selectedAccount.accountNumber}</span>
+                </div>
+                <div className="flex justify-between items-center text-[10.5px]">
+                  <span className="text-slate-400">Title:</span>
+                  <span className="font-semibold text-slate-700 truncate">{selectedAccount.title}</span>
+                </div>
+              </div>
+            )}
 
             <input
               type="text"

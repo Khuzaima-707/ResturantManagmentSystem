@@ -1148,6 +1148,10 @@ export const useAppStore = create((set, get) => ({
       cardNetwork,
       cardSlipNumber,
       onlineChannel,
+      onlineAccountId,
+      onlineAccountNumber,
+      onlineAccountTitle,
+      onlineBankName,
       onlineTransactionId,
       note = '',
     } = {}
@@ -1174,6 +1178,10 @@ export const useAppStore = create((set, get) => ({
       cardNetwork: paymentMethod === 'Card' ? cardNetwork : undefined,
       cardSlipNumber: paymentMethod === 'Card' ? cardSlipNumber : undefined,
       onlineChannel: paymentMethod === 'Online' ? onlineChannel : undefined,
+      onlineAccountId: paymentMethod === 'Online' ? onlineAccountId : undefined,
+      onlineAccountNumber: paymentMethod === 'Online' ? onlineAccountNumber : undefined,
+      onlineAccountTitle: paymentMethod === 'Online' ? onlineAccountTitle : undefined,
+      onlineBankName: paymentMethod === 'Online' ? onlineBankName : undefined,
       onlineTransactionId: paymentMethod === 'Online' ? onlineTransactionId : undefined,
       settledAt: new Date().toISOString(),
       settledBy: loggedInUser.name || loggedInUser.username || 'Cashier',
@@ -1188,7 +1196,16 @@ export const useAppStore = create((set, get) => ({
       status: isNowFullyPaid ? 'completed' : target.status,
       // If settlement used Card or Online, attach payment channel details for invoice visibility
       ...(paymentMethod === 'Card' ? { cardNetwork, posSlipNumber: cardSlipNumber } : {}),
-      ...(paymentMethod === 'Online' ? { onlineChannel, transactionId: onlineTransactionId } : {}),
+      ...(paymentMethod === 'Online'
+        ? {
+            onlineChannel,
+            onlineAccountId,
+            onlineAccountNumber,
+            onlineAccountTitle,
+            onlineBankName,
+            transactionId: onlineTransactionId,
+          }
+        : {}),
       settlementHistory: [...(target.settlementHistory || []), settleRecord],
     };
 
@@ -1202,8 +1219,8 @@ export const useAppStore = create((set, get) => ({
     const channelDetail =
       paymentMethod === 'Card' && cardNetwork
         ? ` (${cardNetwork})`
-        : paymentMethod === 'Online' && onlineChannel
-        ? ` (${onlineChannel})`
+        : paymentMethod === 'Online' && (onlineBankName || onlineChannel)
+        ? ` (${onlineBankName || onlineChannel}${onlineAccountNumber ? ` - ${onlineAccountNumber}` : ''})`
         : '';
     const newNotif = {
       id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
@@ -1229,6 +1246,10 @@ export const useAppStore = create((set, get) => ({
       cardNetwork,
       cardSlipNumber,
       onlineChannel,
+      onlineAccountId,
+      onlineAccountNumber,
+      onlineAccountTitle,
+      onlineBankName,
       onlineTransactionId,
       receivedBy: loggedInUser.name || loggedInUser.username || 'Cashier',
       note,

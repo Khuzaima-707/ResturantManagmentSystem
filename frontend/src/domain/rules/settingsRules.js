@@ -3,6 +3,36 @@
  * Centralizes settings schema, default values, and validation logic.
  */
 
+export const DEFAULT_PAYMENT_ACCOUNTS = [
+  {
+    id: 'acc_jazzcash_default',
+    channel: 'JazzCash',
+    title: 'Restaurant JazzCash',
+    accountNumber: '0300-1234567',
+    bankName: 'JazzCash',
+    isActive: true,
+    isDefault: true,
+  },
+  {
+    id: 'acc_easypaisa_default',
+    channel: 'EasyPaisa',
+    title: 'Restaurant EasyPaisa',
+    accountNumber: '0345-1234567',
+    bankName: 'EasyPaisa',
+    isActive: true,
+    isDefault: false,
+  },
+  {
+    id: 'acc_bank_default',
+    channel: 'Bank',
+    title: 'SpiceHub Official',
+    accountNumber: '01020304050607',
+    bankName: 'Meezan Bank',
+    isActive: true,
+    isDefault: false,
+  },
+];
+
 export const DEFAULT_SETTINGS = {
   business: {
     name: 'SpiceHub Restaurant & Grill',
@@ -36,6 +66,7 @@ export const DEFAULT_SETTINGS = {
     showTaxBreakdown: true,
     showPaymentDetails: true,
   },
+  paymentAccounts: DEFAULT_PAYMENT_ACCOUNTS,
   // Top-level aliases for seamless backward compatibility with existing code & tests
   restaurantName: 'SpiceHub Restaurant & Grill',
   tagline: 'Restaurant & Grill • Point of Sale',
@@ -128,11 +159,16 @@ export function normalizeSettings(raw = {}) {
     invoice.footer = defaults.invoice.footer;
   }
 
+  const paymentAccounts = Array.isArray(raw.paymentAccounts)
+    ? raw.paymentAccounts
+    : (Array.isArray(raw.pos?.paymentAccounts) ? raw.pos.paymentAccounts : defaults.paymentAccounts);
+
   return {
     business,
     tax,
     pos,
     invoice,
+    paymentAccounts,
     // Synchronize top-level backward-compatible aliases
     restaurantName: business.name,
     tagline: business.tagline || defaults.business.tagline,
@@ -204,11 +240,16 @@ export function mergeSettings(currentSettings, updates) {
     updatedInvoice.footer = updates.invoiceFooter;
   }
 
+  const updatedPaymentAccounts = updates.paymentAccounts !== undefined
+    ? updates.paymentAccounts
+    : (updates.pos?.paymentAccounts !== undefined ? updates.pos.paymentAccounts : base.paymentAccounts);
+
   const merged = {
     business: updatedBusiness,
     tax: updatedTax,
     pos: updatedPos,
     invoice: updatedInvoice,
+    paymentAccounts: updatedPaymentAccounts,
     invoicePrefix: updates.invoicePrefix || base.invoicePrefix,
   };
 

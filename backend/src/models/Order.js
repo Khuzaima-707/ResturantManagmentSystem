@@ -304,9 +304,53 @@ const OrderSchema = new mongoose.Schema(
     },
     paymentMethod: {
       type: String,
-      enum: ['Cash', 'Card', 'Online'],
+      enum: ['Cash', 'Card', 'Online', 'Split'],
       default: 'Cash',
       index: true,
+    },
+    cardNetwork: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    posSlipNumber: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    onlineChannel: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    onlineAccountId: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    onlineAccountNumber: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    onlineAccountTitle: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    onlineBankName: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    transactionId: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    splitDetails: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
     },
     amountReceived: {
       type: Number,
@@ -339,6 +383,10 @@ const OrderSchema = new mongoose.Schema(
         cardNetwork: { type: String, default: null },
         cardSlipNumber: { type: String, default: null },
         onlineChannel: { type: String, default: null },
+        onlineAccountId: { type: String, default: null },
+        onlineAccountNumber: { type: String, default: null },
+        onlineAccountTitle: { type: String, default: null },
+        onlineBankName: { type: String, default: null },
         onlineTransactionId: { type: String, default: null },
         settledAt: { type: Date, default: Date.now },
         settledBy: String,

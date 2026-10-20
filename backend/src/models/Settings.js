@@ -73,6 +73,39 @@ const SettingsSchema = new mongoose.Schema(
       default: 'Rs',
       trim: true,
     },
+    // Payment Accounts (EasyPaisa, JazzCash, Banks, Wallets)
+    paymentAccounts: {
+      type: Array,
+      default: [
+        {
+          id: 'acc_jazzcash_default',
+          channel: 'JazzCash',
+          title: 'Restaurant JazzCash',
+          accountNumber: '0300-1234567',
+          bankName: 'JazzCash',
+          isActive: true,
+          isDefault: true,
+        },
+        {
+          id: 'acc_easypaisa_default',
+          channel: 'EasyPaisa',
+          title: 'Restaurant EasyPaisa',
+          accountNumber: '0345-1234567',
+          bankName: 'EasyPaisa',
+          isActive: true,
+          isDefault: false,
+        },
+        {
+          id: 'acc_bank_default',
+          channel: 'Bank',
+          title: 'SpiceHub Official',
+          accountNumber: '01020304050607',
+          bankName: 'Meezan Bank',
+          isActive: true,
+          isDefault: false,
+        },
+      ],
+    },
   },
   {
     timestamps: true,

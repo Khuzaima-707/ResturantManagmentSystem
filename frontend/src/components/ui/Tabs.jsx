@@ -11,12 +11,13 @@ export const Tabs = ({
   onChange,
   variant = 'line', // 'line' | 'pills'
   className,
+  tabClassName,
 }) => {
   return (
     <div
       className={cn(
         variant === 'line'
-          ? 'flex items-center gap-4 sm:gap-6 border-b border-slate-200 overflow-x-auto scrollbar-none whitespace-nowrap'
+          ? 'flex items-center gap-2 sm:gap-3.5 lg:gap-5 border-b border-slate-200 overflow-x-auto scrollbar-none whitespace-nowrap'
           : 'flex items-center gap-2 overflow-x-auto py-1 scrollbar-none',
         className
       )}
@@ -34,10 +35,11 @@ export const Tabs = ({
               type="button"
               onClick={() => onChange(id)}
               className={cn(
-                'px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer',
+                'px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer shrink-0',
                 isActive
                   ? 'bg-[#FF5C28] text-white shadow-sm shadow-orange-500/20'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300 hover:bg-slate-50',
+                tabClassName
               )}
             >
               {label}
@@ -62,10 +64,11 @@ export const Tabs = ({
             type="button"
             onClick={() => onChange(id)}
             className={cn(
-              'pb-3 text-sm font-semibold transition-all duration-150 relative cursor-pointer',
+              'pb-3 text-xs sm:text-[13px] lg:text-sm font-semibold transition-all duration-150 relative cursor-pointer shrink-0',
               isActive
                 ? 'text-[#FF5C28]'
-                : 'text-slate-500 hover:text-slate-800'
+                : 'text-slate-500 hover:text-slate-800',
+              tabClassName
             )}
           >
             <span>{label}</span>

@@ -5,13 +5,14 @@ import { BusinessProfileTab } from '../features/settings/components/BusinessProf
 import { TaxSettingsTab } from '../features/settings/components/TaxSettingsTab';
 import { POSSettingsTab } from '../features/settings/components/POSSettingsTab';
 import { InvoiceSettingsTab } from '../features/settings/components/InvoiceSettingsTab';
+import { PaymentSettingsTab } from '../features/settings/components/PaymentSettingsTab';
 import { DataManagementTab } from '../features/settings/components/DataManagementTab';
 import { DeletionHistoryTab } from '../features/settings/components/DeletionHistoryTab';
 import { SecuritySettingsTab } from '../features/settings/components/SecuritySettingsTab';
 
 /**
  * SettingsPage Component
- * Full-featured Settings Module supporting Business Profile, Security & Passwords, Tax, POS, Invoice, Data Management, and Deletion History.
+ * Full-featured Settings Module supporting Business Profile, Security & Passwords, Payment Accounts, Tax, POS, Invoice, Data Management, and Deletion History.
  */
 export const SettingsPage = () => {
   const [activeTab, setActiveTab] = useState('profile');
@@ -25,6 +26,7 @@ export const SettingsPage = () => {
   const tabs = [
     { id: 'profile', label: 'Business Profile' },
     { id: 'security', label: 'Security & Passwords' },
+    { id: 'payment', label: 'Payment Accounts' },
     { id: 'tax', label: 'Tax Settings' },
     { id: 'pos', label: 'POS Settings' },
     { id: 'invoice', label: 'Invoice Settings' },
@@ -44,7 +46,7 @@ export const SettingsPage = () => {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 w-full max-w-[1280px]">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1">
         <div>
@@ -63,6 +65,8 @@ export const SettingsPage = () => {
         activeTab={activeTab}
         onChange={setActiveTab}
         variant="line"
+        className="gap-2 sm:gap-3 lg:gap-4.5"
+        tabClassName="text-[12.5px] sm:text-[13px] lg:text-sm px-0.5"
       />
 
       {/* Active Tab Content */}
@@ -75,6 +79,13 @@ export const SettingsPage = () => {
 
       {activeTab === 'security' && (
         <SecuritySettingsTab />
+      )}
+
+      {activeTab === 'payment' && (
+        <PaymentSettingsTab
+          settings={settings}
+          onSave={handleSaveSettings}
+        />
       )}
 
       {activeTab === 'tax' && (

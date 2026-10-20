@@ -138,6 +138,10 @@ export const OrderRepository = {
       cardNetwork,
       cardSlipNumber,
       onlineChannel,
+      onlineAccountId,
+      onlineAccountNumber,
+      onlineAccountTitle,
+      onlineBankName,
       onlineTransactionId,
       note = '',
     } = {}
@@ -150,6 +154,10 @@ export const OrderRepository = {
         cardNetwork,
         cardSlipNumber,
         onlineChannel,
+        onlineAccountId,
+        onlineAccountNumber,
+        onlineAccountTitle,
+        onlineBankName,
         onlineTransactionId,
         note,
       });

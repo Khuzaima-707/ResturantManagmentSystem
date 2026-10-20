@@ -1,11 +1,10 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Trash2,
   Plus,
   Minus,
   Receipt,
   Utensils,
-  CreditCard,
   Banknote,
   Smartphone,
   AlertCircle,
@@ -29,6 +28,7 @@ import {
   buildOrderLineSnapshots,
 } from '../../../domain/calculations';
 import { getItemCompatibleAddons } from '../../../domain/rules';
+import { DEFAULT_PAYMENT_ACCOUNTS } from '../../../domain/rules/settingsRules';
 import { Button } from '../../../components/ui/Button';
 
 /**
@@ -73,22 +73,43 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
 
   // Payment states
   const [paymentMethod, setPaymentMethod] = useState(
-    settings?.pos?.defaultPaymentMethod || 'Cash'
-  ); // 'Cash' | 'Card' | 'Online' | 'Split'
+    (settings?.pos?.defaultPaymentMethod === 'Card' ? 'Cash' : settings?.pos?.defaultPaymentMethod) || 'Cash'
+  ); // 'Cash' | 'Online' | 'Split'
   const [cashReceived, setCashReceived] = useState('');
   const [customerName, setCustomerName] = useState('');
 
-  // Split payment details (Cash + Card/Online)
-  const [splitSecondMethod, setSplitSecondMethod] = useState('Card'); // 'Card' | 'Online'
+  // Split payment details (Cash + Online)
+  const [splitSecondMethod] = useState('Online');
   const [splitCashAmount, setSplitCashAmount] = useState('');
 
-  // Card payment details (Matches Image 2)
-  const [cardNetwork, setCardNetwork] = useState('Visa'); // 'Visa' | 'Mastercard' | 'PayPak' | 'UnionPay'
-  const [cardSlipNumber, setCardSlipNumber] = useState('');
+  // Online payment accounts configured in Settings
+  const paymentAccounts = useMemo(() => {
+    const list = Array.isArray(settings?.paymentAccounts) && settings.paymentAccounts.length > 0
+      ? settings.paymentAccounts
+      : DEFAULT_PAYMENT_ACCOUNTS;
+    return list.filter((a) => a.isActive !== false);
+  }, [settings?.paymentAccounts]);
 
-  // Online payment details (Matches Image 3)
-  const [onlineChannel, setOnlineChannel] = useState('JazzCash'); // 'JazzCash' | 'EasyPaisa' | 'Raast' | 'Bank'
+  const defaultAccount = useMemo(() => {
+    return paymentAccounts.find((a) => a.isDefault) || paymentAccounts[0] || null;
+  }, [paymentAccounts]);
+
+  const [selectedAccountId, setSelectedAccountId] = useState('');
+  const [onlineChannel, setOnlineChannel] = useState('');
   const [onlineTransactionId, setOnlineTransactionId] = useState('');
+  const [onlineAmountReceived, setOnlineAmountReceived] = useState('');
+
+  // Auto-sync or reset selected account if removed from settings
+  useEffect(() => {
+    if (selectedAccountId && !paymentAccounts.some((a) => a.id === selectedAccountId)) {
+      setSelectedAccountId('');
+      setOnlineChannel('');
+    }
+  }, [paymentAccounts, selectedAccountId]);
+
+  const selectedAccount = useMemo(() => {
+    return paymentAccounts.find((a) => a.id === selectedAccountId) || null;
+  }, [paymentAccounts, selectedAccountId]);
 
   // Operator verification checkbox (Matches Image 2 & 3)
   const [operatorVerified, setOperatorVerified] = useState(true);
@@ -131,6 +152,10 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
     if (paymentMethod !== 'Cash') return 0;
     return calculateChange(parsedCashReceived, grandTotal);
   }, [paymentMethod, parsedCashReceived, grandTotal]);
+
+  // Online partial calculation (Supports Full, Half 50%, or custom online amount)
+  const isOnlineExplicitlyEntered = typeof onlineAmountReceived === 'string' && onlineAmountReceived.trim() !== '';
+  const parsedOnlineReceived = isOnlineExplicitlyEntered ? (Number(onlineAmountReceived) || 0) : grandTotal;
 
   // Direct In-Cart Add-on Handlers
   const handleAddAddonToLine = (lineId, addon) => {
@@ -180,22 +205,24 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
     isCashExplicitlyEntered &&
     parsedCashReceived < grandTotal;
 
-  const isCardIncomplete =
-    paymentMethod === 'Card' &&
-    (!cardSlipNumber || !cardSlipNumber.trim() || !operatorVerified);
+  const isOnlinePartial =
+    paymentMethod === 'Online' &&
+    grandTotal > 0 &&
+    isOnlineExplicitlyEntered &&
+    parsedOnlineReceived < grandTotal;
 
   const isOnlineIncomplete =
     paymentMethod === 'Online' &&
-    (!onlineTransactionId || !onlineTransactionId.trim() || !operatorVerified);
+    (!selectedAccountId ||
+     (isOnlineExplicitlyEntered && (parsedOnlineReceived <= 0 || parsedOnlineReceived > grandTotal)) ||
+     !onlineTransactionId || !onlineTransactionId.trim() || !operatorVerified);
 
   const isSplitIncomplete =
     paymentMethod === 'Split' &&
-    ((splitSecondMethod === 'Card' && (!cardSlipNumber || !cardSlipNumber.trim() || !operatorVerified)) ||
-     (splitSecondMethod === 'Online' && (!onlineTransactionId || !onlineTransactionId.trim() || !operatorVerified)));
+    (!selectedAccountId || !onlineTransactionId || !onlineTransactionId.trim() || !operatorVerified);
 
   const isCheckoutDisabled =
     cart.length === 0 ||
-    isCardIncomplete ||
     isOnlineIncomplete ||
     isSplitIncomplete;
 
@@ -209,13 +236,14 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
     clearCart();
     setIsClearing(false);
     setCashReceived('');
-    setCardSlipNumber('');
+    setOnlineAmountReceived('');
+    setSelectedAccountId('');
+    setOnlineChannel('');
     setOnlineTransactionId('');
     setDiscountValue('');
     setValidationError('');
     setCustomerName('');
     setSplitCashAmount('');
-    setSplitSecondMethod('Card');
   };
 
   const handleCheckout = async () => {
@@ -240,20 +268,19 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
       }
     }
 
-    if (paymentMethod === 'Card') {
-      if (!cardSlipNumber || !cardSlipNumber.trim()) {
-        setValidationError(
-          'Card payment complete karne ke liye slip # ya last 4 digits enter karein.'
-        );
-        return;
-      }
-      if (!operatorVerified) {
-        setValidationError('Operator verification required on POS machine.');
-        return;
-      }
-    }
-
     if (paymentMethod === 'Online') {
+      if (!selectedAccountId || !selectedAccount) {
+        setValidationError('Online payment ke liye account dropdown se select karein.');
+        return;
+      }
+      if (isOnlineExplicitlyEntered && parsedOnlineReceived <= 0) {
+        setValidationError('Online amount received must be greater than Rs 0.');
+        return;
+      }
+      if (isOnlineExplicitlyEntered && parsedOnlineReceived > grandTotal) {
+        setValidationError(`Online amount cannot exceed grand total (Rs ${grandTotal.toLocaleString('en-PK')}).`);
+        return;
+      }
       if (!onlineTransactionId || !onlineTransactionId.trim()) {
         setValidationError(
           'Online payment complete karne ke liye Transaction ID enter karein.'
@@ -267,25 +294,17 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
     }
 
     if (paymentMethod === 'Split') {
-      if (splitSecondMethod === 'Card') {
-        if (!cardSlipNumber || !cardSlipNumber.trim()) {
-          setValidationError('Card portion ke liye slip # ya last 4 digits enter karein.');
-          return;
-        }
-        if (!operatorVerified) {
-          setValidationError('POS terminal par Card payment verify karein.');
-          return;
-        }
+      if (!selectedAccountId || !selectedAccount) {
+        setValidationError('Split payment ke liye Online account dropdown se select karein.');
+        return;
       }
-      if (splitSecondMethod === 'Online') {
-        if (!onlineTransactionId || !onlineTransactionId.trim()) {
-          setValidationError('Online portion ke liye Transaction ID enter karein.');
-          return;
-        }
-        if (!operatorVerified) {
-          setValidationError('Online payment verify karein.');
-          return;
-        }
+      if (!onlineTransactionId || !onlineTransactionId.trim()) {
+        setValidationError('Online portion ke liye Transaction ID enter karein.');
+        return;
+      }
+      if (!operatorVerified) {
+        setValidationError('Online payment verify karein.');
+        return;
       }
     }
 
@@ -337,6 +356,18 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
           changeAmountFinal = Math.max(0, received - grandTotal);
           paymentStatus = 'paid';
         }
+      } else if (paymentMethod === 'Online') {
+        const received = isOnlineExplicitlyEntered ? (Number(onlineAmountReceived) || 0) : grandTotal;
+        amountReceivedFinal = received;
+        if (received < grandTotal) {
+          balanceDueFinal = grandTotal - received;
+          changeAmountFinal = 0;
+          paymentStatus = received > 0 ? 'partial' : 'unpaid';
+        } else {
+          balanceDueFinal = 0;
+          changeAmountFinal = 0;
+          paymentStatus = 'paid';
+        }
       } else if (paymentMethod === 'Split') {
         amountReceivedFinal = grandTotal;
         changeAmountFinal = 0;
@@ -366,10 +397,14 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
         taxAmount,
         grandTotal,
         paymentMethod,
-        cardNetwork: (paymentMethod === 'Card' || (paymentMethod === 'Split' && splitSecondMethod === 'Card')) ? cardNetwork : undefined,
-        posSlipNumber: (paymentMethod === 'Card' || (paymentMethod === 'Split' && splitSecondMethod === 'Card')) ? cardSlipNumber.trim() : undefined,
-        onlineChannel: (paymentMethod === 'Online' || (paymentMethod === 'Split' && splitSecondMethod === 'Online')) ? onlineChannel : undefined,
-        transactionId: (paymentMethod === 'Online' || (paymentMethod === 'Split' && splitSecondMethod === 'Online')) ? onlineTransactionId.trim() : undefined,
+        cardNetwork: undefined,
+        posSlipNumber: undefined,
+        onlineChannel: (paymentMethod === 'Online' || paymentMethod === 'Split') ? (selectedAccount?.channel || onlineChannel) : undefined,
+        onlineAccountId: (paymentMethod === 'Online' || paymentMethod === 'Split') ? selectedAccount?.id : undefined,
+        onlineAccountNumber: (paymentMethod === 'Online' || paymentMethod === 'Split') ? selectedAccount?.accountNumber : undefined,
+        onlineAccountTitle: (paymentMethod === 'Online' || paymentMethod === 'Split') ? selectedAccount?.title : undefined,
+        onlineBankName: (paymentMethod === 'Online' || paymentMethod === 'Split') ? (selectedAccount?.bankName || selectedAccount?.channel) : undefined,
+        transactionId: (paymentMethod === 'Online' || paymentMethod === 'Split') ? onlineTransactionId.trim() : undefined,
         paymentVerified: operatorVerified,
         amountReceived: amountReceivedFinal,
         changeAmount: changeAmountFinal,
@@ -379,12 +414,14 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
         customerName: customerName.trim() || undefined,
         splitDetails: paymentMethod === 'Split' ? {
           cashAmount: splitCashPart,
-          secondaryMethod: splitSecondMethod,
+          secondaryMethod: 'Online',
           secondaryAmount: splitSecPart,
-          cardNetwork: splitSecondMethod === 'Card' ? cardNetwork : undefined,
-          posSlipNumber: splitSecondMethod === 'Card' ? cardSlipNumber.trim() : undefined,
-          onlineChannel: splitSecondMethod === 'Online' ? onlineChannel : undefined,
-          transactionId: splitSecondMethod === 'Online' ? onlineTransactionId.trim() : undefined,
+          onlineChannel: selectedAccount?.channel || onlineChannel,
+          onlineAccountId: selectedAccount?.id,
+          onlineAccountNumber: selectedAccount?.accountNumber,
+          onlineAccountTitle: selectedAccount?.title,
+          onlineBankName: selectedAccount?.bankName || selectedAccount?.channel,
+          transactionId: onlineTransactionId.trim(),
         } : undefined,
         createdByUserId,
         createdByName,
@@ -403,13 +440,14 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
       clearCart();
       setGuestCount(1);
       setCashReceived('');
-      setCardSlipNumber('');
+      setSelectedAccountId('');
+      setOnlineChannel('');
       setOnlineTransactionId('');
+      setOnlineAmountReceived('');
       setDiscountValue('');
       setValidationError('');
       setCustomerName('');
       setSplitCashAmount('');
-      setSplitSecondMethod('Card');
 
       // Trigger Invoice confirmation modal immediately with final immutable order
       if (typeof onOrderCompleted === 'function') {
@@ -474,10 +512,10 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
         </div>
       </div>
 
-      {/* Top Section: Table Header & Scrollable Items List */}
-      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {/* Table Header: # Item Qty Price (Matches Screenshot 2) */}
-        <div className="grid grid-cols-12 text-[11px] font-bold text-slate-400 px-3 py-1.5 border-b border-slate-100 shrink-0 bg-white">
+      {/* Middle Scrollable Section: Items List + Calculations & Payment Details */}
+      <div className="flex-1 overflow-y-auto min-h-0 flex flex-col">
+        {/* Table Header: # Item Qty Price (Sticky Header) */}
+        <div className="grid grid-cols-12 text-[11px] font-bold text-slate-400 px-3.5 py-1.5 border-b border-slate-100 shrink-0 bg-slate-50/80 sticky top-0 z-10 backdrop-blur-xs">
           <span className="col-span-1">#</span>
           <span className="col-span-5">Item</span>
           <span className="col-span-3 text-center">Qty</span>
@@ -485,7 +523,7 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
         </div>
 
         {/* Cart Items List or Compact Empty State */}
-        <div className="flex-1 overflow-y-auto min-h-0 px-3 py-1.5 space-y-1.5">
+        <div className="px-3.5 py-1.5 space-y-1.5">
           {cart.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-3.5 text-center text-slate-400">
               <div className="w-9 h-9 rounded-full bg-slate-50 border border-slate-200/80 flex items-center justify-center mb-1 text-slate-400">
@@ -825,10 +863,9 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
             })
           )}
         </div>
-      </div>
 
-      {/* Lower Section: Calculations & Payment Details (Matches Screenshot 2) */}
-      <div className="shrink-0 border-t border-slate-100 bg-white px-3.5 py-1.5 space-y-1.5">
+        {/* Lower Details: Calculations & Payment Controls */}
+        <div className="border-t border-slate-100 bg-white px-3.5 py-2 space-y-2 mt-auto">
         {/* Subtotal */}
         <div className="flex justify-between items-center text-xs text-slate-600">
           <span>Subtotal</span>
@@ -905,10 +942,9 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
           <label className="text-[11px] font-semibold text-slate-500 block select-none">
             Payment Method
           </label>
-          <div className="grid grid-cols-4 gap-1 sm:gap-1.5">
+          <div className="grid grid-cols-3 gap-1">
             {[
               { id: 'Cash', label: 'Cash', icon: Banknote },
-              { id: 'Card', label: 'Card', icon: CreditCard },
               { id: 'Online', label: 'Online', icon: Smartphone },
               { id: 'Split', label: 'Split', icon: ArrowLeftRight },
             ].map((method) => {
@@ -925,13 +961,13 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
                       setSplitCashAmount(String(Math.round(grandTotal / 2)));
                     }
                   }}
-                  className={`py-1.5 px-1.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 transition-all border cursor-pointer ${
+                  className={`py-1 px-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-all border cursor-pointer ${
                     isSelected
-                      ? 'bg-[#FF5C28] text-white border-[#FF5C28] shadow-xs'
+                      ? 'bg-[#FF5C28] text-white border-[#FF5C28] shadow-2xs font-bold'
                       : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                   }`}
                 >
-                  <Icon className="w-3.5 h-3.5" />
+                  <Icon className="w-3.5 h-3.5 shrink-0" />
                   <span>{method.label}</span>
                 </button>
               );
@@ -1020,89 +1056,144 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
                   className="w-full py-1.5 px-2 rounded-lg bg-white border border-amber-300 hover:bg-amber-100/70 text-amber-800 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
                 >
                   <ArrowLeftRight className="w-3 h-3 text-amber-600" />
-                  <span>Split: Pay remaining Rs {(grandTotal - parsedCashReceived).toLocaleString('en-PK')} via Card / Online</span>
+                  <span>Split: Pay remaining Rs {(grandTotal - parsedCashReceived).toLocaleString('en-PK')} via Online</span>
                 </button>
               </div>
             )}
           </div>
         )}
 
-        {/* Card Payment Section */}
-        {paymentMethod === 'Card' && (
-          <div className="space-y-1 pt-0.5">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-medium text-slate-600">Total Charge:</span>
-              <span className="font-bold text-slate-900 text-sm">
-                Rs {grandTotal.toLocaleString('en-PK')}
-              </span>
-            </div>
 
-            <div className="grid grid-cols-4 gap-1">
-              {['Visa', 'Mastercard', 'PayPak', 'UnionPay'].map((network) => (
-                <button
-                  key={network}
-                  type="button"
-                  onClick={() => setCardNetwork(network)}
-                  className={`py-1 px-1 rounded-lg text-[11px] font-bold transition-all border cursor-pointer text-center ${
-                    cardNetwork === network
-                      ? 'bg-[#FF5C28] text-white border-[#FF5C28]'
-                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  {network}
-                </button>
-              ))}
-            </div>
-
-            <input
-              type="text"
-              value={cardSlipNumber}
-              onChange={(e) => {
-                setCardSlipNumber(e.target.value);
-                setValidationError('');
-              }}
-              placeholder="Slip # ya Last 4 Digits (1234)"
-              className="w-full h-7 px-2.5 text-xs bg-white rounded-lg border border-slate-200 text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#FF5C28]"
-            />
-
-            <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-slate-700 font-medium">
-              <input
-                type="checkbox"
-                checked={operatorVerified}
-                onChange={(e) => setOperatorVerified(e.target.checked)}
-                className="w-3.5 h-3.5 rounded text-[#FF5C28] border-slate-300 focus:ring-[#FF5C28] cursor-pointer accent-[#FF5C28]"
-              />
-              <span>Operator verified payment on machine</span>
-            </label>
-          </div>
-        )}
 
         {/* Online Payment Section */}
         {paymentMethod === 'Online' && (
-          <div className="space-y-1 pt-0.5">
+          <div className="space-y-1.5 pt-0.5">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-medium text-slate-600">Total Charge:</span>
-              <span className="font-bold text-slate-900 text-sm">
-                Rs {grandTotal.toLocaleString('en-PK')}
+              <span className="font-semibold text-slate-700">Online Account:</span>
+              <span className="text-[11px] text-slate-500 font-medium">
+                Total: <strong className="text-slate-900">Rs {grandTotal.toLocaleString('en-PK')}</strong>
               </span>
             </div>
 
-            <div className="grid grid-cols-4 gap-1">
-              {['JazzCash', 'EasyPaisa', 'Raast', 'Bank'].map((ch) => (
+            {/* Account Dropdown with Placeholder */}
+            <div className="relative">
+              <select
+                value={selectedAccountId}
+                onChange={(e) => {
+                  const accId = e.target.value;
+                  setSelectedAccountId(accId);
+                  const found = paymentAccounts.find((a) => a.id === accId);
+                  if (found) {
+                    setOnlineChannel(found.channel || found.bankName || 'Online');
+                  }
+                  setValidationError('');
+                }}
+                className="w-full h-8 pl-2.5 pr-8 text-xs font-semibold bg-white rounded-lg border border-slate-300 text-slate-800 focus:outline-none focus:border-[#FF5C28] focus:ring-1 focus:ring-[#FF5C28] cursor-pointer appearance-none shadow-2xs"
+              >
+                <option value="">-- Select Online Account / Wallet --</option>
+                {paymentAccounts.map((acc) => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.bankName || acc.channel} - {acc.accountNumber} ({acc.title}){acc.isDefault ? ' ★' : ''}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+
+            {/* Selected Account Info Card */}
+            {selectedAccount && (
+              <div className="p-2 rounded-xl bg-orange-50/70 border border-orange-200/80 text-[11px] space-y-0.5 animate-fadeIn">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-medium">{selectedAccount.bankName || selectedAccount.channel}:</span>
+                  <span className="font-mono font-bold text-slate-900 select-all">{selectedAccount.accountNumber}</span>
+                </div>
+                <div className="flex justify-between items-center text-[10.5px]">
+                  <span className="text-slate-400">Title:</span>
+                  <span className="font-semibold text-slate-700 truncate">{selectedAccount.title}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Online Amount Received (Supports Full, Half 50%, or Partial with Balance Due) */}
+            <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/90 space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-slate-700">Online Received:</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-slate-400 font-bold">Rs</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max={grandTotal}
+                    value={onlineAmountReceived}
+                    onChange={(e) => {
+                      setOnlineAmountReceived(e.target.value);
+                      setValidationError('');
+                    }}
+                    placeholder={grandTotal > 0 ? String(grandTotal) : '0'}
+                    className="w-28 h-7 px-2 text-right text-xs font-bold bg-white rounded-lg border border-slate-300 focus:outline-none focus:border-[#FF5C28] focus:ring-1 focus:ring-[#FF5C28]"
+                  />
+                </div>
+              </div>
+
+              {/* Quick Amount Shortcuts (Full / Half 50%) */}
+              <div className="flex items-center gap-1.5 justify-end flex-wrap">
                 <button
-                  key={ch}
                   type="button"
-                  onClick={() => setOnlineChannel(ch)}
-                  className={`py-1 px-1 rounded-lg text-[11px] font-bold transition-all border cursor-pointer text-center ${
-                    onlineChannel === ch
-                      ? 'bg-[#FF5C28] text-white border-[#FF5C28]'
-                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  onClick={() => {
+                    setOnlineAmountReceived(String(grandTotal));
+                    setValidationError('');
+                  }}
+                  className={`text-[11px] px-2.5 py-0.5 rounded-xl border font-bold transition-colors cursor-pointer ${
+                    !isOnlinePartial
+                      ? 'border-[#FF5C28] bg-orange-50/70 text-[#FF5C28]'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
                   }`}
                 >
-                  {ch}
+                  Full (Rs {grandTotal.toLocaleString('en-PK')})
                 </button>
-              ))}
+                {grandTotal > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOnlineAmountReceived(String(Math.round(grandTotal / 2)));
+                      setValidationError('');
+                    }}
+                    className={`text-[11px] px-2.5 py-0.5 rounded-xl border font-bold transition-colors cursor-pointer ${
+                      isOnlinePartial && parsedOnlineReceived === Math.round(grandTotal / 2)
+                        ? 'border-amber-400 bg-amber-50 text-amber-800'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    Half (Rs {Math.round(grandTotal / 2).toLocaleString('en-PK')})
+                  </button>
+                )}
+              </div>
             </div>
+
+            {/* Partial Online / Balance Due Notice & Customer Info */}
+            {isOnlinePartial && (
+              <div className="p-2.5 rounded-xl bg-amber-50/90 border border-amber-200/90 space-y-2 text-xs animate-fadeIn">
+                <div className="flex items-center justify-between font-bold text-amber-900">
+                  <span className="flex items-center gap-1.5 text-amber-800">
+                    <Clock className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Partial Online Payment (بقیہ رقم)</span>
+                  </span>
+                  <span className="text-amber-800 font-extrabold text-sm">
+                    Rs {(grandTotal - parsedOnlineReceived).toLocaleString('en-PK')} Due
+                  </span>
+                </div>
+                <p className="text-[11px] text-amber-700 leading-tight">
+                  Customer is paying Rs {parsedOnlineReceived.toLocaleString('en-PK')} via {selectedAccount?.bankName || selectedAccount?.channel || onlineChannel}. Remaining Rs {(grandTotal - parsedOnlineReceived).toLocaleString('en-PK')} will be recorded as pending balance on invoice.
+                </p>
+                <input
+                  type="text"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  placeholder="Customer Name / Phone (Optional for Khata / Udhaar)"
+                  className="w-full h-7 px-2.5 text-xs bg-white rounded-lg border border-amber-300 text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-slate-400"
+                />
+              </div>
+            )}
 
             <input
               type="text"
@@ -1127,7 +1218,7 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
           </div>
         )}
 
-        {/* Split Payment Section (Cash + Card/Online) */}
+        {/* Split Payment Section (Cash + Online) */}
         {paymentMethod === 'Split' && (
           <div className="space-y-2 pt-0.5">
             <div className="p-2.5 rounded-xl bg-orange-50/70 border border-orange-200 text-xs space-y-2">
@@ -1157,125 +1248,84 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
                 </div>
               </div>
 
-              {/* 2. Remaining Second Method */}
+              {/* 2. Remaining Online Portion */}
               <div className="flex items-center justify-between text-xs pt-1 border-t border-orange-200/60">
-                <span className="font-semibold text-slate-700">2. Remaining via {splitSecondMethod}:</span>
+                <span className="font-semibold text-slate-700">2. Remaining via Online:</span>
                 <span className="font-bold text-[#FF5C28] text-sm">
                   Rs {Math.max(0, grandTotal - (Number(splitCashAmount) || 0)).toLocaleString('en-PK')}
                 </span>
               </div>
-
-              {/* Second Method Toggle */}
-              <div className="grid grid-cols-2 gap-1 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setSplitSecondMethod('Card')}
-                  className={`py-1 px-2 rounded-lg text-xs font-bold transition-all border cursor-pointer text-center ${
-                    splitSecondMethod === 'Card'
-                      ? 'bg-[#FF5C28] text-white border-[#FF5C28]'
-                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  Pay via Card
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSplitSecondMethod('Online')}
-                  className={`py-1 px-2 rounded-lg text-xs font-bold transition-all border cursor-pointer text-center ${
-                    splitSecondMethod === 'Online'
-                      ? 'bg-[#FF5C28] text-white border-[#FF5C28]'
-                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  Pay via Online
-                </button>
-              </div>
             </div>
 
-            {/* If Second Method is Card */}
-            {splitSecondMethod === 'Card' && (
-              <div className="space-y-1.5 p-2 bg-slate-50 rounded-xl border border-slate-200">
-                <div className="grid grid-cols-4 gap-1">
-                  {['Visa', 'Mastercard', 'PayPak', 'UnionPay'].map((network) => (
-                    <button
-                      key={network}
-                      type="button"
-                      onClick={() => setCardNetwork(network)}
-                      className={`py-1 px-1 rounded-lg text-[10px] font-bold transition-all border cursor-pointer text-center ${
-                        cardNetwork === network
-                          ? 'bg-[#FF5C28] text-white border-[#FF5C28]'
-                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      {network}
-                    </button>
-                  ))}
-                </div>
-                <input
-                  type="text"
-                  value={cardSlipNumber}
+            {/* Online Account & Transaction Details */}
+            <div className="space-y-1.5 p-2 bg-slate-50 rounded-xl border border-slate-200">
+              <label className="text-[11px] font-semibold text-slate-600 block">
+                Select Online Account / Wallet *
+              </label>
+              <div className="relative">
+                <select
+                  value={selectedAccountId}
                   onChange={(e) => {
-                    setCardSlipNumber(e.target.value);
+                    const accId = e.target.value;
+                    setSelectedAccountId(accId);
+                    const found = paymentAccounts.find((a) => a.id === accId);
+                    if (found) {
+                      setOnlineChannel(found.channel || found.bankName || 'Online');
+                    }
                     setValidationError('');
                   }}
-                  placeholder="POS Slip # or Last 4 digits *"
-                  className="w-full h-7 px-2.5 text-xs bg-white rounded-lg border border-slate-200 text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#FF5C28]"
-                />
-                <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-slate-700 font-medium">
-                  <input
-                    type="checkbox"
-                    checked={operatorVerified}
-                    onChange={(e) => setOperatorVerified(e.target.checked)}
-                    className="w-3.5 h-3.5 rounded text-[#FF5C28] border-slate-300 focus:ring-[#FF5C28] cursor-pointer accent-[#FF5C28]"
-                  />
-                  <span>Operator verified on POS terminal</span>
-                </label>
+                  className="w-full h-8 pl-2.5 pr-8 text-xs font-semibold bg-white rounded-lg border border-slate-300 text-slate-800 focus:outline-none focus:border-[#FF5C28] focus:ring-1 focus:ring-[#FF5C28] cursor-pointer appearance-none shadow-2xs"
+                >
+                  <option value="">-- Select Online Account / Wallet --</option>
+                  {paymentAccounts.map((acc) => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.bankName || acc.channel} - {acc.accountNumber} ({acc.title}){acc.isDefault ? ' ★' : ''}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
-            )}
 
-            {/* If Second Method is Online */}
-            {splitSecondMethod === 'Online' && (
-              <div className="space-y-1.5 p-2 bg-slate-50 rounded-xl border border-slate-200">
-                <div className="grid grid-cols-4 gap-1">
-                  {['JazzCash', 'EasyPaisa', 'Raast', 'Bank'].map((ch) => (
-                    <button
-                      key={ch}
-                      type="button"
-                      onClick={() => setOnlineChannel(ch)}
-                      className={`py-1 px-1 rounded-lg text-[10px] font-bold transition-all border cursor-pointer text-center ${
-                        onlineChannel === ch
-                          ? 'bg-[#FF5C28] text-white border-[#FF5C28]'
-                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      {ch}
-                    </button>
-                  ))}
+              {selectedAccount && (
+                <div className="p-1.5 rounded-lg bg-white border border-slate-200 text-[10.5px] space-y-0.5 animate-fadeIn">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500 font-medium">{selectedAccount.bankName || selectedAccount.channel}:</span>
+                    <span className="font-mono font-bold text-slate-900 select-all">{selectedAccount.accountNumber}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="text-slate-400">Title:</span>
+                    <span className="font-semibold text-slate-700 truncate">{selectedAccount.title}</span>
+                  </div>
                 </div>
+              )}
+              <input
+                type="text"
+                value={onlineTransactionId}
+                onChange={(e) => {
+                  setOnlineTransactionId(e.target.value);
+                  setValidationError('');
+                }}
+                placeholder="Transaction ID / Ref # *"
+                className="w-full h-7 px-2.5 text-xs bg-white rounded-lg border border-slate-200 text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#FF5C28]"
+              />
+              <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-slate-700 font-medium">
                 <input
-                  type="text"
-                  value={onlineTransactionId}
-                  onChange={(e) => {
-                    setOnlineTransactionId(e.target.value);
-                    setValidationError('');
-                  }}
-                  placeholder="Transaction ID / Ref # *"
-                  className="w-full h-7 px-2.5 text-xs bg-white rounded-lg border border-slate-200 text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#FF5C28]"
+                  type="checkbox"
+                  checked={operatorVerified}
+                  onChange={(e) => setOperatorVerified(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded text-[#FF5C28] border-slate-300 focus:ring-[#FF5C28] cursor-pointer accent-[#FF5C28]"
                 />
-                <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-slate-700 font-medium">
-                  <input
-                    type="checkbox"
-                    checked={operatorVerified}
-                    onChange={(e) => setOperatorVerified(e.target.checked)}
-                    className="w-3.5 h-3.5 rounded text-[#FF5C28] border-slate-300 focus:ring-[#FF5C28] cursor-pointer accent-[#FF5C28]"
-                  />
-                  <span>Operator verified in app</span>
-                </label>
-              </div>
-            )}
+                <span>Operator verified in app</span>
+              </label>
+            </div>
           </div>
         )}
 
+        </div>
+      </div>
+
+      {/* Pinned Bottom Footer: Validation Error & Complete Sale Button (ALWAYS visible) */}
+      <div className="shrink-0 border-t border-slate-200/90 bg-white px-3.5 py-2.5 space-y-2 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] z-20">
         {/* Validation Error Banner if any */}
         {validationError && (
           <div className="flex items-center gap-1.5 p-1.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-[11px]">
@@ -1284,12 +1334,12 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
           </div>
         )}
 
-        {/* Checkout Button: Directly below payment method (Matches Screenshot 2) */}
+        {/* Checkout Button: ALWAYS visible and pinned to bottom */}
         <button
           type="button"
           disabled={isCheckoutDisabled || isSubmitting}
           onClick={handleCheckout}
-          className="w-full h-11 px-4 rounded-2xl bg-[#FF5C28] hover:bg-[#E04D1D] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+          className="w-full h-10 px-4 rounded-xl bg-[#FF5C28] hover:bg-[#E04D1D] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
         >
           {isSubmitting ? (
             <>
@@ -1302,6 +1352,8 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
               <span>
                 {paymentMethod === 'Cash' && isCashPartial
                   ? `Complete Partial Sale (Rs ${(grandTotal - parsedCashReceived).toLocaleString('en-PK')} Due)`
+                  : paymentMethod === 'Online' && isOnlinePartial
+                  ? `Complete Partial Online Sale (Rs ${(grandTotal - parsedOnlineReceived).toLocaleString('en-PK')} Due)`
                   : paymentMethod === 'Split'
                   ? 'Complete Split Sale & Print Invoice'
                   : 'Complete Sale & Print Invoice'}

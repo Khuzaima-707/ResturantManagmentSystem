@@ -893,6 +893,10 @@ export async function settleOrderBalance(req, res, next) {
       cardNetwork,
       cardSlipNumber,
       onlineChannel,
+      onlineAccountId,
+      onlineAccountNumber,
+      onlineAccountTitle,
+      onlineBankName,
       onlineTransactionId,
       note = '',
     } = req.body;
@@ -933,6 +937,10 @@ export async function settleOrderBalance(req, res, next) {
       if (cardSlipNumber) order.posSlipNumber = cardSlipNumber;
     } else if (paymentMethod === 'Online') {
       if (onlineChannel) order.onlineChannel = onlineChannel;
+      if (onlineAccountId) order.onlineAccountId = onlineAccountId;
+      if (onlineAccountNumber) order.onlineAccountNumber = onlineAccountNumber;
+      if (onlineAccountTitle) order.onlineAccountTitle = onlineAccountTitle;
+      if (onlineBankName) order.onlineBankName = onlineBankName;
       if (onlineTransactionId) order.transactionId = onlineTransactionId;
     }
 
@@ -948,6 +956,10 @@ export async function settleOrderBalance(req, res, next) {
       cardNetwork: paymentMethod === 'Card' ? cardNetwork : undefined,
       cardSlipNumber: paymentMethod === 'Card' ? cardSlipNumber : undefined,
       onlineChannel: paymentMethod === 'Online' ? onlineChannel : undefined,
+      onlineAccountId: paymentMethod === 'Online' ? onlineAccountId : undefined,
+      onlineAccountNumber: paymentMethod === 'Online' ? onlineAccountNumber : undefined,
+      onlineAccountTitle: paymentMethod === 'Online' ? onlineAccountTitle : undefined,
+      onlineBankName: paymentMethod === 'Online' ? onlineBankName : undefined,
       onlineTransactionId: paymentMethod === 'Online' ? onlineTransactionId : undefined,
       settledAt: new Date(),
       settledBy: receivedBy,

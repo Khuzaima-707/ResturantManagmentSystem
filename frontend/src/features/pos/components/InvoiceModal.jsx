@@ -439,7 +439,7 @@ export const InvoiceModal = ({
                     <span>Payment Method</span>
                     <span className="font-bold text-slate-900">
                       {order.paymentMethod === 'Split'
-                        ? `Split (Cash: Rs ${order.splitDetails?.cashAmount || 0} + ${order.splitDetails?.secondaryMethod || 'Card'}: Rs ${order.splitDetails?.secondaryAmount || 0})`
+                        ? `Split (Cash: Rs ${order.splitDetails?.cashAmount || 0} + ${order.splitDetails?.secondaryMethod || 'Online'}: Rs ${order.splitDetails?.secondaryAmount || 0})`
                         : (order.paymentMethod || 'Cash').toUpperCase()}
                       {order.paymentMethod === 'Card' && order.cardNetwork && ` (${order.cardNetwork})`}
                       {order.paymentMethod === 'Online' && order.onlineChannel && ` (${order.onlineChannel})`}
@@ -457,6 +457,18 @@ export const InvoiceModal = ({
                     <div className="flex justify-between items-center text-[10px] text-slate-500">
                       <span>Transaction ID / Ref #</span>
                       <span className="font-semibold text-slate-800">{order.transactionId}</span>
+                    </div>
+                  )}
+
+                  {((order.paymentMethod === 'Online' && (order.onlineAccountNumber || order.onlineBankName || order.onlineChannel)) ||
+                    (order.paymentMethod === 'Split' && order.splitDetails?.secondaryMethod === 'Online' && (order.splitDetails?.onlineAccountNumber || order.splitDetails?.onlineChannel))) && (
+                    <div className="flex justify-between items-center text-[10px] text-slate-500">
+                      <span>Account / Wallet</span>
+                      <span className="font-semibold text-slate-800">
+                        {order.onlineBankName || order.onlineChannel || order.splitDetails?.onlineChannel || 'Online'}
+                        {(order.onlineAccountNumber || order.splitDetails?.onlineAccountNumber) ? ` • ${order.onlineAccountNumber || order.splitDetails?.onlineAccountNumber}` : ''}
+                        {(order.onlineAccountTitle || order.splitDetails?.onlineAccountTitle) ? ` (${order.onlineAccountTitle || order.splitDetails?.onlineAccountTitle})` : ''}
+                      </span>
                     </div>
                   )}
 
@@ -713,10 +725,26 @@ export const InvoiceModal = ({
               <span>Payment Method:</span>
               <span className="font-semibold">
                 {order.paymentMethod === 'Split'
-                  ? `SPLIT (Cash + ${order.splitDetails?.secondaryMethod || 'Card'})`
+                  ? `SPLIT (Cash + ${order.splitDetails?.secondaryMethod || 'Online'})`
                   : (order.paymentMethod || 'Cash').toUpperCase()}
               </span>
             </div>
+            {((order.paymentMethod === 'Online' && (order.onlineAccountNumber || order.onlineBankName || order.onlineChannel)) ||
+              (order.paymentMethod === 'Split' && order.splitDetails?.secondaryMethod === 'Online')) && (
+              <div className="flex justify-between items-center text-[10px]">
+                <span>Account:</span>
+                <span className="font-semibold">
+                  {order.onlineBankName || order.onlineChannel || order.splitDetails?.onlineChannel || 'Online'}
+                  {(order.onlineAccountNumber || order.splitDetails?.onlineAccountNumber) ? ` (${order.onlineAccountNumber || order.splitDetails?.onlineAccountNumber})` : ''}
+                </span>
+              </div>
+            )}
+            {order.paymentMethod === 'Online' && order.transactionId && (
+              <div className="flex justify-between items-center text-[10px]">
+                <span>Txn Ref:</span>
+                <span>{order.transactionId}</span>
+              </div>
+            )}
             {order.customerName && (
               <div className="flex justify-between items-center">
                 <span>Customer / Ref:</span>
