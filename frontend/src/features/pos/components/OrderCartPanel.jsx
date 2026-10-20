@@ -523,14 +523,14 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
         </div>
 
         {/* Cart Items List or Compact Empty State */}
-        <div className="px-3.5 py-1.5 space-y-1.5">
+        <div className="px-3 py-1 space-y-1">
           {cart.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-3.5 text-center text-slate-400">
-              <div className="w-9 h-9 rounded-full bg-slate-50 border border-slate-200/80 flex items-center justify-center mb-1 text-slate-400">
+            <div className="flex flex-col items-center justify-center py-2.5 text-center text-slate-400">
+              <div className="w-8 h-8 rounded-full bg-slate-50 border border-slate-200/80 flex items-center justify-center mb-1 text-slate-400">
                 <ShoppingBag className="w-4 h-4" />
               </div>
               <p className="text-xs font-bold text-slate-800">Your cart is empty</p>
-              <p className="text-[11px] text-slate-400 max-w-[210px] leading-tight mt-0.5">
+              <p className="text-[10px] text-slate-400 max-w-[210px] leading-tight mt-0.5">
                 Click + on any menu item to start building your order.
               </p>
             </div>
@@ -547,7 +547,7 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
               return (
                 <div
                   key={line.id}
-                  className="p-2 rounded-xl border border-slate-100 bg-white hover:border-slate-200 transition-all text-xs"
+                  className="p-1.5 rounded-lg border border-slate-100 bg-white hover:border-slate-200 transition-all text-xs"
                 >
                   <div className="grid grid-cols-12 items-center gap-1.5">
                     <span className="col-span-1 font-semibold text-slate-400">{idx + 1}</span>
@@ -865,84 +865,71 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
         </div>
 
         {/* Lower Details: Calculations & Payment Controls */}
-        <div className="border-t border-slate-100 bg-white px-3.5 py-2 space-y-2 mt-auto">
-        {/* Subtotal */}
-        <div className="flex justify-between items-center text-xs text-slate-600">
-          <span>Subtotal</span>
-          <span className="font-bold text-slate-900">{formatCurrency(subtotal)}</span>
-        </div>
+        <div className="border-t border-slate-100 bg-white px-3 py-1.5 space-y-1 mt-auto">
+          {/* Compact Calculations Summary */}
+          <div className="space-y-0.5 text-xs">
+            <div className="flex justify-between items-center text-slate-600 text-[11px]">
+              <span>Subtotal: <strong className="text-slate-800">{formatCurrency(subtotal)}</strong></span>
+              <span>Tax ({taxRate}%): <strong className="text-slate-800">{formatCurrency(taxAmount)}</strong></span>
+            </div>
 
-        {/* Discount Controls */}
-        <div className="flex items-center justify-between text-xs text-slate-600">
-          <div className="flex items-center gap-1.5">
-            <span>Discount</span>
-            <div className="inline-flex rounded-full bg-slate-100 p-0.5 text-[10px] font-bold">
-              <button
-                type="button"
-                onClick={() => setDiscountType('percentage')}
-                className={`px-1.5 py-0.2 rounded-full cursor-pointer ${
-                  discountType === 'percentage'
-                    ? 'bg-white text-[#FF5C28] shadow-2xs'
-                    : 'text-slate-600'
-                }`}
-              >
-                %
-              </button>
-              <button
-                type="button"
-                onClick={() => setDiscountType('fixed')}
-                className={`px-1.5 py-0.2 rounded-full cursor-pointer ${
-                  discountType === 'fixed'
-                    ? 'bg-white text-[#FF5C28] shadow-2xs'
-                    : 'text-slate-600'
-                }`}
-              >
-                Rs
-              </button>
+            {/* Discount Controls */}
+            <div className="flex items-center justify-between text-[11px] text-slate-600">
+              <div className="flex items-center gap-1">
+                <span>Discount</span>
+                <div className="inline-flex rounded-full bg-slate-100 p-0.5 text-[9px] font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setDiscountType('percentage')}
+                    className={`px-1.5 py-0.2 rounded-full cursor-pointer ${
+                      discountType === 'percentage'
+                        ? 'bg-white text-[#FF5C28] shadow-2xs'
+                        : 'text-slate-600'
+                    }`}
+                  >
+                    %
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDiscountType('fixed')}
+                    className={`px-1.5 py-0.2 rounded-full cursor-pointer ${
+                      discountType === 'fixed'
+                        ? 'bg-white text-[#FF5C28] shadow-2xs'
+                        : 'text-slate-600'
+                    }`}
+                  >
+                    Rs
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min="0"
+                  max={discountType === 'percentage' ? '100' : undefined}
+                  value={discountValue}
+                  onChange={(e) => setDiscountValue(e.target.value)}
+                  placeholder="0"
+                  className="w-14 h-5 px-1 text-right text-[11px] font-medium bg-white rounded border border-slate-200 focus:outline-none focus:ring-1 focus:ring-[#FF5C28]"
+                />
+                <span className="font-semibold text-slate-800 text-[11px]">
+                  {discountAmount > 0 ? `-${formatCurrency(discountAmount)}` : 'Rs 0'}
+                </span>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <input
-              type="number"
-              min="0"
-              max={discountType === 'percentage' ? '100' : undefined}
-              value={discountValue}
-              onChange={(e) => setDiscountValue(e.target.value)}
-              placeholder="0"
-              className="w-16 h-6 px-1.5 text-right text-xs font-medium bg-white rounded-md border border-slate-200 focus:outline-none focus:ring-1 focus:ring-[#FF5C28]"
-            />
-            <span className="font-semibold text-slate-900 text-xs">
-              {discountAmount > 0 ? `-${formatCurrency(discountAmount)}` : 'Rs 0'}
+          {/* Grand Total Box (Compact & high-visibility) */}
+          <div className="bg-[#FFF4EC] border border-[#FFE2D1] rounded-lg px-2.5 py-1 flex items-center justify-between shadow-2xs">
+            <span className="text-xs font-bold text-slate-800">Grand Total</span>
+            <span className="text-base font-black text-slate-900">
+              Rs {grandTotal.toLocaleString('en-PK')}
             </span>
           </div>
-        </div>
 
-        {/* Tax */}
-        <div className="flex justify-between items-center text-xs text-slate-600">
-          <div className="flex items-center gap-1">
-            <span>Tax ({taxRate}%)</span>
-            {!settings?.taxEnabled && (
-              <span className="text-[10px] text-slate-400">(disabled)</span>
-            )}
-          </div>
-          <span className="font-bold text-slate-900">{formatCurrency(taxAmount)}</span>
-        </div>
-
-        {/* Grand Total Box (Matches Screenshot 2) */}
-        <div className="bg-[#FFF4EC] border border-[#FFE2D1] rounded-xl px-3 py-1.5 flex items-center justify-between shadow-2xs">
-          <span className="text-sm font-bold text-slate-800">Grand Total</span>
-          <span className="text-lg font-black text-slate-900">
-            Rs {grandTotal.toLocaleString('en-PK')}
-          </span>
-        </div>
-
-        {/* Payment Method Selector */}
-        <div className="space-y-1">
-          <label className="text-[11px] font-semibold text-slate-500 block select-none">
-            Payment Method
-          </label>
-          <div className="grid grid-cols-3 gap-1">
+          {/* Payment Method Selector */}
+          <div className="grid grid-cols-3 gap-1 pt-0.5">
             {[
               { id: 'Cash', label: 'Cash', icon: Banknote },
               { id: 'Online', label: 'Online', icon: Smartphone },
@@ -973,295 +960,94 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
               );
             })}
           </div>
-        </div>
 
-        {/* Cash Payment Section (Matches Screenshot 2) */}
-        {paymentMethod === 'Cash' && (
-          <div className="space-y-1 pt-0.5">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-slate-700">Amount Received *</span>
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-slate-400 font-bold">Rs</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={cashReceived}
-                  onChange={(e) => {
-                    setCashReceived(e.target.value);
-                    setValidationError('');
-                  }}
-                  placeholder={grandTotal > 0 ? String(grandTotal) : '0'}
-                  className="w-24 h-7 px-2 text-right text-xs font-bold bg-white rounded-lg border border-slate-300 focus:outline-none focus:border-[#FF5C28] focus:ring-1 focus:ring-[#FF5C28]"
-                />
-              </div>
-            </div>
-
-            {/* Quick cash shortcut pills (Matches Screenshot 2: Exact, 1000, 2000, 5000) */}
-            <div className="flex items-center gap-1.5 justify-end flex-wrap pt-0.5">
-              <button
-                type="button"
-                onClick={() => setCashReceived(String(grandTotal))}
-                className="text-[11px] px-2.5 py-0.5 rounded-xl border border-[#FF5C28] bg-orange-50/60 hover:bg-orange-100 text-[#FF5C28] font-bold transition-colors cursor-pointer"
-              >
-                Exact (Rs {grandTotal})
-              </button>
-              {[1000, 2000, 5000].map((val) => (
-                <button
-                  key={val}
-                  type="button"
-                  onClick={() => setCashReceived(String(val))}
-                  className="text-[11px] px-2.5 py-0.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold transition-colors cursor-pointer"
-                >
-                  Rs {val}
-                </button>
-              ))}
-            </div>
-
-            {/* Change Result */}
-            <div className="flex justify-between items-center text-xs pt-0.5">
-              <span className="font-bold text-slate-800">Change</span>
-              <span className="font-bold text-emerald-600 text-sm">
-                Rs {changeAmount.toLocaleString('en-PK')}
-              </span>
-            </div>
-
-            {/* Partial Cash / Balance Due Notice & Customer Info */}
-            {isCashPartial && (
-              <div className="p-2.5 rounded-xl bg-amber-50/90 border border-amber-200/90 space-y-2 text-xs">
-                <div className="flex items-center justify-between font-bold text-amber-900">
-                  <span className="flex items-center gap-1.5 text-amber-800">
-                    <Clock className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Partial Payment (بقیہ رقم)</span>
-                  </span>
-                  <span className="text-amber-800 font-extrabold text-sm">
-                    Rs {(grandTotal - parsedCashReceived).toLocaleString('en-PK')} Due
-                  </span>
-                </div>
-                <p className="text-[11px] text-amber-700 leading-tight">
-                  Customer is paying Rs {parsedCashReceived.toLocaleString('en-PK')} in cash. Remaining Rs {(grandTotal - parsedCashReceived).toLocaleString('en-PK')} will be recorded as pending balance on invoice.
-                </p>
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Customer Name / Phone (Optional for Khata / Udhaar)"
-                  className="w-full h-7 px-2.5 text-xs bg-white rounded-lg border border-amber-300 text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-slate-400"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPaymentMethod('Split');
-                    setSplitCashAmount(String(parsedCashReceived));
-                  }}
-                  className="w-full py-1.5 px-2 rounded-lg bg-white border border-amber-300 hover:bg-amber-100/70 text-amber-800 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-                >
-                  <ArrowLeftRight className="w-3 h-3 text-amber-600" />
-                  <span>Split: Pay remaining Rs {(grandTotal - parsedCashReceived).toLocaleString('en-PK')} via Online</span>
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-
-
-        {/* Online Payment Section */}
-        {paymentMethod === 'Online' && (
-          <div className="space-y-1.5 pt-0.5">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-slate-700">Online Account:</span>
-              <span className="text-[11px] text-slate-500 font-medium">
-                Total: <strong className="text-slate-900">Rs {grandTotal.toLocaleString('en-PK')}</strong>
-              </span>
-            </div>
-
-            {/* Account Dropdown with Placeholder */}
-            <div className="relative">
-              <select
-                value={selectedAccountId}
-                onChange={(e) => {
-                  const accId = e.target.value;
-                  setSelectedAccountId(accId);
-                  const found = paymentAccounts.find((a) => a.id === accId);
-                  if (found) {
-                    setOnlineChannel(found.channel || found.bankName || 'Online');
-                  }
-                  setValidationError('');
-                }}
-                className="w-full h-8 pl-2.5 pr-8 text-xs font-semibold bg-white rounded-lg border border-slate-300 text-slate-800 focus:outline-none focus:border-[#FF5C28] focus:ring-1 focus:ring-[#FF5C28] cursor-pointer appearance-none shadow-2xs"
-              >
-                <option value="">-- Select Online Account / Wallet --</option>
-                {paymentAccounts.map((acc) => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.bankName || acc.channel} - {acc.accountNumber} ({acc.title}){acc.isDefault ? ' ★' : ''}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
-
-            {/* Selected Account Info Card */}
-            {selectedAccount && (
-              <div className="p-2 rounded-xl bg-orange-50/70 border border-orange-200/80 text-[11px] space-y-0.5 animate-fadeIn">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500 font-medium">{selectedAccount.bankName || selectedAccount.channel}:</span>
-                  <span className="font-mono font-bold text-slate-900 select-all">{selectedAccount.accountNumber}</span>
-                </div>
-                <div className="flex justify-between items-center text-[10.5px]">
-                  <span className="text-slate-400">Title:</span>
-                  <span className="font-semibold text-slate-700 truncate">{selectedAccount.title}</span>
-                </div>
-              </div>
-            )}
-
-            {/* Online Amount Received (Supports Full, Half 50%, or Partial with Balance Due) */}
-            <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/90 space-y-1.5">
+          {/* Cash Payment Section */}
+          {paymentMethod === 'Cash' && (
+            <div className="space-y-1 pt-0.5">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-semibold text-slate-700">Online Received:</span>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-slate-400 font-bold">Rs</span>
+                <div className="flex items-center gap-1">
+                  <span className="font-semibold text-slate-700 text-[11px]">Received:</span>
+                  <span className="text-[11px] text-slate-400 font-bold">Rs</span>
                   <input
                     type="number"
                     min="0"
-                    max={grandTotal}
-                    value={onlineAmountReceived}
+                    value={cashReceived}
                     onChange={(e) => {
-                      setOnlineAmountReceived(e.target.value);
+                      setCashReceived(e.target.value);
                       setValidationError('');
                     }}
                     placeholder={grandTotal > 0 ? String(grandTotal) : '0'}
-                    className="w-28 h-7 px-2 text-right text-xs font-bold bg-white rounded-lg border border-slate-300 focus:outline-none focus:border-[#FF5C28] focus:ring-1 focus:ring-[#FF5C28]"
+                    className="w-20 h-6 px-1.5 text-right text-xs font-bold bg-white rounded border border-slate-300 focus:outline-none focus:border-[#FF5C28]"
                   />
+                </div>
+                <div className="flex items-center gap-1 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setCashReceived(String(grandTotal))}
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-[#FF5C28] bg-orange-50/60 text-[#FF5C28] font-bold cursor-pointer"
+                  >
+                    Exact
+                  </button>
+                  {[1000, 2000, 5000].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setCashReceived(String(val))}
+                      className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium cursor-pointer"
+                    >
+                      {val}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Quick Amount Shortcuts (Full / Half 50%) */}
-              <div className="flex items-center gap-1.5 justify-end flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOnlineAmountReceived(String(grandTotal));
-                    setValidationError('');
-                  }}
-                  className={`text-[11px] px-2.5 py-0.5 rounded-xl border font-bold transition-colors cursor-pointer ${
-                    !isOnlinePartial
-                      ? 'border-[#FF5C28] bg-orange-50/70 text-[#FF5C28]'
-                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  Full (Rs {grandTotal.toLocaleString('en-PK')})
-                </button>
-                {grandTotal > 1 && (
+              {/* Change Result */}
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-bold text-slate-800 text-[11px]">Change</span>
+                <span className="font-bold text-emerald-600 text-xs">
+                  Rs {changeAmount.toLocaleString('en-PK')}
+                </span>
+              </div>
+
+              {/* Partial Cash / Balance Due Notice & Customer Info */}
+              {isCashPartial && (
+                <div className="p-1.5 rounded-lg bg-amber-50 border border-amber-200 text-xs space-y-1">
+                  <div className="flex items-center justify-between font-bold text-amber-900 text-[11px]">
+                    <span className="flex items-center gap-1 text-amber-800">
+                      <Clock className="w-3 h-3 text-amber-600" />
+                      <span>Partial (بقیہ رقم):</span>
+                    </span>
+                    <span className="text-amber-800 font-extrabold">
+                      Rs {(grandTotal - parsedCashReceived).toLocaleString('en-PK')} Due
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Customer Name / Phone (Khata)"
+                    className="w-full h-6 px-2 text-[11px] bg-white rounded border border-amber-300 text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-slate-400"
+                  />
                   <button
                     type="button"
                     onClick={() => {
-                      setOnlineAmountReceived(String(Math.round(grandTotal / 2)));
-                      setValidationError('');
+                      setPaymentMethod('Split');
+                      setSplitCashAmount(String(parsedCashReceived));
                     }}
-                    className={`text-[11px] px-2.5 py-0.5 rounded-xl border font-bold transition-colors cursor-pointer ${
-                      isOnlinePartial && parsedOnlineReceived === Math.round(grandTotal / 2)
-                        ? 'border-amber-400 bg-amber-50 text-amber-800'
-                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                    }`}
+                    className="w-full py-1 px-1.5 rounded bg-white border border-amber-300 hover:bg-amber-100/70 text-amber-800 text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
                   >
-                    Half (Rs {Math.round(grandTotal / 2).toLocaleString('en-PK')})
+                    <ArrowLeftRight className="w-3 h-3 text-amber-600" />
+                    <span>Split: Pay remaining Rs {(grandTotal - parsedCashReceived).toLocaleString('en-PK')} via Online</span>
                   </button>
-                )}
-              </div>
-            </div>
-
-            {/* Partial Online / Balance Due Notice & Customer Info */}
-            {isOnlinePartial && (
-              <div className="p-2.5 rounded-xl bg-amber-50/90 border border-amber-200/90 space-y-2 text-xs animate-fadeIn">
-                <div className="flex items-center justify-between font-bold text-amber-900">
-                  <span className="flex items-center gap-1.5 text-amber-800">
-                    <Clock className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Partial Online Payment (بقیہ رقم)</span>
-                  </span>
-                  <span className="text-amber-800 font-extrabold text-sm">
-                    Rs {(grandTotal - parsedOnlineReceived).toLocaleString('en-PK')} Due
-                  </span>
                 </div>
-                <p className="text-[11px] text-amber-700 leading-tight">
-                  Customer is paying Rs {parsedOnlineReceived.toLocaleString('en-PK')} via {selectedAccount?.bankName || selectedAccount?.channel || onlineChannel}. Remaining Rs {(grandTotal - parsedOnlineReceived).toLocaleString('en-PK')} will be recorded as pending balance on invoice.
-                </p>
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Customer Name / Phone (Optional for Khata / Udhaar)"
-                  className="w-full h-7 px-2.5 text-xs bg-white rounded-lg border border-amber-300 text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-slate-400"
-                />
-              </div>
-            )}
-
-            <input
-              type="text"
-              value={onlineTransactionId}
-              onChange={(e) => {
-                setOnlineTransactionId(e.target.value);
-                setValidationError('');
-              }}
-              placeholder="Transaction ID / Ref #"
-              className="w-full h-7 px-2.5 text-xs bg-white rounded-lg border border-slate-200 text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#FF5C28]"
-            />
-
-            <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-slate-700 font-medium">
-              <input
-                type="checkbox"
-                checked={operatorVerified}
-                onChange={(e) => setOperatorVerified(e.target.checked)}
-                className="w-3.5 h-3.5 rounded text-[#FF5C28] border-slate-300 focus:ring-[#FF5C28] cursor-pointer accent-[#FF5C28]"
-              />
-              <span>Operator verified in app</span>
-            </label>
-          </div>
-        )}
-
-        {/* Split Payment Section (Cash + Online) */}
-        {paymentMethod === 'Split' && (
-          <div className="space-y-2 pt-0.5">
-            <div className="p-2.5 rounded-xl bg-orange-50/70 border border-orange-200 text-xs space-y-2">
-              <div className="flex items-center justify-between font-bold">
-                <span className="text-slate-700">Total Bill:</span>
-                <span className="text-slate-900 font-extrabold text-sm">Rs {grandTotal.toLocaleString('en-PK')}</span>
-              </div>
-
-              {/* 1. Cash Portion */}
-              <div className="flex items-center justify-between gap-2 pt-1 border-t border-orange-200/60">
-                <span className="font-semibold text-slate-700 text-xs">1. Cash Amount:</span>
-                <div className="flex items-center gap-1">
-                  <span className="text-xs text-slate-400 font-bold">Rs</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max={grandTotal}
-                    value={splitCashAmount}
-                    onChange={(e) => {
-                      const val = Math.max(0, Math.min(grandTotal, Number(e.target.value) || 0));
-                      setSplitCashAmount(e.target.value === '' ? '' : String(val));
-                      setValidationError('');
-                    }}
-                    placeholder={String(Math.round(grandTotal / 2))}
-                    className="w-24 h-7 px-2 text-right text-xs font-bold bg-white rounded-lg border border-slate-300 focus:outline-none focus:border-[#FF5C28] focus:ring-1 focus:ring-[#FF5C28]"
-                  />
-                </div>
-              </div>
-
-              {/* 2. Remaining Online Portion */}
-              <div className="flex items-center justify-between text-xs pt-1 border-t border-orange-200/60">
-                <span className="font-semibold text-slate-700">2. Remaining via Online:</span>
-                <span className="font-bold text-[#FF5C28] text-sm">
-                  Rs {Math.max(0, grandTotal - (Number(splitCashAmount) || 0)).toLocaleString('en-PK')}
-                </span>
-              </div>
+              )}
             </div>
+          )}
 
-            {/* Online Account & Transaction Details */}
-            <div className="space-y-1.5 p-2 bg-slate-50 rounded-xl border border-slate-200">
-              <label className="text-[11px] font-semibold text-slate-600 block">
-                Select Online Account / Wallet *
-              </label>
+          {/* Online Payment Section */}
+          {paymentMethod === 'Online' && (
+            <div className="space-y-1 pt-0.5">
+              {/* Account Dropdown with Placeholder */}
               <div className="relative">
                 <select
                   value={selectedAccountId}
@@ -1274,7 +1060,7 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
                     }
                     setValidationError('');
                   }}
-                  className="w-full h-8 pl-2.5 pr-8 text-xs font-semibold bg-white rounded-lg border border-slate-300 text-slate-800 focus:outline-none focus:border-[#FF5C28] focus:ring-1 focus:ring-[#FF5C28] cursor-pointer appearance-none shadow-2xs"
+                  className="w-full h-7 pl-2 pr-7 text-[11.5px] font-semibold bg-white rounded-lg border border-slate-300 text-slate-800 focus:outline-none focus:border-[#FF5C28] cursor-pointer appearance-none shadow-2xs"
                 >
                   <option value="">-- Select Online Account / Wallet --</option>
                   {paymentAccounts.map((acc) => (
@@ -1283,52 +1069,217 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
                     </option>
                   ))}
                 </select>
-                <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
 
+              {/* Selected Account Info Card */}
               {selectedAccount && (
-                <div className="p-1.5 rounded-lg bg-white border border-slate-200 text-[10.5px] space-y-0.5 animate-fadeIn">
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-500 font-medium">{selectedAccount.bankName || selectedAccount.channel}:</span>
-                    <span className="font-mono font-bold text-slate-900 select-all">{selectedAccount.accountNumber}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-[10px]">
-                    <span className="text-slate-400">Title:</span>
-                    <span className="font-semibold text-slate-700 truncate">{selectedAccount.title}</span>
-                  </div>
+                <div className="px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[10.5px] flex items-center justify-between animate-fadeIn">
+                  <span className="font-semibold text-slate-800 truncate">
+                    {selectedAccount.bankName || selectedAccount.channel}: <span className="font-mono font-bold text-orange-900 select-all">{selectedAccount.accountNumber}</span>
+                  </span>
+                  <span className="text-slate-500 truncate max-w-[140px] text-right font-medium">({selectedAccount.title})</span>
                 </div>
               )}
-              <input
-                type="text"
-                value={onlineTransactionId}
-                onChange={(e) => {
-                  setOnlineTransactionId(e.target.value);
-                  setValidationError('');
-                }}
-                placeholder="Transaction ID / Ref # *"
-                className="w-full h-7 px-2.5 text-xs bg-white rounded-lg border border-slate-200 text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#FF5C28]"
-              />
-              <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-slate-700 font-medium">
-                <input
-                  type="checkbox"
-                  checked={operatorVerified}
-                  onChange={(e) => setOperatorVerified(e.target.checked)}
-                  className="w-3.5 h-3.5 rounded text-[#FF5C28] border-slate-300 focus:ring-[#FF5C28] cursor-pointer accent-[#FF5C28]"
-                />
-                <span>Operator verified in app</span>
-              </label>
-            </div>
-          </div>
-        )}
 
+              {/* Online Amount Received & Quick Full/Half Buttons in 1 Line */}
+              <div className="flex items-center justify-between text-xs p-1 bg-slate-50 rounded-lg border border-slate-200">
+                <div className="flex items-center gap-1">
+                  <span className="font-semibold text-slate-700 text-[11px]">Received:</span>
+                  <span className="text-[11px] text-slate-400 font-bold">Rs</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max={grandTotal}
+                    value={onlineAmountReceived}
+                    onChange={(e) => {
+                      setOnlineAmountReceived(e.target.value);
+                      setValidationError('');
+                    }}
+                    placeholder={grandTotal > 0 ? String(grandTotal) : '0'}
+                    className="w-20 h-5.5 px-1.5 text-right text-xs font-bold bg-white rounded border border-slate-300 focus:outline-none focus:border-[#FF5C28]"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOnlineAmountReceived(String(grandTotal));
+                      setValidationError('');
+                    }}
+                    className={`text-[10px] px-1.5 py-0.5 rounded border font-bold transition-colors cursor-pointer ${
+                      !isOnlinePartial
+                        ? 'border-[#FF5C28] bg-orange-50/70 text-[#FF5C28]'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    Full
+                  </button>
+                  {grandTotal > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOnlineAmountReceived(String(Math.round(grandTotal / 2)));
+                        setValidationError('');
+                      }}
+                      className={`text-[10px] px-1.5 py-0.5 rounded border font-bold transition-colors cursor-pointer ${
+                        isOnlinePartial && parsedOnlineReceived === Math.round(grandTotal / 2)
+                          ? 'border-amber-400 bg-amber-50 text-amber-800'
+                          : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      Half
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Partial Online / Balance Due Notice & Customer Info */}
+              {isOnlinePartial && (
+                <div className="p-1.5 rounded-lg bg-amber-50 border border-amber-200 text-xs space-y-1 animate-fadeIn">
+                  <div className="flex items-center justify-between font-bold text-amber-900 text-[11px]">
+                    <span className="flex items-center gap-1 text-amber-800">
+                      <Clock className="w-3 h-3 text-amber-600" />
+                      <span>Partial Online:</span>
+                    </span>
+                    <span className="text-amber-800 font-extrabold">
+                      Rs {(grandTotal - parsedOnlineReceived).toLocaleString('en-PK')} Due
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Customer Name / Phone (Khata)"
+                    className="w-full h-6 px-2 text-[11px] bg-white rounded border border-amber-300 text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-slate-400"
+                  />
+                </div>
+              )}
+
+              {/* Transaction ID & Verified on 1 Line */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={onlineTransactionId}
+                  onChange={(e) => {
+                    setOnlineTransactionId(e.target.value);
+                    setValidationError('');
+                  }}
+                  placeholder="Transaction ID / Ref # (Optional)"
+                  className="flex-1 h-6 px-2 text-[11px] bg-white rounded border border-slate-300 text-slate-800 focus:outline-none focus:border-[#FF5C28]"
+                />
+                <label className="flex items-center gap-1.5 cursor-pointer select-none text-[10.5px] text-slate-700 font-semibold shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={operatorVerified}
+                    onChange={(e) => setOperatorVerified(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded text-[#FF5C28] border-slate-300 focus:ring-[#FF5C28] cursor-pointer accent-[#FF5C28]"
+                  />
+                  <span>Verified</span>
+                </label>
+              </div>
+            </div>
+          )}
+
+          {/* Split Payment Section (Cash + Online) */}
+          {paymentMethod === 'Split' && (
+            <div className="space-y-1 pt-0.5">
+              <div className="p-1.5 rounded-lg bg-orange-50/70 border border-orange-200 text-xs">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-1">
+                    <span className="font-semibold text-slate-700 text-[11px]">1. Cash:</span>
+                    <span className="text-[11px] text-slate-400 font-bold">Rs</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max={grandTotal}
+                      value={splitCashAmount}
+                      onChange={(e) => {
+                        const val = Math.max(0, Math.min(grandTotal, Number(e.target.value) || 0));
+                        setSplitCashAmount(e.target.value === '' ? '' : String(val));
+                        setValidationError('');
+                      }}
+                      placeholder={String(Math.round(grandTotal / 2))}
+                      className="w-20 h-5.5 px-1.5 text-right text-xs font-bold bg-white rounded border border-slate-300 focus:outline-none focus:border-[#FF5C28]"
+                    />
+                  </div>
+                  <div className="text-[11px]">
+                    <span className="text-slate-600 font-medium">2. Online: </span>
+                    <span className="font-bold text-[#FF5C28]">
+                      Rs {Math.max(0, grandTotal - (Number(splitCashAmount) || 0)).toLocaleString('en-PK')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Online Account Dropdown in Split */}
+              <div className="space-y-1 p-1.5 bg-slate-50 rounded-lg border border-slate-200">
+                <div className="relative">
+                  <select
+                    value={selectedAccountId}
+                    onChange={(e) => {
+                      const accId = e.target.value;
+                      setSelectedAccountId(accId);
+                      const found = paymentAccounts.find((a) => a.id === accId);
+                      if (found) {
+                        setOnlineChannel(found.channel || found.bankName || 'Online');
+                      }
+                      setValidationError('');
+                    }}
+                    className="w-full h-7 pl-2 pr-7 text-[11.5px] font-semibold bg-white rounded-lg border border-slate-300 text-slate-800 focus:outline-none focus:border-[#FF5C28] cursor-pointer appearance-none shadow-2xs"
+                  >
+                    <option value="">-- Select Online Account / Wallet --</option>
+                    {paymentAccounts.map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.bankName || acc.channel} - {acc.accountNumber} ({acc.title}){acc.isDefault ? ' ★' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+
+                {selectedAccount && (
+                  <div className="px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] flex items-center justify-between animate-fadeIn">
+                    <span className="font-semibold text-slate-800 truncate">
+                      {selectedAccount.bankName || selectedAccount.channel}: <span className="font-mono font-bold text-orange-900 select-all">{selectedAccount.accountNumber}</span>
+                    </span>
+                    <span className="text-slate-500 truncate max-w-[140px] text-right font-medium">({selectedAccount.title})</span>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={onlineTransactionId}
+                    onChange={(e) => {
+                      setOnlineTransactionId(e.target.value);
+                      setValidationError('');
+                    }}
+                    placeholder="Transaction ID / Ref # *"
+                    className="flex-1 h-6 px-2 text-[11px] bg-white rounded border border-slate-300 text-slate-800 focus:outline-none focus:border-[#FF5C28]"
+                  />
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none text-[10.5px] text-slate-700 font-semibold shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={operatorVerified}
+                      onChange={(e) => setOperatorVerified(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded text-[#FF5C28] border-slate-300 focus:ring-[#FF5C28] cursor-pointer accent-[#FF5C28]"
+                    />
+                    <span>Verified</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Pinned Bottom Footer: Validation Error & Complete Sale Button (ALWAYS visible) */}
-      <div className="shrink-0 border-t border-slate-200/90 bg-white px-3.5 py-2.5 space-y-2 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] z-20">
+      {/* Pinned Bottom Footer: Validation Error & Complete Sale Button */}
+      <div className="shrink-0 border-t border-slate-200/90 bg-white px-3 py-1.5 space-y-1 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] z-20">
         {/* Validation Error Banner if any */}
         {validationError && (
-          <div className="flex items-center gap-1.5 p-1.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-[11px]">
+          <div className="flex items-center gap-1.5 p-1 rounded-md bg-rose-50 border border-rose-200 text-rose-700 text-[10.5px]">
             <AlertCircle className="w-3.5 h-3.5 shrink-0" />
             <span>{validationError}</span>
           </div>
@@ -1339,16 +1290,16 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
           type="button"
           disabled={isCheckoutDisabled || isSubmitting}
           onClick={handleCheckout}
-          className="w-full h-10 px-4 rounded-xl bg-[#FF5C28] hover:bg-[#E04D1D] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+          className="w-full h-8.5 px-3 rounded-lg bg-[#FF5C28] hover:bg-[#E04D1D] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
         >
           {isSubmitting ? (
             <>
-              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               <span>Processing Sale...</span>
             </>
           ) : (
             <>
-              <Printer className="w-4 h-4 stroke-[2.2]" />
+              <Printer className="w-3.5 h-3.5 stroke-[2.2]" />
               <span>
                 {paymentMethod === 'Cash' && isCashPartial
                   ? `Complete Partial Sale (Rs ${(grandTotal - parsedCashReceived).toLocaleString('en-PK')} Due)`
