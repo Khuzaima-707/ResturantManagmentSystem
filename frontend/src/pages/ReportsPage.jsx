@@ -551,7 +551,7 @@ export const ReportsPage = () => {
           </span>
         </button>
       ),
-      headerClassName: 'w-32 font-bold whitespace-nowrap',
+      headerClassName: 'w-24 font-bold whitespace-nowrap',
       cellClassName: 'whitespace-nowrap',
       render: (invNum, row) => (
         <button
@@ -567,7 +567,7 @@ export const ReportsPage = () => {
     {
       key: 'completedAt',
       title: 'Date & Time',
-      headerClassName: 'w-36 whitespace-nowrap',
+      headerClassName: 'w-28 whitespace-nowrap',
       cellClassName: 'whitespace-nowrap',
       render: (dVal, row) => {
         const d = new Date(dVal || row.createdAt || Date.now());
@@ -584,11 +584,11 @@ export const ReportsPage = () => {
     {
       key: 'orderType',
       title: 'Order Type',
-      headerClassName: 'w-24 text-center whitespace-nowrap',
+      headerClassName: 'w-20 text-center whitespace-nowrap',
       align: 'center',
       cellClassName: 'text-center whitespace-nowrap',
       render: (type) => (
-        <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 whitespace-nowrap">
+        <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 whitespace-nowrap">
           {type || 'Dine-In'}
         </span>
       ),
@@ -596,7 +596,7 @@ export const ReportsPage = () => {
     {
       key: 'lines',
       title: 'Items',
-      headerClassName: 'min-w-[130px]',
+      headerClassName: 'min-w-[95px]',
       render: (lines) => {
         const count = (lines || []).reduce((q, l) => q + (Number(l.quantity) || 1), 0);
         const preview = (lines || []).map((l) => l.itemNameSnapshot).slice(0, 2).join(', ');
@@ -604,7 +604,7 @@ export const ReportsPage = () => {
           <div className="text-[11px]">
             <span className="font-semibold text-slate-800">{count} items</span>
             {preview && (
-              <span className="text-slate-400 block truncate max-w-xs text-[10px]">
+              <span className="text-slate-400 block truncate max-w-[140px] text-[10px]">
                 {preview}
               </span>
             )}
@@ -615,7 +615,7 @@ export const ReportsPage = () => {
     {
       key: 'subtotal',
       title: 'Subtotal',
-      headerClassName: 'w-24 text-right',
+      headerClassName: 'w-20 text-right',
       align: 'right',
       cellClassName: 'text-right',
       render: (sub, row) => {
@@ -633,7 +633,7 @@ export const ReportsPage = () => {
     {
       key: 'discountAmount',
       title: 'Discount',
-      headerClassName: 'w-20 text-right',
+      headerClassName: 'w-16 text-right',
       align: 'right',
       cellClassName: 'text-right',
       render: (disc, row) => {
@@ -655,7 +655,7 @@ export const ReportsPage = () => {
     {
       key: 'taxAmount',
       title: 'Tax',
-      headerClassName: 'w-20 text-right',
+      headerClassName: 'w-16 text-right',
       align: 'right',
       cellClassName: 'text-right',
       render: (tax, row) => {
@@ -673,7 +673,7 @@ export const ReportsPage = () => {
     {
       key: 'grandTotal',
       title: 'Grand Total',
-      headerClassName: 'w-28 text-right font-bold',
+      headerClassName: 'w-20 text-right font-bold',
       align: 'right',
       cellClassName: 'text-right',
       render: (total, row) => {
@@ -691,7 +691,7 @@ export const ReportsPage = () => {
     {
       key: 'paymentMethod',
       title: 'Payment',
-      headerClassName: 'w-20 text-center',
+      headerClassName: 'w-16 text-center',
       align: 'center',
       cellClassName: 'text-center',
       render: (method) => (
@@ -701,7 +701,7 @@ export const ReportsPage = () => {
     {
       key: 'status',
       title: 'Status',
-      headerClassName: 'w-24 text-center',
+      headerClassName: 'w-20 text-center',
       align: 'center',
       cellClassName: 'text-center',
       render: (status, row) => {
@@ -739,8 +739,8 @@ export const ReportsPage = () => {
     },
     {
       key: 'billedBy',
-      title: 'Billed By',
-      headerClassName: 'w-28 text-center whitespace-nowrap',
+      title: 'By',
+      headerClassName: 'w-14 text-center whitespace-nowrap',
       align: 'center',
       cellClassName: 'text-center whitespace-nowrap',
       render: (_, row) => {
@@ -760,15 +760,12 @@ export const ReportsPage = () => {
 
         return (
           <span
-            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold ${
-              isAdmin
-                ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                : 'bg-blue-50 text-blue-700 border border-blue-200'
+            className={`text-[11px] font-bold ${
+              isAdmin ? 'text-purple-700' : 'text-blue-700'
             }`}
             title={`Billed by: ${isAdmin ? `Admin (${displayLabel})` : `Cashier (${displayLabel})`}`}
           >
-            <User className="w-3 h-3 shrink-0" />
-            <span>{displayLabel}</span>
+            {isAdmin ? 'Admin' : 'Cashier'}
           </span>
         );
       },
@@ -776,7 +773,7 @@ export const ReportsPage = () => {
     {
       key: 'actions',
       title: 'Action',
-      headerClassName: 'w-20 text-center',
+      headerClassName: 'w-12 text-center',
       align: 'center',
       cellClassName: 'text-center',
       render: (_, row) => (
@@ -812,7 +809,7 @@ export const ReportsPage = () => {
           </span>
         </button>
       ),
-      headerClassName: 'w-32 font-bold whitespace-nowrap',
+      headerClassName: 'w-24 font-bold whitespace-nowrap',
       cellClassName: 'whitespace-nowrap',
       render: (invNum, row) => (
         <button
@@ -828,7 +825,7 @@ export const ReportsPage = () => {
     {
       key: 'completedAt',
       title: 'Date & Time',
-      headerClassName: 'w-36 whitespace-nowrap',
+      headerClassName: 'w-28 whitespace-nowrap',
       cellClassName: 'whitespace-nowrap',
       render: (dVal, row) => {
         const d = new Date(dVal || row.createdAt || Date.now());
@@ -845,11 +842,11 @@ export const ReportsPage = () => {
     {
       key: 'orderType',
       title: 'Order Type',
-      headerClassName: 'w-24 text-center whitespace-nowrap',
+      headerClassName: 'w-20 text-center whitespace-nowrap',
       align: 'center',
       cellClassName: 'text-center whitespace-nowrap',
       render: (type) => (
-        <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 whitespace-nowrap">
+        <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 whitespace-nowrap">
           {type || 'Dine-In'}
         </span>
       ),
@@ -857,7 +854,7 @@ export const ReportsPage = () => {
     {
       key: 'paymentMethod',
       title: 'Payment',
-      headerClassName: 'w-24 text-center',
+      headerClassName: 'w-16 text-center',
       align: 'center',
       cellClassName: 'text-center',
       render: (method) => (
@@ -869,7 +866,7 @@ export const ReportsPage = () => {
     {
       key: 'grandTotal',
       title: 'Gross Billed',
-      headerClassName: 'w-24 text-right',
+      headerClassName: 'w-20 text-right',
       align: 'right',
       cellClassName: 'text-right',
       render: (total, row) => {
@@ -895,7 +892,7 @@ export const ReportsPage = () => {
     {
       key: 'discountAmount',
       title: 'Discount',
-      headerClassName: 'w-24 text-right',
+      headerClassName: 'w-16 text-right',
       align: 'right',
       cellClassName: 'text-right',
       render: (disc, row) => {
@@ -917,7 +914,7 @@ export const ReportsPage = () => {
     {
       key: 'taxAmount',
       title: 'Tax Collected',
-      headerClassName: 'w-24 text-right',
+      headerClassName: 'w-16 text-right',
       align: 'right',
       cellClassName: 'text-right',
       render: (tax, row) => {
@@ -935,7 +932,7 @@ export const ReportsPage = () => {
     {
       key: 'netRevenue',
       title: 'Net Revenue',
-      headerClassName: 'w-28 text-right font-bold',
+      headerClassName: 'w-20 text-right font-bold',
       align: 'right',
       cellClassName: 'text-right',
       render: (_, row) => {
@@ -954,7 +951,7 @@ export const ReportsPage = () => {
     {
       key: 'status',
       title: 'Status',
-      headerClassName: 'w-24 text-center',
+      headerClassName: 'w-20 text-center',
       align: 'center',
       cellClassName: 'text-center',
       render: (status, row) => {
@@ -992,8 +989,8 @@ export const ReportsPage = () => {
     },
     {
       key: 'billedBy',
-      title: 'Billed By',
-      headerClassName: 'w-28 text-center whitespace-nowrap',
+      title: 'By',
+      headerClassName: 'w-14 text-center whitespace-nowrap',
       align: 'center',
       cellClassName: 'text-center whitespace-nowrap',
       render: (_, row) => {
@@ -1013,15 +1010,12 @@ export const ReportsPage = () => {
 
         return (
           <span
-            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold ${
-              isAdmin
-                ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                : 'bg-blue-50 text-blue-700 border border-blue-200'
+            className={`text-[11px] font-bold ${
+              isAdmin ? 'text-purple-700' : 'text-blue-700'
             }`}
             title={`Billed by: ${isAdmin ? `Admin (${displayLabel})` : `Cashier (${displayLabel})`}`}
           >
-            <User className="w-3 h-3 shrink-0" />
-            <span>{displayLabel}</span>
+            {isAdmin ? 'Admin' : 'Cashier'}
           </span>
         );
       },
@@ -1029,7 +1023,7 @@ export const ReportsPage = () => {
     {
       key: 'actions',
       title: 'Action',
-      headerClassName: 'w-20 text-center',
+      headerClassName: 'w-12 text-center',
       align: 'center',
       cellClassName: 'text-center',
       render: (_, row) => (
@@ -1921,7 +1915,7 @@ export const ReportsPage = () => {
                   keyField="id"
                   footer={
                     <tr className="border-t-2 border-slate-300 bg-slate-50/90 text-xs font-bold text-slate-900">
-                      <td colSpan={4} className="py-2.5 px-3.5 text-slate-800 whitespace-nowrap">
+                      <td colSpan={4} className="py-2 px-2 sm:px-2.5 text-slate-800 whitespace-nowrap">
                         <span className="uppercase tracking-wider text-[11px] text-slate-500 font-bold block">
                           Reconciled Sales Total
                         </span>
@@ -1929,21 +1923,21 @@ export const ReportsPage = () => {
                           ({validFilteredOrders.length} valid / {filteredOrders.length} total)
                         </span>
                       </td>
-                      <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
+                      <td className="py-2 px-2 sm:px-2.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
                         {formatCurrency(validFilteredOrders.reduce((s, o) => s + (Number(o.subtotal) || 0), 0))}
                       </td>
-                      <td className="py-2.5 px-3.5 text-right font-extrabold text-rose-600 whitespace-nowrap">
+                      <td className="py-2 px-2 sm:px-2.5 text-right font-extrabold text-rose-600 whitespace-nowrap">
                         {validFilteredOrders.reduce((s, o) => s + (Number(o.discountAmount) || 0), 0) > 0
                           ? `-${formatCurrency(validFilteredOrders.reduce((s, o) => s + (Number(o.discountAmount) || 0), 0))}`
                           : 'Rs 0'}
                       </td>
-                      <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-700 whitespace-nowrap">
+                      <td className="py-2 px-2 sm:px-2.5 text-right font-extrabold text-slate-700 whitespace-nowrap">
                         {formatCurrency(validFilteredOrders.reduce((s, o) => s + (Number(o.taxAmount) || 0), 0))}
                       </td>
-                      <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
+                      <td className="py-2 px-2 sm:px-2.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
                         {formatCurrency(validFilteredOrders.reduce((s, o) => s + (Number(o.grandTotal) || 0), 0))}
                       </td>
-                      <td colSpan={4} className="py-2.5 px-3.5" />
+                      <td colSpan={4} className="py-2 px-2 sm:px-2.5" />
                     </tr>
                   }
                 />
@@ -2162,7 +2156,7 @@ export const ReportsPage = () => {
                   keyField="id"
                   footer={
                     <tr className="border-t-2 border-slate-300 bg-slate-50/90 text-xs font-bold text-slate-900">
-                      <td colSpan={4} className="py-2.5 px-3.5 text-slate-800 whitespace-nowrap">
+                      <td colSpan={4} className="py-2 px-2 sm:px-2.5 text-slate-800 whitespace-nowrap">
                         <span className="uppercase tracking-wider text-[11px] text-slate-500 font-bold block">
                           Reconciled Revenue Total
                         </span>
@@ -2170,21 +2164,21 @@ export const ReportsPage = () => {
                           ({validFilteredOrders.length} valid / {filteredOrders.length} total)
                         </span>
                       </td>
-                      <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
+                      <td className="py-2 px-2 sm:px-2.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
                         {formatCurrency(revenueKpis.validBilled !== undefined ? revenueKpis.validBilled : (revenueKpis.totalSale || revenueKpis.grossBilled))}
                       </td>
-                      <td className="py-2.5 px-3.5 text-right font-extrabold text-rose-600 whitespace-nowrap">
+                      <td className="py-2 px-2 sm:px-2.5 text-right font-extrabold text-rose-600 whitespace-nowrap">
                         {(revenueKpis.validDiscounts !== undefined ? revenueKpis.validDiscounts : revenueKpis.totalDiscounts) > 0
                           ? `-${formatCurrency(revenueKpis.validDiscounts !== undefined ? revenueKpis.validDiscounts : revenueKpis.totalDiscounts)}`
                           : 'Rs 0'}
                       </td>
-                      <td className="py-2.5 px-3.5 text-right font-extrabold text-amber-700 whitespace-nowrap">
+                      <td className="py-2 px-2 sm:px-2.5 text-right font-extrabold text-amber-700 whitespace-nowrap">
                         {formatCurrency(revenueKpis.taxCollected)}
                       </td>
-                      <td className="py-2.5 px-3.5 text-right font-extrabold text-emerald-700 whitespace-nowrap">
+                      <td className="py-2 px-2 sm:px-2.5 text-right font-extrabold text-emerald-700 whitespace-nowrap">
                         {formatCurrency(revenueKpis.netRevenue)}
                       </td>
-                      <td colSpan={3} className="py-2.5 px-3.5" />
+                      <td colSpan={3} className="py-2 px-2 sm:px-2.5" />
                     </tr>
                   }
                 />
@@ -3061,7 +3055,7 @@ export const ReportsPage = () => {
                   footer={
                     financialTableTab === 'orders' ? (
                       <tr className="border-t-2 border-slate-300 bg-slate-50/90 text-xs font-bold text-slate-900">
-                        <td colSpan={4} className="py-2.5 px-3.5 text-slate-800 whitespace-nowrap">
+                        <td colSpan={4} className="py-2 px-2 sm:px-2.5 text-slate-800 whitespace-nowrap">
                           <span className="uppercase tracking-wider text-[11px] text-slate-500 font-bold block">
                             Statement Reconciled Total
                           </span>
@@ -3069,21 +3063,21 @@ export const ReportsPage = () => {
                             ({validFilteredOrders.length} valid / {filteredOrders.length} total)
                           </span>
                         </td>
-                        <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
+                        <td className="py-2 px-2 sm:px-2.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
                           {formatCurrency(validFilteredOrders.reduce((s, o) => s + (Number(o.subtotal) || 0), 0))}
                         </td>
-                        <td className="py-2.5 px-3.5 text-right font-extrabold text-rose-600 whitespace-nowrap">
+                        <td className="py-2 px-2 sm:px-2.5 text-right font-extrabold text-rose-600 whitespace-nowrap">
                           {validFilteredOrders.reduce((s, o) => s + (Number(o.discountAmount) || 0), 0) > 0
                             ? `-${formatCurrency(validFilteredOrders.reduce((s, o) => s + (Number(o.discountAmount) || 0), 0))}`
                             : 'Rs 0'}
                         </td>
-                        <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-700 whitespace-nowrap">
+                        <td className="py-2 px-2 sm:px-2.5 text-right font-extrabold text-slate-700 whitespace-nowrap">
                           {formatCurrency(validFilteredOrders.reduce((s, o) => s + (Number(o.taxAmount) || 0), 0))}
                         </td>
-                        <td className="py-2.5 px-3.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
+                        <td className="py-2 px-2 sm:px-2.5 text-right font-extrabold text-slate-900 whitespace-nowrap">
                           {formatCurrency(validFilteredOrders.reduce((s, o) => s + (Number(o.grandTotal) || 0), 0))}
                         </td>
-                        <td colSpan={4} className="py-2.5 px-3.5" />
+                        <td colSpan={4} className="py-2 px-2 sm:px-2.5" />
                       </tr>
                     ) : (
                       <tr className="border-t-2 border-slate-300 bg-slate-50/90 text-xs font-bold text-slate-900">

@@ -25,7 +25,7 @@ export const DataTable = ({
                 <th
                   key={col.key || index}
                   className={cn(
-                    'py-2.5 px-3.5 font-semibold select-none text-xs whitespace-nowrap',
+                    'py-2 px-2 sm:px-2.5 font-semibold select-none text-xs whitespace-nowrap',
                     col.align === 'right' && 'text-right',
                     col.align === 'center' && 'text-center',
                     col.headerClassName
@@ -66,7 +66,7 @@ export const DataTable = ({
                     <td
                       key={col.key || colIndex}
                       className={cn(
-                        'py-2.5 px-3.5 align-middle text-slate-800 text-xs',
+                        'py-2 px-2 sm:px-2.5 align-middle text-slate-800 text-xs',
                         col.align === 'right' && 'text-right whitespace-nowrap',
                         col.align === 'center' && 'text-center whitespace-nowrap',
                         col.cellClassName
