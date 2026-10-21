@@ -20,6 +20,7 @@ import {
   getValidNonReversedOrders,
 } from './dashboardSelectors';
 import { storage } from '../../services/persistence/storage';
+import { filterExpenses, calculateExpenseSummary } from '../rules/expenseRules';
 
 function toSafeDate(val) {
   if (!val) return null;
@@ -1417,7 +1418,8 @@ export function deriveFinancialSummaryReport(
   reversals = [],
   filters = {},
   itemsMaster = [],
-  addonsMaster = []
+  addonsMaster = [],
+  expenses = []
 ) {
   const filteredOrders = filterReportOrders(orders, filters);
   const filteredReversals = filterReportReversals(reversals, filters);
@@ -1477,10 +1479,20 @@ export function deriveFinancialSummaryReport(
   const missingCostCount = profitData.kpis?.missingCostCount || 0;
   const hasIncompleteCosts = profitData.kpis?.hasMissingCosts || missingCostCount > 0;
 
-  // 3. GROSS PROFIT
+  // 3. GROSS PROFIT (Existing pure calculation untouched)
   const grossProfit = netRevenue - totalCOGS;
   const grossProfitMargin = netRevenue > 0
     ? Number(((grossProfit / netRevenue) * 100).toFixed(2))
+    : 0;
+
+  // 3.1 OPERATING EXPENSES & OPERATING PROFIT (Regression-locked: does not change Gross Profit or Revenue)
+  const filteredExpenses = filterExpenses(expenses, filters);
+  const expenseSummary = calculateExpenseSummary(filteredExpenses);
+  const operatingExpenses = expenseSummary.totalExpenses;
+  const operatingExpensesBreakdown = expenseSummary.categoryBreakdown;
+  const operatingProfit = Math.round((grossProfit - operatingExpenses) * 100) / 100;
+  const operatingProfitMargin = netRevenue > 0
+    ? Number(((operatingProfit / netRevenue) * 100).toFixed(2))
     : 0;
 
   // 4. TAX SUMMARY (Strictly excluded from Revenue and Profit)
@@ -1589,6 +1601,16 @@ export function deriveFinancialSummaryReport(
       grossProfit,
       grossProfitMargin,
 
+      // Operating Expenses & Operating Profit (Regression-Locked)
+      operatingExpenses,
+      operatingExpensesBreakdown,
+      operatingProfit,
+      operatingProfitMargin,
+      activeExpenseCount: expenseSummary.expenseEntries,
+      cashExpenses: expenseSummary.cashExpenses,
+      onlineExpenses: expenseSummary.onlineExpenses,
+      expensePaymentBreakdown: expenseSummary.paymentMethodBreakdown,
+
       // Tax
       taxCollected,
 
@@ -1622,6 +1644,9 @@ export function deriveFinancialSummaryReport(
       totalCOGS,
       grossProfit,
       grossProfitMargin,
+      operatingExpenses,
+      operatingProfit,
+      operatingProfitMargin,
       taxCollected,
       totalCollected,
       totalOutstanding,

@@ -129,13 +129,15 @@ export const LoginPage = () => {
 
         {/* Top Brand Identity Badge */}
         <div className="relative z-10 flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-xl bg-white/15 backdrop-blur-md border border-white/25 flex items-center justify-center text-white shadow-lg overflow-hidden shrink-0">
-            {logoUrl ? (
-              <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-1" />
-            ) : (
+          {logoUrl ? (
+            <div className="w-10 h-10 flex items-center justify-center shrink-0">
+              <img src={logoUrl} alt="Logo" className="max-w-full max-h-full object-contain" />
+            </div>
+          ) : (
+            <div className="w-10 h-10 rounded-xl bg-white/15 backdrop-blur-md border border-white/25 flex items-center justify-center text-white shadow-lg overflow-hidden shrink-0">
               <ChefHat className="w-5 h-5 stroke-[2.2]" />
-            )}
-          </div>
+            </div>
+          )}
           <div className="min-w-0">
             <h1 className="text-lg font-extrabold tracking-tight leading-tight truncate max-w-[280px] xl:max-w-[360px]" title={restaurantName}>
               {restaurantName}
@@ -204,13 +206,15 @@ export const LoginPage = () => {
         <div className="w-full max-w-md space-y-4 sm:space-y-5 my-auto">
           {/* Mobile-only Header Logo */}
           <div className="flex lg:hidden items-center gap-2 mb-1">
-            <div className="w-9 h-9 rounded-xl bg-[#FF5C28] text-white flex items-center justify-center shadow-md overflow-hidden shrink-0">
-              {logoUrl ? (
-                <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-1" />
-              ) : (
+            {logoUrl ? (
+              <div className="w-9 h-9 flex items-center justify-center shrink-0">
+                <img src={logoUrl} alt="Logo" className="max-w-full max-h-full object-contain" />
+              </div>
+            ) : (
+              <div className="w-9 h-9 rounded-xl bg-[#FF5C28] text-white flex items-center justify-center shadow-md overflow-hidden shrink-0">
                 <ChefHat className="w-5 h-5 stroke-[2.2]" />
-              )}
-            </div>
+              </div>
+            )}
             <div className="min-w-0">
               <span className="font-extrabold text-base text-slate-900 block leading-tight truncate" title={restaurantName}>
                 {restaurantName}

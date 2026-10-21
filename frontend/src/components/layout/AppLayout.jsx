@@ -40,6 +40,14 @@ const SECTION_CONFIG = {
     title: 'Kitchen',
     subtitle: 'Live order preparation, cook queues & portions',
   },
+  '/expenses': {
+    title: 'Expenses',
+    subtitle: 'Track operational overheads, receipts & expense categories',
+  },
+  '/accounts': {
+    title: 'Expenses',
+    subtitle: 'Track operational overheads, receipts & expense categories',
+  },
   '/reports': {
     title: 'Reports',
     subtitle: 'Audited sales breakdown, net revenue & ledger analytics',
@@ -69,10 +77,22 @@ export const AppLayout = () => {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const location = useLocation();
 
-  const currentSection = SECTION_CONFIG[location.pathname] || {
-    title: 'Dashboard',
-    subtitle: 'Welcome back!',
-  };
+  const currentSection =
+    SECTION_CONFIG[location.pathname] ||
+    (location.pathname.startsWith('/reports') || location.pathname.startsWith('/analytics')
+      ? {
+          title: 'Reports',
+          subtitle: 'Audited sales breakdown, net revenue & ledger analytics',
+        }
+      : location.pathname.startsWith('/settings')
+      ? {
+          title: 'Settings',
+          subtitle: 'Store configuration, tax rates & preferences',
+        }
+      : {
+          title: 'Dashboard',
+          subtitle: 'Welcome back!',
+        });
 
   return (
     <div className="min-h-screen lg:h-screen lg:max-h-screen bg-[#ECEEF2] flex font-sans antialiased text-slate-900 p-3.5 sm:p-4 lg:p-4.5 gap-3.5 sm:gap-4 lg:gap-4.5 overflow-x-hidden lg:overflow-hidden">
@@ -91,8 +111,11 @@ export const AppLayout = () => {
             {/* Mobile Hamburger Menu */}
             <button
               type="button"
-              onClick={() => setIsMobileSidebarOpen(true)}
-              className="lg:hidden p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors shrink-0"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                setIsMobileSidebarOpen(true);
+              }}
+              className="lg:hidden p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors shrink-0 outline-none focus:outline-none focus-visible:outline-none focus:ring-0"
               aria-label="Open sidebar"
             >
               <Menu className="w-5 h-5" />
@@ -125,7 +148,10 @@ export const AppLayout = () => {
             <NavLink
               to="/settings"
               aria-label="Quick Settings"
-              className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+              onClick={(e) => {
+                e.currentTarget.blur();
+              }}
+              className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer outline-none focus:outline-none focus-visible:outline-none focus:ring-0"
             >
               <Settings className="w-5 h-5" />
             </NavLink>

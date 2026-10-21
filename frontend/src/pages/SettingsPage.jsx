@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Tabs } from '../components/ui/Tabs';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { UserPlus } from 'lucide-react';
 import { useAppStore } from '../store';
 import { BusinessProfileTab } from '../features/settings/components/BusinessProfileTab';
 import { TaxSettingsTab } from '../features/settings/components/TaxSettingsTab';
@@ -15,7 +16,9 @@ import { SecuritySettingsTab } from '../features/settings/components/SecuritySet
  * Full-featured Settings Module supporting Business Profile, Security & Passwords, Payment Accounts, Tax, POS, Invoice, Data Management, and Deletion History.
  */
 export const SettingsPage = () => {
-  const [activeTab, setActiveTab] = useState('profile');
+  const { section } = useParams();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { settings, updateSettings, user } = useAppStore();
 
   const isCashier = Boolean(
@@ -23,51 +26,117 @@ export const SettingsPage = () => {
     (user?.username?.toLowerCase() === 'cashier' && user?.username?.toLowerCase() !== 'admin')
   );
 
-  const tabs = [
-    { id: 'profile', label: 'Business Profile' },
-    { id: 'security', label: 'Security & Passwords' },
-    { id: 'payment', label: 'Payment Accounts' },
-    { id: 'tax', label: 'Tax Settings' },
-    { id: 'pos', label: 'POS Settings' },
-    { id: 'invoice', label: 'Invoice Settings' },
-    ...(!isCashier ? [{ id: 'data', label: 'Data Management' }] : []),
-    ...(!isCashier ? [{ id: 'history', label: 'Deletion History' }] : []),
-  ];
+  const resolveTabFromParams = (sec, queryTab) => {
+    const raw = queryTab || sec || '';
+    const clean = raw.toLowerCase().replace(/[^a-z]/g, '');
+    if (clean === 'security' || clean === 'password' || clean === 'passwords' || clean === 'user' || clean === 'users' || clean === 'access' || clean === 'useraccess') return 'security';
+    if (clean === 'payment' || clean === 'payments' || clean === 'account' || clean === 'accounts') return 'payment';
+    if (clean === 'tax' || clean === 'taxes') return 'tax';
+    if (clean === 'pos') return 'pos';
+    if (clean === 'invoice' || clean === 'invoices') return 'invoice';
+    if (clean === 'data' || clean === 'datamanagement') return 'data';
+    if (clean === 'history' || clean === 'deletion' || clean === 'deletionhistory') return 'history';
+    return 'profile';
+  };
 
-  // If cashier tries to stay on history or data tab, fallback to profile
-  React.useEffect(() => {
-    if (isCashier && (activeTab === 'history' || activeTab === 'data')) {
-      setActiveTab('profile');
+  const initialTab = useMemo(() => {
+    return resolveTabFromParams(section, searchParams.get('tab'));
+  }, [section, searchParams]);
+
+  const [activeTab, setActiveTabState] = useState(initialTab);
+
+  useEffect(() => {
+    const target = resolveTabFromParams(section, searchParams.get('tab'));
+    if (isCashier && (target === 'history' || target === 'data')) {
+      setActiveTabState('profile');
+    } else {
+      setActiveTabState(target);
     }
-  }, [isCashier, activeTab]);
+  }, [section, searchParams, isCashier]);
+
+  const setActiveTab = (newTab) => {
+    if (isCashier && (newTab === 'history' || newTab === 'data')) return;
+    setActiveTabState(newTab);
+    navigate(`/settings/${newTab}`);
+  };
+
+  const sectionMeta = useMemo(() => {
+    switch (activeTab) {
+      case 'security':
+        return {
+          title: 'User & Access Control',
+          subtitle: 'Provision administrative and cashier portal users, credentials, and access permissions.',
+        };
+      case 'payment':
+        return {
+          title: 'Payment Accounts',
+          subtitle: 'Manage accepted payment methods, cash drawers, digital wallets, and cards.',
+        };
+      case 'tax':
+        return {
+          title: 'Tax Settings',
+          subtitle: 'Configure automated sales tax (GST/VAT), rates, and tax registration info.',
+        };
+      case 'pos':
+        return {
+          title: 'POS Settings',
+          subtitle: 'Set order workflow, kitchen ticket routing, register behavior, and counter defaults.',
+        };
+      case 'invoice':
+        return {
+          title: 'Invoice Settings',
+          subtitle: 'Invoice layout, header notes, terms and conditions, and printing format.',
+        };
+      case 'data':
+        return {
+          title: 'Data Management',
+          subtitle: 'Export reports, ledger spreadsheets, backup storage, and database reset controls.',
+        };
+      case 'history':
+        return {
+          title: 'Deletion History',
+          subtitle: 'Audited log of voided orders, deleted invoices, and supervisor authorizations.',
+        };
+      case 'profile':
+      default:
+        return {
+          title: 'Business Profile',
+          subtitle: 'Configure restaurant identity, branding logo, contact info, and tax registration details.',
+        };
+    }
+  }, [activeTab]);
 
   const handleSaveSettings = async (updates) => {
     updateSettings(updates);
   };
 
+  const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false);
+
   return (
     <div className="space-y-6 w-full max-w-[1280px]">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1">
         <div>
           <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
-            Settings & System Preferences
+            {sectionMeta.title}
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            Manage restaurant business profile, sales taxes, POS behavior, invoice branding, and storage.
+            {sectionMeta.subtitle}
           </p>
         </div>
-      </div>
 
-      {/* Tabs */}
-      <Tabs
-        tabs={tabs}
-        activeTab={activeTab}
-        onChange={setActiveTab}
-        variant="line"
-        className="gap-2 sm:gap-3 lg:gap-4.5"
-        tabClassName="text-[12.5px] sm:text-[13px] lg:text-sm px-0.5"
-      />
+        {activeTab === 'security' && !isCashier && (
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setIsCreateUserModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 mr-4 sm:mr-6 rounded-xl text-xs font-semibold text-white bg-[#FF5C28] hover:bg-[#E64A19] active:bg-[#D83F0E] transition-all shadow-sm shadow-orange-500/20 cursor-pointer outline-none focus:outline-none shrink-0"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>Create User Account</span>
+          </button>
+        )}
+      </div>
 
       {/* Active Tab Content */}
       {activeTab === 'profile' && (
@@ -78,7 +147,10 @@ export const SettingsPage = () => {
       )}
 
       {activeTab === 'security' && (
-        <SecuritySettingsTab />
+        <SecuritySettingsTab
+          isCreateModalOpen={isCreateUserModalOpen}
+          setIsCreateModalOpen={setIsCreateUserModalOpen}
+        />
       )}
 
       {activeTab === 'payment' && (

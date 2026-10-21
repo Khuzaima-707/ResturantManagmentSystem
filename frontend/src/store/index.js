@@ -386,6 +386,60 @@ export const useAppStore = create((set, get) => ({
       (norm === 'cashier' || norm === 'cashier@spicehub.pk') &&
       (password === creds.cashier || password === 'cashier123' || password === '1234');
 
+    // Check provisioned custom users from User & Access Control
+    const customUsers = storage.get('rms_custom_users', []);
+    const customUser = customUsers.find(
+      (u) =>
+        (u.email?.toLowerCase().trim() === norm ||
+          u.username?.toLowerCase().trim() === norm ||
+          u.loginIdentifier?.toLowerCase().trim() === norm) &&
+        u.password === password
+    );
+
+    if (customUser) {
+      const isRoleAdmin =
+        customUser.portalRole?.toLowerCase().includes('admin') ||
+        customUser.role?.toLowerCase().includes('admin');
+      const role = isRoleAdmin ? 'admin' : 'cashier';
+      const roleTitle = customUser.officialTitle || customUser.portalRole || (isRoleAdmin ? 'Branch Administrator' : 'Cashier');
+      const dummyToken = `jwt_${role}_custom_${Date.now()}`;
+
+      const userObj = {
+        id: customUser.id,
+        username: customUser.username || customUser.email || customUser.loginIdentifier,
+        email: customUser.email || customUser.loginIdentifier,
+        role: roleTitle,
+        name: customUser.fullName || customUser.name,
+        branch: customUser.branchScope || 'Main Branch',
+        phone: customUser.phone || '',
+        avatarUrl: customUser.avatarUrl || '',
+      };
+      if (!userObj.initials && userObj.name) {
+        userObj.initials =
+          userObj.name
+            .split(' ')
+            .filter(Boolean)
+            .map((n) => n[0].toUpperCase())
+            .slice(0, 2)
+            .join('') || 'U';
+      }
+
+      storage.set('auth_token', dummyToken);
+      storage.set('active_user', userObj);
+
+      const userCartKey = getUserCartStorageKey(userObj);
+      const userCart = storage.get(userCartKey, []);
+
+      set({
+        token: dummyToken,
+        user: userObj,
+        isAuthenticated: true,
+        cart: Array.isArray(userCart) ? userCart : [],
+      });
+
+      return { success: true };
+    }
+
     // INSTANT LOCAL AUTHENTICATION (0ms latency, instant dashboard entrance)
     if (isLocalAdminMatch || isLocalCashierMatch) {
       const role = isLocalAdminMatch ? 'admin' : 'cashier';
@@ -893,13 +947,86 @@ export const useAppStore = create((set, get) => ({
     return [];
   })(),
 
-  addExpense: (expense) => {
-    const updated = [expense, ...get().expenses];
+  expenseCategories: (() => {
+    const saved = storage.get('expense_categories', null);
+    if (saved && Array.isArray(saved)) return saved;
+    return [];
+  })(),
+
+  fetchExpenses: async () => {
+    try {
+      const data = await ExpenseRepository.getAll();
+      if (Array.isArray(data)) {
+        storage.set('expenses', data);
+        set({ expenses: data });
+        return data;
+      }
+    } catch (err) {
+      console.warn('[Store] fetchExpenses warning:', err.message);
+    }
+    return get().expenses;
+  },
+
+  addExpense: async (expense) => {
+    let result = expense;
+    try {
+      result = await ExpenseRepository.create(expense);
+    } catch (err) {
+      console.warn('[Store] Expense Atlas sync warning:', err.message);
+    }
+    const current = get().expenses || [];
+    const exists = current.some((e) => e.id === result.id);
+    const updated = exists
+      ? current.map((e) => (e.id === result.id ? result : e))
+      : [result, ...current];
     storage.set('expenses', updated);
     set({ expenses: updated });
-    ExpenseRepository.create(expense).catch((err) => {
-      console.warn('[Store] Expense Atlas sync warning:', err.message);
+    return result;
+  },
+
+  updateExpense: async (id, updates) => {
+    let result = null;
+    try {
+      result = await ExpenseRepository.update(id, updates);
+    } catch (err) {
+      console.warn('[Store] Expense update sync warning:', err.message);
+    }
+    const updated = (get().expenses || []).map((e) => {
+      if (e.id === id) {
+        return result || { ...e, ...updates, updatedAt: new Date().toISOString() };
+      }
+      return e;
     });
+    storage.set('expenses', updated);
+    set({ expenses: updated });
+    return result;
+  },
+
+  voidExpense: async (id, voidPayload) => {
+    let result = null;
+    try {
+      result = await ExpenseRepository.void(id, voidPayload);
+    } catch (err) {
+      console.warn('[Store] Expense void sync warning:', err.message);
+    }
+    const updated = (get().expenses || []).map((e) => {
+      if (e.id === id) {
+        return (
+          result || {
+            ...e,
+            status: 'VOIDED',
+            voidReason: voidPayload?.voidReason || 'No reason provided',
+            voidedAt: new Date().toISOString(),
+            voidedByName: voidPayload?.voidedByName || 'Admin',
+            voidedByUserId: voidPayload?.voidedByUserId || '',
+          }
+        );
+      }
+      return e;
+    });
+    storage.set('expenses', updated);
+    set({ expenses: updated });
+    return result;
   },
 
   deleteExpense: (id) => {
@@ -909,6 +1036,67 @@ export const useAppStore = create((set, get) => ({
     ExpenseRepository.delete(id).catch((err) => {
       console.warn('[Store] Expense delete sync warning:', err.message);
     });
+  },
+
+  fetchExpenseCategories: async () => {
+    try {
+      const data = await ExpenseRepository.getCategories();
+      if (Array.isArray(data)) {
+        storage.set('expense_categories', data);
+        set({ expenseCategories: data });
+        return data;
+      }
+    } catch (err) {
+      console.warn('[Store] fetchExpenseCategories warning:', err.message);
+    }
+    return get().expenseCategories;
+  },
+
+  addExpenseCategory: async (category) => {
+    let result = category;
+    try {
+      result = await ExpenseRepository.createCategory(category);
+    } catch (err) {
+      console.warn('[Store] ExpenseCategory create warning:', err.message);
+    }
+    const current = get().expenseCategories || [];
+    const exists = current.some((c) => c.id === result.id || c.name === result.name);
+    const updated = exists
+      ? current.map((c) => (c.id === result.id ? result : c))
+      : [...current, result];
+    storage.set('expense_categories', updated);
+    set({ expenseCategories: updated });
+    return result;
+  },
+
+  updateExpenseCategory: async (id, updates) => {
+    let result = null;
+    try {
+      result = await ExpenseRepository.updateCategory(id, updates);
+    } catch (err) {
+      console.warn('[Store] ExpenseCategory update warning:', err.message);
+    }
+    const updated = (get().expenseCategories || []).map((c) => {
+      if (c.id === id) {
+        return result || { ...c, ...updates };
+      }
+      return c;
+    });
+    storage.set('expense_categories', updated);
+    set({ expenseCategories: updated });
+    return result;
+  },
+
+  deleteExpenseCategory: async (id) => {
+    try {
+      await ExpenseRepository.deleteCategory(id);
+    } catch (err) {
+      console.warn('[Store] ExpenseCategory delete warning:', err.message);
+      throw err;
+    }
+    const updated = (get().expenseCategories || []).filter((c) => c.id !== id);
+    storage.set('expense_categories', updated);
+    set({ expenseCategories: updated });
   },
 
   // Dining Floorplan Tables
@@ -1862,7 +2050,7 @@ export const useAppStore = create((set, get) => ({
   // Synchronize store with live Express + MongoDB Atlas backend
   syncWithBackend: async () => {
     try {
-      const [cats, its, adds, dls, ords, revs, exps, tbls, curShift] = await Promise.all([
+      const [cats, its, adds, dls, ords, revs, exps, expCats, tbls, curShift] = await Promise.all([
         CategoryRepository.getAll().catch(() => null),
         ItemRepository.getAll().catch(() => null),
         AddonRepository.getAll().catch(() => null),
@@ -1870,6 +2058,7 @@ export const useAppStore = create((set, get) => ({
         OrderRepository.getAll().catch(() => null),
         ReversalRepository.getAll().catch(() => null),
         ExpenseRepository.getAll().catch(() => null),
+        ExpenseRepository.getCategories().catch(() => null),
         TableRepository.getAll().catch(() => null),
         ShiftRepository.getCurrent().catch(() => null),
       ]);
@@ -2000,6 +2189,12 @@ export const useAppStore = create((set, get) => ({
       if (Array.isArray(exps)) {
         updates.expenses = exps;
         storage.set('expenses', exps);
+      }
+
+      // 6.5 Expense Categories
+      if (Array.isArray(expCats)) {
+        updates.expenseCategories = expCats;
+        storage.set('expense_categories', expCats);
       }
 
       // 7. Tables

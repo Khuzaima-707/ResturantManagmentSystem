@@ -5,6 +5,7 @@ import { Category } from '../models/Category.js';
 import { MenuItem as Item } from '../models/Item.js';
 import { Addon } from '../models/Addon.js';
 import { Expense } from '../models/Expense.js';
+import { ExpenseCategory } from '../models/ExpenseCategory.js';
 import { Table } from '../models/Table.js';
 import { Shift } from '../models/Shift.js';
 import { Deal } from '../models/Deal.js';
@@ -84,12 +85,13 @@ export async function deleteAllData(req, res, next) {
         Addon.deleteMany({}).catch(() => ({ deletedCount: 0 })),
         Deal.deleteMany({}).catch(() => ({ deletedCount: 0 })),
         Expense.deleteMany({}).catch(() => ({ deletedCount: 0 })),
+        ExpenseCategory.deleteMany({}).catch(() => ({ deletedCount: 0 })),
         Table.deleteMany({}).catch(() => ({ deletedCount: 0 })),
         Shift.deleteMany({}).catch(() => ({ deletedCount: 0 }))
       );
     }
 
-    const [ordersResult, reversalsResult, cntRes, cRes, iRes, aRes, dRes, expRes, tblRes, shfRes] = await Promise.all(deleteTasks);
+    const [ordersResult, reversalsResult, , cRes, iRes, aRes, dRes, expRes, expCatRes, tblRes, shfRes] = await Promise.all(deleteTasks);
 
     return res.status(200).json({
       success: true,
@@ -102,6 +104,7 @@ export async function deleteAllData(req, res, next) {
         addonsDeleted: aRes?.deletedCount || 0,
         dealsDeleted: dRes?.deletedCount || 0,
         expensesDeleted: expRes?.deletedCount || 0,
+        expenseCategoriesDeleted: expCatRes?.deletedCount || 0,
         tablesDeleted: tblRes?.deletedCount || 0,
         shiftsDeleted: shfRes?.deletedCount || 0,
       },

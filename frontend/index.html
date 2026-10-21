@@ -9,6 +9,36 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <style>
+      /* Ensure NO black outline, focus ring, or focus box-shadow ever displays on click, hover, or focus */
+      *,
+      *::before,
+      *::after {
+        -webkit-tap-highlight-color: transparent !important;
+      }
+      *:focus,
+      *:focus-visible,
+      *:focus-within,
+      button:focus,
+      button:focus-visible,
+      button:active,
+      a:focus,
+      a:focus-visible,
+      a:active,
+      [role="button"]:focus,
+      [role="button"]:focus-visible,
+      [tabindex]:focus,
+      [tabindex]:focus-visible {
+        outline: none !important;
+        outline-color: transparent !important;
+        outline-style: none !important;
+        outline-width: 0 !important;
+        --tw-ring-shadow: 0 0 #0000 !important;
+        --tw-ring-offset-shadow: 0 0 #0000 !important;
+        --tw-ring-color: transparent !important;
+        -webkit-focus-ring-color: transparent !important;
+      }
+    </style>
   </head>
   <body class="bg-[#F8FAFC] text-slate-800 antialiased selection:bg-orange-500 selection:text-white">
     <div id="root"></div>

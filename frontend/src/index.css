@@ -59,6 +59,37 @@ body {
   background: #94A3B8;
 }
 
+/* Prevent default browser black outline on button/link focus across all browsers */
+button,
+a,
+[role="button"],
+[tabindex] {
+  -webkit-tap-highlight-color: transparent !important;
+}
+
+*:focus,
+*:focus-visible,
+*:focus-within,
+button:focus,
+button:focus-visible,
+button:active,
+a:focus,
+a:focus-visible,
+a:active,
+[role="button"]:focus,
+[role="button"]:focus-visible,
+[tabindex]:focus,
+[tabindex]:focus-visible {
+  outline: none !important;
+  outline-color: transparent !important;
+  outline-style: none !important;
+  outline-width: 0 !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+  --tw-ring-color: transparent !important;
+  -webkit-focus-ring-color: transparent !important;
+}
+
 /* =========================================================================
    DEDICATED 80MM THERMAL RECEIPT PRINT STYLES
    - Target: 80mm Physical Thermal Roll Paper

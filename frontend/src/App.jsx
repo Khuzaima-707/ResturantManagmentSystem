@@ -45,8 +45,11 @@ export function App() {
             <Route path="/menu" element={<MenuPage />} />
             <Route path="/menus" element={<MenuPage />} />
             <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/reports/:section" element={<ReportsPage />} />
             <Route path="/analytics" element={<ReportsPage />} />
+            <Route path="/analytics/:section" element={<ReportsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/settings/:section" element={<SettingsPage />} />
             <Route path="/help" element={<SettingsPage />} />
 
             {/* 404 Fallback */}

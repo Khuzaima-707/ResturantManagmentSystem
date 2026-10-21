@@ -1569,6 +1569,15 @@ export async function exportFinancialSummaryExcel({
 
     addStatementLine('GROSS PROFIT', statement.grossProfit, false, true);
     addStatementLine('   Gross Profit Margin', `${statement.grossProfitMargin || 0}%`, false, false, false);
+
+    addStatementLine('OPERATING EXPENSES', null, true);
+    (statement.operatingExpensesBreakdown || []).forEach((cat) => {
+      addStatementLine(`   ${cat.category}`, cat.amount);
+    });
+    addStatementLine('TOTAL OPERATING EXPENSES', statement.operatingExpenses > 0 ? -statement.operatingExpenses : 0, false, true);
+
+    addStatementLine('OPERATING PROFIT', statement.operatingProfit, false, true);
+    addStatementLine('   Operating Profit Margin', `${statement.operatingProfitMargin || 0}%`, false, false, false);
   }
 
   // TAX SUMMARY
@@ -1762,6 +1771,9 @@ export function exportFinancialSummaryCsv({
           ['TOTAL COGS', statement.totalCOGS || 0],
           ['GROSS PROFIT', statement.grossProfit || 0],
           ['GROSS PROFIT MARGIN %', `${statement.grossProfitMargin || 0}%`],
+          ['TOTAL OPERATING EXPENSES', statement.operatingExpenses ? `-${statement.operatingExpenses}` : 0],
+          ['OPERATING PROFIT', statement.operatingProfit || 0],
+          ['OPERATING PROFIT MARGIN %', `${statement.operatingProfitMargin || 0}%`],
         ]
       : []),
     ['Tax Collected', statement.taxCollected || 0],

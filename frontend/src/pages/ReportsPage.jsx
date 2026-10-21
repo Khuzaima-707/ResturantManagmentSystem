@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   DollarSign,
   ShoppingCart,
@@ -89,15 +90,98 @@ const DONUT_COLORS = [
  * using historical transaction snapshots and reconciling 100% with accounting rules.
  */
 export const ReportsPage = () => {
-  const { orders, reversals, categories, settings, items, addons, deals, user } = useAppStore();
+  const { orders, reversals, categories, settings, items, addons, deals, user, expenses } = useAppStore();
 
   const isCashier = Boolean(
     (user?.role?.toLowerCase().includes('cashier') && !user?.role?.toLowerCase().includes('admin')) ||
     (user?.username?.toLowerCase() === 'cashier' && user?.username?.toLowerCase() !== 'admin')
   );
 
-  // Navigation tab: 'Sales' | 'Revenue' | 'Reversals' | 'Profit'
-  const [activeTab, setActiveTab] = useState('Sales');
+  const { section } = useParams();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+
+  const resolveTabFromParams = (sec, queryTab) => {
+    const raw = queryTab || sec || '';
+    const clean = raw.toLowerCase().replace(/[^a-z]/g, '');
+    if (clean.startsWith('rev') && !clean.includes('revers')) return 'Revenue';
+    if (clean.includes('revers') || clean.includes('void')) return 'Reversals';
+    if (clean.includes('profit') || clean.includes('cost')) return 'Profit';
+    if (clean.includes('summary') || clean.includes('financ') || clean.includes('ledger')) return 'FinancialSummary';
+    return 'Sales';
+  };
+
+  const currentTabFromUrl = useMemo(() => {
+    return resolveTabFromParams(section, searchParams.get('tab'));
+  }, [section, searchParams]);
+
+  // Navigation tab: 'Sales' | 'Revenue' | 'Reversals' | 'Profit' | 'FinancialSummary'
+  const [activeTab, setActiveTabState] = useState(currentTabFromUrl);
+
+  // Sync state if URL param or search param changes
+  useEffect(() => {
+    const target = resolveTabFromParams(section, searchParams.get('tab'));
+    if (isCashier && (target === 'Profit' || target === 'FinancialSummary')) {
+      setActiveTabState('Sales');
+    } else {
+      setActiveTabState(target);
+    }
+  }, [section, searchParams, isCashier]);
+
+  const setActiveTab = (tab) => {
+    if (isCashier && (tab === 'Profit' || tab === 'FinancialSummary')) return;
+    setActiveTabState(tab);
+    setCurrentPage(1);
+
+    const slugMap = {
+      Sales: 'sales',
+      Revenue: 'revenue',
+      Reversals: 'reversals',
+      Profit: 'profit',
+      FinancialSummary: 'financial-summary',
+    };
+    navigate(`/reports/${slugMap[tab] || 'sales'}`);
+  };
+
+  // Section title & description dynamic metadata for the active report
+  const sectionMeta = useMemo(() => {
+    switch (activeTab) {
+      case 'Revenue':
+        return {
+          title: isCashier ? "Today's Revenue Report" : 'Revenue Report',
+          subtitle: isCashier
+            ? "Today's audited gross receipts, valid net revenue and tax collections."
+            : 'Gross sales receipts, net revenue, tax liability, and payment method audit.',
+        };
+      case 'Reversals':
+        return {
+          title: isCashier ? "Today's Reversals Report" : 'Reversals & Voids Report',
+          subtitle: isCashier
+            ? "Today's voided orders, invoice cancellations, and cashier audit logs."
+            : 'Cancelled orders, refund breakdown, void reasons, and cashier audit logs.',
+        };
+      case 'Profit':
+        return {
+          title: 'Profit & Cost Analysis',
+          subtitle: 'Wholesale COGS, gross margin percentage, add-on profitability, and item margins.',
+        };
+      case 'FinancialSummary':
+        return {
+          title: isCashier ? "Today's Financial Summary" : 'Financial Summary & Ledger',
+          subtitle: isCashier
+            ? "Today's net shift reconciliation, sales performance, and drawer balance."
+            : 'Complete executive balance, income statement breakdown, and revenue vs expenses.',
+        };
+      case 'Sales':
+      default:
+        return {
+          title: isCashier ? "Today's Sales Report" : 'Sales Transactions Report',
+          subtitle: isCashier
+            ? "Today's customer orders, bills, and sales transactions."
+            : 'Real-time customer invoices, order types, tender methods, and quantity sold.',
+        };
+    }
+  }, [activeTab, isCashier]);
 
   // Unified Filter States (Cashier strictly locked to 'Today')
   const [datePreset, setDatePreset] = useState(isCashier ? 'Today' : 'All Dates');
@@ -122,14 +206,13 @@ export const ReportsPage = () => {
   // Modal for Viewing Historical Invoice (Read-Only)
   const [selectedInvoiceForView, setSelectedInvoiceForView] = useState(null);
 
-  // Cashier cannot see wholesale costs & profit margins
+  // Cashier cannot see wholesale costs & profit margins or company financial summary
   const tabs = useMemo(() => {
     if (isCashier) {
       return [
         { id: 'Sales', label: "Today's Sales" },
         { id: 'Revenue', label: "Today's Revenue" },
         { id: 'Reversals', label: "Today's Reversals" },
-        { id: 'FinancialSummary', label: "Today's Financial Summary" },
       ];
     }
     return [
@@ -142,7 +225,7 @@ export const ReportsPage = () => {
   }, [isCashier]);
 
   useEffect(() => {
-    if (isCashier && activeTab === 'Profit') {
+    if (isCashier && (activeTab === 'Profit' || activeTab === 'FinancialSummary')) {
       setActiveTab('Sales');
     }
   }, [isCashier, activeTab]);
@@ -318,7 +401,8 @@ export const ReportsPage = () => {
         sortBy: profitSortBy,
       },
       items,
-      addons
+      addons,
+      expenses
     );
   }, [
     visibleOrders,
@@ -334,6 +418,7 @@ export const ReportsPage = () => {
     profitSortBy,
     items,
     addons,
+    expenses,
   ]);
 
   // --- CHARTS & BREAKDOWNS ---
@@ -1540,12 +1625,10 @@ export const ReportsPage = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-0.5">
         <div>
           <h1 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
-            {isCashier ? "Daily Shift / Today's Reports" : "Reports"}
+            {sectionMeta.title}
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            {isCashier
-              ? "Today's sales, revenue and reversal metrics (Cashier 1-Day View)."
-              : "Analyze sales, revenue and reversals."}
+            {sectionMeta.subtitle}
           </p>
         </div>
 
@@ -1553,8 +1636,9 @@ export const ReportsPage = () => {
         <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto no-print">
           <button
             type="button"
+            onMouseDown={(e) => e.preventDefault()}
             onClick={handleExportExcel}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-emerald-300 hover:border-emerald-400 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold transition-all shadow-2xs cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-emerald-300 hover:border-emerald-400 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold transition-all shadow-2xs cursor-pointer outline-none focus:outline-none focus-visible:outline-none focus:ring-0"
             title="Export professional Chartered Accountant Excel (.xlsx) multi-sheet workbook"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
@@ -1563,8 +1647,9 @@ export const ReportsPage = () => {
 
           <button
             type="button"
+            onMouseDown={(e) => e.preventDefault()}
             onClick={handleDownloadPdf}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-orange-200 hover:border-orange-300 bg-white hover:bg-orange-50 text-[#FF5C28] text-xs font-semibold transition-all shadow-2xs cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-orange-200 hover:border-orange-300 bg-white hover:bg-orange-50 text-[#FF5C28] text-xs font-semibold transition-all shadow-2xs cursor-pointer outline-none focus:outline-none focus-visible:outline-none focus:ring-0"
             title="Download client-side PDF summary"
           >
             <Download className="w-3.5 h-3.5 text-[#FF5C28]" />
@@ -1573,8 +1658,9 @@ export const ReportsPage = () => {
 
           <button
             type="button"
+            onMouseDown={(e) => e.preventDefault()}
             onClick={handlePrint}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-all shadow-2xs cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-all shadow-2xs cursor-pointer outline-none focus:outline-none focus-visible:outline-none focus:ring-0"
             title="Print report"
           >
             <Printer className="w-3.5 h-3.5 text-slate-500" />
@@ -1583,18 +1669,7 @@ export const ReportsPage = () => {
         </div>
       </div>
 
-      {/* 2. Top Navigation Tabs */}
-      <div className="border-b border-slate-200/90 pb-0.5">
-        <Tabs
-          tabs={tabs}
-          activeTab={activeTab}
-          onChange={(tab) => {
-            setActiveTab(tab);
-            setCurrentPage(1);
-          }}
-          variant="line"
-        />
-      </div>
+
 
 
       {/* 3. Common Filter Toolbar (Single Shared Filter Source) */}
@@ -2647,7 +2722,7 @@ export const ReportsPage = () => {
           {/* 3. Summary Cards Layout (Section 10) */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {/* Card Left: REVENUE, COST OF SALES & GROSS PROFIT */}
-            <Card className="flex flex-col justify-between">
+            <Card className="flex flex-col">
               <CardHeader className="flex-row items-center justify-between pb-3 border-b border-slate-100">
                 <div>
                   <CardTitle className="text-base font-bold text-slate-900">
@@ -2818,7 +2893,7 @@ export const ReportsPage = () => {
             </Card>
 
             {/* Card Right: TAX SUMMARY, PAYMENT COLLECTION & AUDIT */}
-            <Card className="flex flex-col justify-between">
+            <Card className="flex flex-col">
               <CardHeader className="flex-row items-center justify-between pb-3 border-b border-slate-100">
                 <div>
                   <CardTitle className="text-base font-bold text-slate-900">
@@ -2959,6 +3034,127 @@ export const ReportsPage = () => {
             </Card>
           </div>
 
+          {/* 3b. Operating Overhead & Net Operating Profit */}
+          {canViewCosts && (
+            <Card className="flex flex-col mt-5">
+              <CardHeader className="flex-row items-center justify-between pb-3 border-b border-slate-100">
+                <div>
+                  <CardTitle className="text-base font-bold text-slate-900">
+                    Operating Expenses & Operating Profit
+                  </CardTitle>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Overhead expenditures deduction & net bottom-line performance
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-600">Operating Margin:</span>
+                  <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                    {financialSummaryReport.statement.operatingProfitMargin || 0}%
+                  </span>
+                </div>
+              </CardHeader>
+
+              <CardContent className="pt-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                  {/* Left Column: Operating Expenses Breakdown */}
+                  <div>
+                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-200 mb-2">
+                      <span className="text-xs font-bold text-slate-900 tracking-wider uppercase">
+                        OPERATING EXPENSES
+                      </span>
+                      <span className="text-[11px] text-slate-400 font-medium italic">
+                        Overhead Costs
+                      </span>
+                    </div>
+
+                    <div className="divide-y divide-slate-100 text-xs">
+                      {financialSummaryReport.statement.operatingExpensesBreakdown &&
+                      financialSummaryReport.statement.operatingExpensesBreakdown.length > 0 ? (
+                        financialSummaryReport.statement.operatingExpensesBreakdown.map((catItem) => (
+                          <div
+                            key={catItem.category}
+                            className="flex items-center justify-between py-2 text-slate-700 px-1"
+                          >
+                            <span className="font-medium text-slate-800">{catItem.category}</span>
+                            <span className="font-semibold text-slate-900">
+                              {formatCurrency(catItem.amount)}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="py-3 text-xs text-slate-400 italic px-1">
+                          No active operational expenses recorded for this date range.
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between py-2.5 text-slate-900 font-bold px-2 border-t border-slate-200 bg-rose-50/50 rounded-lg mt-2">
+                        <span className="uppercase tracking-wide text-rose-950">Total Operating Expenses</span>
+                        <span className="text-sm font-extrabold text-rose-700">
+                          -{formatCurrency(financialSummaryReport.statement.operatingExpenses || 0)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Net Operating Profit KPI */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
+                      <span className="text-xs font-bold text-slate-900 tracking-wider uppercase">
+                        OPERATING PROFIT
+                      </span>
+                      <span className="text-[11px] text-slate-400 font-medium italic">
+                        Gross Profit - Total Operating Expenses
+                      </span>
+                    </div>
+
+                    <div
+                      className={`p-4 rounded-xl border flex items-center justify-between ${
+                        (financialSummaryReport.statement.operatingProfit || 0) >= 0
+                          ? 'bg-blue-50/70 border-blue-200 text-blue-950'
+                          : 'bg-rose-50/70 border-rose-200 text-rose-950'
+                      }`}
+                    >
+                      <div>
+                        <span className="block text-xs font-bold uppercase tracking-wide">
+                          OPERATING PROFIT
+                        </span>
+                        <span className="text-[11px] text-slate-600 mt-0.5 block">
+                          Net earnings after all cost of goods & operating overheads
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span
+                          className={`text-xl font-extrabold ${
+                            (financialSummaryReport.statement.operatingProfit || 0) >= 0
+                              ? 'text-blue-700'
+                              : 'text-rose-700'
+                          }`}
+                        >
+                          {(financialSummaryReport.statement.operatingProfit || 0) < 0 ? '-' : ''}
+                          {formatCurrency(Math.abs(financialSummaryReport.statement.operatingProfit || 0))}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                        <span className="text-[10.5px] font-medium text-slate-500 block">Gross Profit</span>
+                        <span className="text-xs font-bold text-slate-800">
+                          {formatCurrency(financialSummaryReport.statement.grossProfit)}
+                        </span>
+                      </div>
+                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                        <span className="text-[10.5px] font-medium text-slate-500 block">Operating Margin</span>
+                        <span className="text-xs font-bold text-blue-700">
+                          {financialSummaryReport.statement.operatingProfitMargin || 0}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* 4. Detailed Records Tables (Items & Invoices) */}
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">

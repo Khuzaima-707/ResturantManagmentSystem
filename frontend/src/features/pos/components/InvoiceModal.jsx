@@ -236,13 +236,15 @@ export const InvoiceModal = ({
               <div className="flex items-center justify-between gap-2 pb-3.5 border-b border-slate-100">
                 <div className="flex items-center gap-2.5">
                   {showLogo && (
-                    <div className="w-10 h-10 rounded-xl bg-[#FFF5F0] border border-orange-100/80 flex items-center justify-center text-[#FF5C28] shadow-2xs shrink-0 overflow-hidden">
-                      {logoUrl ? (
-                        <img src={logoUrl} alt="Logo" className="w-full h-full object-contain p-0.5" />
-                      ) : (
+                    logoUrl ? (
+                      <div className="w-10 h-10 flex items-center justify-center shrink-0">
+                        <img src={logoUrl} alt="Logo" className="max-w-full max-h-full object-contain" />
+                      </div>
+                    ) : (
+                      <div className="w-10 h-10 rounded-xl bg-[#FFF5F0] border border-orange-100/80 flex items-center justify-center text-[#FF5C28] shadow-2xs shrink-0 overflow-hidden">
                         <ChefHat className="w-5 h-5 stroke-[2.2]" />
-                      )}
-                    </div>
+                      </div>
+                    )
                   )}
                   <div>
                     <h3 className="font-bold text-sm sm:text-base text-slate-900 leading-tight">

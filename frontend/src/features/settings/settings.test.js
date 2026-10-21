@@ -291,10 +291,18 @@ describe('Settings Module & Data Management (Batch 5)', () => {
     expect(storage.get('reversals', [])).toEqual([]);
     expect(mockStoreState.reversals).toEqual([]);
 
+    // 19b. Expenses & Expense Categories cleared A to Z
+    expect(storage.get('expenses', [])).toEqual([]);
+    expect(storage.get('expense_categories', [])).toEqual([]);
+    expect(mockStoreState.expenses).toEqual([]);
+    expect(mockStoreState.expenseCategories).toEqual([]);
+
     // 20. Operational persistence cleared
     expect(storage.get('categories')).toHaveLength(0);
     expect(storage.get('menu_items')).toHaveLength(0);
     expect(storage.get('orders')).toHaveLength(0);
+    expect(storage.get('expenses')).toHaveLength(0);
+    expect(storage.get('expense_categories')).toHaveLength(0);
 
     // 21. Settings return to safe defaults
     const resetSettings = storage.get('settings');

@@ -78,6 +78,7 @@ export async function resetApplicationData(store = null) {
     storage.set('orders', []);
     storage.set('reversals', []);
     storage.set('expenses', []);
+    storage.set('expense_categories', []);
     storage.set('tables', []);
     storage.set('shifts', []);
     storage.set('current_shift', null);
@@ -112,6 +113,7 @@ export async function resetApplicationData(store = null) {
         orders: [],
         reversals: [],
         expenses: [],
+        expenseCategories: [],
         tables: [],
         cart: [],
         notifications: [],

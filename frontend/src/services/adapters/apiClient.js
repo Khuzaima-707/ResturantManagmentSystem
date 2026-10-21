@@ -36,9 +36,15 @@ export async function apiRequest(endpoint, options = {}) {
 
   const token = storage.get('auth_token', null);
   const currentUser = storage.get('active_user', null) || storage.get('rms_user', null);
+  const currentUserId = currentUser?.id || currentUser?._id || (currentUser?.username ? `user_${currentUser.username}` : '');
+  const currentUserName = currentUser?.name || currentUser?.username || '';
+  const currentUserRole = currentUser?.role || '';
+
   const authHeaders = {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(currentUser?.role ? { 'x-user-role': currentUser.role } : {}),
+    ...(currentUserRole ? { 'x-user-role': currentUserRole } : {}),
+    ...(currentUserId ? { 'x-user-id': String(currentUserId) } : {}),
+    ...(currentUserName ? { 'x-user-name': String(currentUserName) } : {}),
   };
 
   const config = {
