@@ -35,7 +35,7 @@ export async function apiRequest(endpoint, options = {}) {
   const url = `${baseUrl}${cleanEndpoint}`;
 
   const token = storage.get('auth_token', null);
-  const currentUser = storage.get('rms_user', null);
+  const currentUser = storage.get('active_user', null) || storage.get('rms_user', null);
   const authHeaders = {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(currentUser?.role ? { 'x-user-role': currentUser.role } : {}),
@@ -76,6 +76,8 @@ export const api = {
     apiRequest(endpoint, { method: 'POST', body: JSON.stringify(body), ...options }),
   put: (endpoint, body, options) =>
     apiRequest(endpoint, { method: 'PUT', body: JSON.stringify(body), ...options }),
+  patch: (endpoint, body, options) =>
+    apiRequest(endpoint, { method: 'PATCH', body: JSON.stringify(body), ...options }),
   delete: (endpoint, options) => apiRequest(endpoint, { method: 'DELETE', ...options }),
 };
 

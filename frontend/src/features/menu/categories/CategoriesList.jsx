@@ -4,16 +4,15 @@ import { DataTable } from '../../../components/ui/DataTable';
 import { CategoryModal } from './CategoryModal';
 import { useAppStore } from '../../../store';
 import { cn } from '../../../utils/cn';
-import { sortCategories, parseSortOrder } from '../../../domain/rules';
+import { sortCategories, parseSortOrder, isDuplicateCategoryName } from '../../../domain/rules';
+import { isCashierUser } from '../../../domain/selectors/invoiceSelectors';
 
 export const CategoriesList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClose }) => {
   const { categories, items, addCategory, setCategoryStatus, deleteCategory, user } = useAppStore();
-  const isCashier = Boolean(
-    (user?.role?.toLowerCase().includes('cashier') && !user?.role?.toLowerCase().includes('admin')) ||
-    (user?.username?.toLowerCase() === 'cashier' && user?.username?.toLowerCase() !== 'admin')
-  );
+  const isCashier = isCashierUser(user);
 
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [quickAddError, setQuickAddError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Status');
   const [internalModalOpen, setInternalModalOpen] = useState(false);
@@ -96,6 +95,11 @@ export const CategoriesList = ({ isAddModalOpen: externalAddModalOpen, onAddModa
       // Do NOT open form/modal when empty; simply ignore
       return;
     }
+    if (isDuplicateCategoryName(trimmed, categories)) {
+      setQuickAddError('A category with this name already exists');
+      return;
+    }
+    setQuickAddError('');
     const slug = trimmed
       .toLowerCase()
       .replace(/\s+/g, '-')
@@ -237,22 +241,33 @@ export const CategoriesList = ({ isAddModalOpen: externalAddModalOpen, onAddModa
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         {/* Left Side: Quick Add for Admin, Pill Search Input for Cashier */}
         {!isCashier ? (
-          <form onSubmit={handleQuickAdd} className="flex items-center gap-2.5 flex-1 max-w-md">
-            <input
-              type="text"
-              value={newCategoryName}
-              onChange={(e) => setNewCategoryName(e.target.value)}
-              placeholder="Enter new category name..."
-              className="flex-1 min-w-[200px] px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#FF5C28] transition-colors"
-            />
-            <button
-              type="submit"
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#FF5C28] hover:bg-[#E04D1D] text-white text-xs font-semibold rounded-full shadow-xs transition-colors cursor-pointer shrink-0"
-            >
-              <FolderPlus className="w-3.5 h-3.5 stroke-[2]" />
-              <span>Add Category</span>
-            </button>
-          </form>
+          <div className="flex flex-col gap-1 flex-1 max-w-md">
+            <form onSubmit={handleQuickAdd} className="flex items-center gap-2.5 w-full">
+              <input
+                type="text"
+                value={newCategoryName}
+                onChange={(e) => {
+                  setNewCategoryName(e.target.value);
+                  if (quickAddError) setQuickAddError('');
+                }}
+                placeholder="Enter new category name..."
+                className={cn(
+                  'flex-1 min-w-[200px] px-4 py-2 bg-white border rounded-xl text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none transition-colors',
+                  quickAddError ? 'border-rose-400 focus:border-rose-500' : 'border-slate-200 focus:border-[#FF5C28]'
+                )}
+              />
+              <button
+                type="submit"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#FF5C28] hover:bg-[#E04D1D] text-white text-xs font-semibold rounded-full shadow-xs transition-colors cursor-pointer shrink-0"
+              >
+                <FolderPlus className="w-3.5 h-3.5 stroke-[2]" />
+                <span>Add Category</span>
+              </button>
+            </form>
+            {quickAddError && (
+              <p className="text-[11px] font-medium text-rose-500 pl-1">{quickAddError}</p>
+            )}
+          </div>
         ) : (
           <div className="relative w-full sm:w-72">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />

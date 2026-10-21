@@ -78,6 +78,7 @@ export const DEFAULT_SETTINGS = {
   taxEnabled: true,
   invoicePrefix: 'INV-',
   defaultOrderType: 'Dine-In',
+  defaultPaymentMethod: 'Cash',
   invoiceFooter: 'Thank you for dining with us! • Good Food • Good Mood',
 };
 
@@ -149,6 +150,7 @@ export function normalizeSettings(raw = {}) {
     ...(raw.pos || {}),
   };
   if (raw.defaultOrderType && (!raw.pos || !('defaultOrderType' in raw.pos))) pos.defaultOrderType = raw.defaultOrderType;
+  if (raw.defaultPaymentMethod && (!raw.pos || !('defaultPaymentMethod' in raw.pos))) pos.defaultPaymentMethod = raw.defaultPaymentMethod;
 
   const invoice = {
     ...defaults.invoice,
@@ -181,6 +183,7 @@ export function normalizeSettings(raw = {}) {
     taxEnabled: tax.enabled,
     invoicePrefix: raw.invoicePrefix || defaults.invoicePrefix,
     defaultOrderType: pos.defaultOrderType,
+    defaultPaymentMethod: pos.defaultPaymentMethod,
     invoiceFooter: invoice.footer,
   };
 }
@@ -230,6 +233,9 @@ export function mergeSettings(currentSettings, updates) {
   };
   if (updates.defaultOrderType && (!updates.pos || !('defaultOrderType' in updates.pos))) {
     updatedPos.defaultOrderType = updates.defaultOrderType;
+  }
+  if (updates.defaultPaymentMethod && (!updates.pos || !('defaultPaymentMethod' in updates.pos))) {
+    updatedPos.defaultPaymentMethod = updates.defaultPaymentMethod;
   }
 
   const updatedInvoice = {

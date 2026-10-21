@@ -41,11 +41,16 @@ export const protect = (req, res, next) => {
 export const isCashierRequest = (req) => {
   if (!req) return false;
 
-  const roleHeader = req.headers?.['x-user-role'];
-  if (roleHeader && String(roleHeader).toLowerCase().includes('cashier')) return true;
-  if (req.query?.role && String(req.query.role).toLowerCase().includes('cashier')) return true;
+  const checkIsCashier = (roleOrUsername) => {
+    if (!roleOrUsername) return false;
+    const str = String(roleOrUsername).toLowerCase().trim();
+    const isAdmin = str.includes('admin');
+    return !isAdmin && str.includes('cashier');
+  };
 
-  if (req.user?.role && String(req.user.role).toLowerCase().includes('cashier')) return true;
+  if (checkIsCashier(req.headers?.['x-user-role'])) return true;
+  if (checkIsCashier(req.query?.role)) return true;
+  if (checkIsCashier(req.user?.role) || checkIsCashier(req.user?.username)) return true;
 
   let token = null;
   if (
@@ -60,7 +65,7 @@ export const isCashierRequest = (req) => {
   if (token) {
     try {
       const decoded = jwt.verify(token, getJwtSecret());
-      if (decoded?.role && String(decoded.role).toLowerCase().includes('cashier')) {
+      if (checkIsCashier(decoded?.role) || checkIsCashier(decoded?.username)) {
         return true;
       }
     } catch {

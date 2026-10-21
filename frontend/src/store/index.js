@@ -29,7 +29,9 @@ import {
   repairDuplicateInvoiceNumbersLocally,
   getUserCartStorageKey,
   isNotificationVisibleToUser,
+  isCashierUser,
 } from '../domain/selectors/invoiceSelectors';
+import { getApiBaseUrl } from '../services/adapters/apiClient';
 
 /**
  * Global RMS Store
@@ -336,7 +338,7 @@ export const useAppStore = create((set, get) => ({
     const token = storage.get('auth_token', null);
     if (token) {
       const profiles = storage.get('user_profiles', {});
-      if (token.includes('cashier')) {
+      if (token.includes('cashier') && !token.includes('admin')) {
         return profiles.cashier || defaultUserProfiles.cashier;
       }
       return profiles.admin || defaultUserProfiles.admin;
@@ -428,7 +430,8 @@ export const useAppStore = create((set, get) => ({
       });
 
       // Background asynchronous token upgrade with backend (non-blocking)
-      fetch('/api/auth/login', {
+      const baseUrl = getApiBaseUrl();
+      fetch(`${baseUrl}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ usernameOrEmail, password }),
@@ -484,7 +487,8 @@ export const useAppStore = create((set, get) => ({
     }
 
     try {
-      const response = await fetch('/api/auth/login', {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ usernameOrEmail, password }),
@@ -492,7 +496,7 @@ export const useAppStore = create((set, get) => ({
       const data = await response.json();
       if (data.success && data.token) {
         storage.set('auth_token', data.token);
-        const role = (data.user?.role || '').toLowerCase().includes('cashier') ? 'cashier' : 'admin';
+        const role = isCashierUser(data.user) ? 'cashier' : 'admin';
         const userProfiles = storage.get('user_profiles', {});
         const customProfile = userProfiles[role] || {};
         const resolvedName =
@@ -539,7 +543,8 @@ export const useAppStore = create((set, get) => ({
 
   logout: async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      const baseUrl = getApiBaseUrl();
+      await fetch(`${baseUrl}/auth/logout`, { method: 'POST' });
     } catch {
       // ignore
     }
@@ -564,7 +569,8 @@ export const useAppStore = create((set, get) => ({
     storage.set('auth_credentials', creds);
 
     try {
-      const response = await fetch('/api/auth/change-password', {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/auth/change-password`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ targetRole: role, newPassword }),
@@ -599,15 +605,14 @@ export const useAppStore = create((set, get) => ({
       storage.set('active_user', updatedUser);
 
       // 2. Persist in user_profiles by role key so it never resets across logout/login
-      const userKey = (updatedUser.username || updatedUser.role || 'admin').toLowerCase().includes('cashier')
-        ? 'cashier'
-        : 'admin';
+      const userKey = isCashierUser(updatedUser) ? 'cashier' : 'admin';
       const userProfiles = storage.get('user_profiles', {});
       userProfiles[userKey] = updatedUser;
       storage.set('user_profiles', userProfiles);
 
       // 3. Asynchronously sync to backend profile endpoint
-      fetch('/api/auth/profile', {
+      const baseUrl = getApiBaseUrl();
+      fetch(`${baseUrl}/auth/profile`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

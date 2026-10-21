@@ -27,6 +27,7 @@ const AddonModalForm = ({
   const [type, setType] = useState(
     addon?.type || (addon?.name ? detectAddonType(addon.name) : 'Extra Protein')
   );
+  const [hasManuallySelectedType, setHasManuallySelectedType] = useState(Boolean(addon?.type));
   const [price, setPrice] = useState(addon?.price !== undefined ? String(addon.price) : '');
   const [costPrice, setCostPrice] = useState(
     addon?.costPrice !== undefined && addon?.costPrice !== null ? String(addon.costPrice) : ''

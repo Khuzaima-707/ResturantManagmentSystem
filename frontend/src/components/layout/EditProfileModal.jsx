@@ -9,6 +9,7 @@ import {
   saveImage,
   uploadImageToCloudinary,
 } from '../../services/persistence/imageStorage';
+import { isCashierUser } from '../../domain/selectors/invoiceSelectors';
 
 export const EditProfileModal = ({ isOpen, onClose }) => {
   const { user, updateUser } = useAppStore();
@@ -16,7 +17,7 @@ export const EditProfileModal = ({ isOpen, onClose }) => {
   const nameInputRef = useRef(null);
   const roleInputRef = useRef(null);
 
-  const isCashier = (user?.username || user?.role || '').toLowerCase().includes('cashier');
+  const isCashier = isCashierUser(user);
   const defaultName = isCashier ? 'Cashier 1' : 'John Holland';
   const defaultRole = isCashier ? 'Cashier' : 'Admin Cashier';
 

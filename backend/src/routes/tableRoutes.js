@@ -30,6 +30,7 @@ router.post('/:id/release', releaseTable);
 
 // Single table routes
 router.get('/:id', getTableById);
+router.patch('/:id/status', updateTable);
 router.put('/:id', validate(updateTableSchema), updateTable);
 router.delete('/:id', deleteTable);
 
