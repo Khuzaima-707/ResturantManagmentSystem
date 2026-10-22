@@ -88,7 +88,6 @@ export const AddExpenseModal = ({
   // UI States
   const [error, setError] = useState('');
   const [isUploading, setIsUploading] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Derive Entered By from authenticated user
   const isUserCashier = Boolean(
@@ -181,9 +180,11 @@ export const AddExpenseModal = ({
     setAttachmentPreview('');
   };
 
-  // Form Submit
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  // Form Submit (Instant 0ms submission)
+  const handleSubmit = (e) => {
+    if (e && e.preventDefault) {
+      e.preventDefault();
+    }
     setError('');
 
     // Validation
@@ -204,8 +205,6 @@ export const AddExpenseModal = ({
     }
 
     try {
-      setIsSubmitting(true);
-
       const payload = {
         expenseDate: new Date(expenseDate).toISOString(),
         categoryId: categoryId || categoryNameSnapshot,
@@ -223,9 +222,9 @@ export const AddExpenseModal = ({
       };
 
       if (isEditing) {
-        await updateExpense(expenseToEdit.id, payload);
+        updateExpense(expenseToEdit.id, payload);
       } else {
-        await addExpense(payload);
+        addExpense(payload);
       }
 
       if (onSuccess) {
@@ -234,8 +233,6 @@ export const AddExpenseModal = ({
       onClose();
     } catch (err) {
       setError(err.message || 'Failed to save expense. Please check input values.');
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -510,36 +507,6 @@ export const AddExpenseModal = ({
                   )}
                 </div>
               )}
-
-              {/* Quick suggestions from Configured Settings Accounts only */}
-              {configuredPaymentAccounts.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  <span className="text-[10px] text-blue-600 font-semibold mr-1">Quick pick:</span>
-                  {configuredPaymentAccounts.map((acc) => {
-                    const accValue = `${acc.bankName || acc.channel}${acc.accountNumber ? ` - ${acc.accountNumber}` : ''}${acc.title ? ` (${acc.title})` : ''}`;
-                    const pillLabel = `${acc.bankName || acc.channel}${acc.title ? ` (${acc.title})` : ''}`;
-                    const isSelected = onlineMethodSnapshot === accValue;
-                    return (
-                      <button
-                        key={acc.id}
-                        type="button"
-                        onClick={() => {
-                          setIsCustomOnline(false);
-                          setOnlineMethodSnapshot(accValue);
-                        }}
-                        className={`px-2.5 py-0.5 text-[10px] font-medium rounded-full border transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                            : 'bg-white hover:bg-blue-100 text-blue-700 border-blue-200'
-                        }`}
-                      >
-                        {pillLabel}
-                        {acc.isDefault && <span className="ml-1 opacity-80">★</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
             </div>
           )}
 
@@ -648,7 +615,6 @@ export const AddExpenseModal = ({
           <button
             type="button"
             onClick={onClose}
-            disabled={isSubmitting}
             className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-200/70 rounded-full transition-colors cursor-pointer"
           >
             Cancel
@@ -656,10 +622,9 @@ export const AddExpenseModal = ({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={isSubmitting || isUploading}
+            disabled={isUploading}
             className="flex items-center gap-1.5 px-5 py-2 bg-[#FF5C28] hover:bg-[#E04D1D] disabled:opacity-60 text-white text-xs font-bold rounded-full shadow-xs transition-colors cursor-pointer"
           >
-            {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             <span>{isEditing ? 'Save Changes' : 'Post Expense'}</span>
           </button>
         </div>

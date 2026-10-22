@@ -958,12 +958,15 @@ export const useAppStore = create((set, get) => ({
       const data = await ExpenseRepository.getAll();
       if (Array.isArray(data)) {
         const current = get().expenses || [];
-        if (data.length > 0 || current.length === 0) {
-          storage.set('expenses', data);
-          set({ expenses: data });
-          return data;
-        }
-        return current;
+        const dataIds = new Set(data.map((e) => e.id || e._id));
+        const unsyncedCurrent = current.filter((c) => {
+          const cid = c.id || c._id;
+          return cid && !dataIds.has(cid);
+        });
+        const combined = [...unsyncedCurrent, ...data];
+        storage.set('expenses', combined);
+        set({ expenses: combined });
+        return combined;
       }
     } catch (err) {
       console.warn('[Store] fetchExpenses warning:', err.message);
@@ -971,66 +974,107 @@ export const useAppStore = create((set, get) => ({
     return get().expenses;
   },
 
-  addExpense: async (expense) => {
-    let result = expense;
-    try {
-      result = await ExpenseRepository.create(expense);
-    } catch (err) {
-      console.warn('[Store] Expense Atlas sync warning:', err.message);
-    }
+  addExpense: (expense) => {
+    const randomSuffix = Math.random().toString(36).substring(2, 6);
+    const tempId = expense.id || `exp-${Date.now()}-${randomSuffix}`;
+    const optimisticRecord = {
+      ...expense,
+      id: tempId,
+      status: expense.status || 'ACTIVE',
+      expenseDate: expense.expenseDate || new Date().toISOString(),
+      createdAt: expense.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // 1. Instant optimistic state update (0ms delay)
     const current = get().expenses || [];
-    const exists = current.some((e) => e.id === result.id);
-    const updated = exists
-      ? current.map((e) => (e.id === result.id ? result : e))
-      : [result, ...current];
+    const updated = [optimisticRecord, ...current.filter((e) => e.id !== tempId)];
     storage.set('expenses', updated);
     set({ expenses: updated });
-    return result;
+
+    // 2. Fire background sync to backend & MongoDB Atlas without blocking UI
+    ExpenseRepository.create(optimisticRecord)
+      .then((saved) => {
+        if (saved && (saved.id || saved._id)) {
+          const latest = get().expenses || [];
+          const replaced = latest.map((e) =>
+            e.id === tempId || e.id === saved.id || (saved._id && e._id === saved._id)
+              ? { ...optimisticRecord, ...saved }
+              : e
+          );
+          storage.set('expenses', replaced);
+          set({ expenses: replaced });
+        }
+      })
+      .catch((err) => {
+        console.warn('[Store] Expense background sync warning:', err.message);
+      });
+
+    return optimisticRecord;
   },
 
-  updateExpense: async (id, updates) => {
-    let result = null;
-    try {
-      result = await ExpenseRepository.update(id, updates);
-    } catch (err) {
-      console.warn('[Store] Expense update sync warning:', err.message);
-    }
-    const updated = (get().expenses || []).map((e) => {
-      if (e.id === id) {
-        return result || { ...e, ...updates, updatedAt: new Date().toISOString() };
+  updateExpense: (id, updates) => {
+    const current = get().expenses || [];
+    let updatedItem = null;
+    const updated = current.map((e) => {
+      if (e.id === id || e._id === id) {
+        updatedItem = { ...e, ...updates, updatedAt: new Date().toISOString() };
+        return updatedItem;
       }
       return e;
     });
     storage.set('expenses', updated);
     set({ expenses: updated });
-    return result;
+
+    ExpenseRepository.update(id, updates)
+      .then((saved) => {
+        if (saved && (saved.id || saved._id)) {
+          const latest = get().expenses || [];
+          const synced = latest.map((e) =>
+            e.id === id || e.id === saved.id || (saved._id && e._id === saved._id)
+              ? { ...e, ...saved }
+              : e
+          );
+          storage.set('expenses', synced);
+          set({ expenses: synced });
+        }
+      })
+      .catch((err) => {
+        console.warn('[Store] Expense update background sync warning:', err.message);
+      });
+
+    return updatedItem;
   },
 
-  voidExpense: async (id, voidPayload) => {
-    let result = null;
-    try {
-      result = await ExpenseRepository.void(id, voidPayload);
-    } catch (err) {
-      console.warn('[Store] Expense void sync warning:', err.message);
-    }
-    const updated = (get().expenses || []).map((e) => {
-      if (e.id === id) {
-        return (
-          result || {
-            ...e,
-            status: 'VOIDED',
-            voidReason: voidPayload?.voidReason || 'No reason provided',
-            voidedAt: new Date().toISOString(),
-            voidedByName: voidPayload?.voidedByName || 'Admin',
-            voidedByUserId: voidPayload?.voidedByUserId || '',
-          }
-        );
+  voidExpense: (id, voidPayload) => {
+    const current = get().expenses || [];
+    let voidedItem = null;
+    const updated = current.map((e) => {
+      if (e.id === id || e._id === id) {
+        voidedItem = {
+          ...e,
+          status: 'VOIDED',
+          voidReason: voidPayload?.voidReason || 'No reason provided',
+          voidedAt: new Date().toISOString(),
+          voidedByName: voidPayload?.voidedByName || 'Admin',
+          voidedByUserId: voidPayload?.voidedByUserId || '',
+          updatedAt: new Date().toISOString(),
+        };
+        return voidedItem;
       }
       return e;
     });
     storage.set('expenses', updated);
     set({ expenses: updated });
-    return result;
+
+    ExpenseRepository.void(id, voidPayload?.voidReason, {
+      id: voidPayload?.voidedByUserId || '',
+      name: voidPayload?.voidedByName || 'Admin',
+    }).catch((err) => {
+      console.warn('[Store] Expense void background sync warning:', err.message);
+    });
+
+    return voidedItem;
   },
 
   deleteExpense: (id) => {

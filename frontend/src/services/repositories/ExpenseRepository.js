@@ -27,7 +27,7 @@ export const ExpenseRepository = {
             const k = loc?.id || loc?._id;
             return k && !backendIds.has(k);
           });
-          const merged = [...res.data, ...unsynced];
+          const merged = [...unsynced, ...res.data];
           storage.set(EXPENSES_STORAGE_KEY, merged);
           return merged;
         } else if (local.length > 0) {
@@ -74,7 +74,7 @@ export const ExpenseRepository = {
       const res = await api.post('/expenses', expensePayload);
       if (res && res.success && res.data) {
         const all = storage.get(EXPENSES_STORAGE_KEY, []) || [];
-        const updated = [res.data, ...all.filter((e) => e.id !== res.data.id)];
+        const updated = [res.data, ...all.filter((e) => e.id !== res.data.id && e.id !== expensePayload.id && (!res.data._id || e._id !== res.data._id))];
         storage.set(EXPENSES_STORAGE_KEY, updated);
         return res.data;
       }
@@ -91,7 +91,8 @@ export const ExpenseRepository = {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    storage.set(EXPENSES_STORAGE_KEY, [fallbackExpense, ...all]);
+    const updated = [fallbackExpense, ...all.filter((e) => e.id !== fallbackExpense.id)];
+    storage.set(EXPENSES_STORAGE_KEY, updated);
     return fallbackExpense;
   },
 
