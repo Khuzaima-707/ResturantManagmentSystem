@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, AlertCircle, CheckCircle2, Ban, ExternalLink } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
+import { formatExpenseDisplayDate } from '../../domain/rules/expenseRules';
 
 /**
  * ExpenseDetailModal Component
@@ -20,14 +21,7 @@ export const ExpenseDetailModal = ({
   const isVoided = (expense.status || '').toUpperCase() === 'VOIDED';
 
   const rawDate = expense.expenseDate || expense.createdAt;
-  const d = rawDate ? new Date(rawDate) : new Date(0);
-  const dateFormatted = rawDate
-    ? d.toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      })
-    : 'N/A';
+  const dateFormatted = formatExpenseDisplayDate(rawDate);
 
   return (
     <div
@@ -174,9 +168,9 @@ export const ExpenseDetailModal = ({
             <div className="flex justify-between">
               <span>Created At:</span>
               <span className="font-medium text-slate-700">
-                {expense.createdAt || expense.expenseDate
-                  ? new Date(expense.createdAt || expense.expenseDate).toLocaleString()
-                  : 'N/A'}
+                {expense.createdAt
+                  ? new Date(expense.createdAt).toLocaleString()
+                  : formatExpenseDisplayDate(expense.expenseDate)}
               </span>
             </div>
             {expense.updatedAt && (

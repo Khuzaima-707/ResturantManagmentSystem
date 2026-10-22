@@ -1,4 +1,5 @@
 import { formatCurrency } from '../../utils/formatters';
+import { formatExpenseDisplayDate } from '../../domain/rules/expenseRules';
 
 /**
  * Export filtered expenses to CSV file
@@ -46,7 +47,7 @@ export function exportExpensesCsv({
 
   // Data rows
   expenses.forEach((e) => {
-    const d = new Date(e.expenseDate || e.createdAt || Date.now()).toLocaleDateString();
+    const d = formatExpenseDisplayDate(e.expenseDate || e.createdAt);
     rows.push([
       `"${d}"`,
       `"${(e.categoryNameSnapshot || e.category || '').replace(/"/g, '""')}"`,
@@ -99,7 +100,7 @@ export function printExpenseReport({
 
   const rowsHtml = expenses
     .map((e) => {
-      const d = new Date(e.expenseDate || e.createdAt || Date.now()).toLocaleDateString();
+      const d = formatExpenseDisplayDate(e.expenseDate || e.createdAt);
       const isVoid = (e.status || '').toUpperCase() === 'VOIDED';
       return `
       <tr style="${isVoid ? 'color: #94a3b8; text-decoration: line-through;' : ''}">

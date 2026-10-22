@@ -114,6 +114,57 @@ export function validateExpensePayload(payload) {
 }
 
 /**
+ * Returns the local date string in YYYY-MM-DD format based on user's local timezone.
+ * Unlike date.toISOString().split('T')[0], this never shifts the date across midnight.
+ */
+export function getLocalExpenseDateString(date = new Date()) {
+  if (!date) return '';
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Converts a YYYY-MM-DD local date string or date value into an ISO string
+ * that preserves the user's local day and time.
+ */
+export function toLocalExpenseIsoString(dateVal) {
+  if (!dateVal) return new Date().toISOString();
+  if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateVal.trim())) {
+    const [year, month, day] = dateVal.trim().split('-').map(Number);
+    const now = new Date();
+    // Use local year, month, day with current local time
+    const localD = new Date(year, month - 1, day, now.getHours(), now.getMinutes(), now.getSeconds());
+    return localD.toISOString();
+  }
+  const d = new Date(dateVal);
+  return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+}
+
+/**
+ * Formats an expense date for display (e.g. "Oct 22, 2026").
+ * Corrects for timezone offsets so calendar dates (like YYYY-MM-DD or UTC-midnight)
+ * are always displayed as the exact date intended.
+ */
+export function formatExpenseDisplayDate(dateVal, options = { month: 'short', day: 'numeric', year: 'numeric' }) {
+  if (!dateVal) return 'N/A';
+  if (typeof dateVal === 'string') {
+    // If it's a date-only string or UTC-midnight string like 2026-10-22 or 2026-10-22T00:00:00...
+    if (/^\d{4}-\d{2}-\d{2}(T00:00:00(\.000)?Z?)?$/.test(dateVal.trim())) {
+      const [year, month, day] = dateVal.trim().slice(0, 10).split('-').map(Number);
+      const localD = new Date(year, month - 1, day);
+      return localD.toLocaleDateString(undefined, options);
+    }
+  }
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return 'N/A';
+  return d.toLocaleDateString(undefined, options);
+}
+
+/**
  * Resolves Date interval for standard RMS filter presets
  */
 export function resolveExpenseDateInterval(preset = 'All Dates', customRange = null, refDate = new Date()) {
@@ -209,7 +260,13 @@ export function filterExpenses(expenses = [], filters = {}) {
     if (dateInterval) {
       const rawDate = exp.expenseDate || exp.date || exp.createdAt;
       if (!rawDate) return false;
-      const d = typeof rawDate === 'string' ? parseISO(rawDate) : new Date(rawDate);
+      let d;
+      if (typeof rawDate === 'string' && /^\d{4}-\d{2}-\d{2}(T00:00:00(\.000)?Z?)?$/.test(rawDate.trim())) {
+        const [year, month, day] = rawDate.trim().slice(0, 10).split('-').map(Number);
+        d = new Date(year, month - 1, day, 12, 0, 0); // Noon local time to avoid timezone edge boundary
+      } else {
+        d = typeof rawDate === 'string' ? parseISO(rawDate) : new Date(rawDate);
+      }
       if (isNaN(d.getTime())) return false;
       if (!isWithinInterval(d, dateInterval)) return false;
     }

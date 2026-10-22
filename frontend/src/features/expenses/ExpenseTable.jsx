@@ -2,6 +2,7 @@ import React from 'react';
 import { Eye, Edit3, Ban } from 'lucide-react';
 import { DataTable } from '../../components/ui/DataTable';
 import { formatCurrency } from '../../utils/formatters';
+import { formatExpenseDisplayDate } from '../../domain/rules/expenseRules';
 
 /**
  * ExpenseTable Component
@@ -26,15 +27,10 @@ export const ExpenseTable = ({
       headerClassName: 'w-24 whitespace-nowrap',
       cellClassName: 'whitespace-nowrap',
       render: (val, row) => {
-        const d = new Date(val || row.createdAt || Date.now());
         return (
           <div className="text-xs">
             <span className="font-semibold text-slate-800 block">
-              {d.toLocaleDateString(undefined, {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-              })}
+              {formatExpenseDisplayDate(val || row.createdAt)}
             </span>
           </div>
         );

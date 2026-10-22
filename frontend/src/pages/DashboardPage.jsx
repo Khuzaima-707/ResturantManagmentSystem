@@ -95,12 +95,18 @@ export const DashboardPage = () => {
 
   // Outstanding receivables summary
   const outstandingSummary = useMemo(() => {
+    if (isCashier) {
+      return {
+        count: kpis.outstandingBillsCount || 0,
+        totalDue: kpis.outstandingDue || 0,
+      };
+    }
     const pendings = (effectiveOrders || []).filter(
       (o) => Number(o.balanceDue) > 0 && (o.status || '').toLowerCase() !== 'reversed'
     );
     const totalDue = pendings.reduce((sum, o) => sum + (Number(o.balanceDue) || 0), 0);
     return { count: pendings.length, totalDue };
-  }, [effectiveOrders]);
+  }, [effectiveOrders, isCashier, kpis.outstandingBillsCount, kpis.outstandingDue]);
 
   // Derive Gross Profit for management dashboard KPI indicator (Hidden for Cashier)
   const activeProfit = useMemo(() => {

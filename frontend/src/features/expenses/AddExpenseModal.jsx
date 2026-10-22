@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Upload, CheckCircle2, AlertCircle, Banknote, Globe, Loader2 } from 'lucide-react';
 import { useAppStore } from '../../store';
+import { getLocalExpenseDateString, toLocalExpenseIsoString } from '../../domain/rules/expenseRules';
 
 /**
  * AddExpenseModal Component
@@ -48,9 +49,9 @@ export const AddExpenseModal = ({
   // Form Fields
   const [expenseDate, setExpenseDate] = useState(() => {
     if (expenseToEdit?.expenseDate) {
-      return new Date(expenseToEdit.expenseDate).toISOString().split('T')[0];
+      return getLocalExpenseDateString(expenseToEdit.expenseDate);
     }
-    return new Date().toISOString().split('T')[0];
+    return getLocalExpenseDateString(new Date());
   });
   const [categoryId, setCategoryId] = useState(() => defaultCategoryId);
   const [categoryNameSnapshot, setCategoryNameSnapshot] = useState(() => defaultCategory);
@@ -206,7 +207,8 @@ export const AddExpenseModal = ({
 
     try {
       const payload = {
-        expenseDate: new Date(expenseDate).toISOString(),
+        expenseDate: toLocalExpenseIsoString(expenseDate),
+        createdAt: isEditing ? (expenseToEdit?.createdAt || new Date().toISOString()) : new Date().toISOString(),
         categoryId: categoryId || categoryNameSnapshot,
         category: categoryNameSnapshot.trim(),
         categoryNameSnapshot: categoryNameSnapshot.trim(),

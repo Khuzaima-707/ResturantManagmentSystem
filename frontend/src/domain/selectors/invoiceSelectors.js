@@ -367,9 +367,16 @@ export function isInvoiceVisibleToUser(order, user) {
 
   const orderUserId = String(order.createdByUserId || '').trim();
   const orderRole = String(order.createdByRole || '').toLowerCase();
+  const orderCashier = String(order.cashierName || order.createdByName || '').toLowerCase();
 
   // If order was created by an admin, cashier must NEVER see it
-  if (orderRole === 'admin') {
+  const isCreatedByAdmin =
+    orderRole.includes('admin') ||
+    orderUserId.toLowerCase().includes('admin') ||
+    orderCashier.includes('admin') ||
+    orderCashier.includes('john holland');
+
+  if (isCreatedByAdmin) {
     return false;
   }
 
