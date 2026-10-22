@@ -957,9 +957,13 @@ export const useAppStore = create((set, get) => ({
     try {
       const data = await ExpenseRepository.getAll();
       if (Array.isArray(data)) {
-        storage.set('expenses', data);
-        set({ expenses: data });
-        return data;
+        const current = get().expenses || [];
+        if (data.length > 0 || current.length === 0) {
+          storage.set('expenses', data);
+          set({ expenses: data });
+          return data;
+        }
+        return current;
       }
     } catch (err) {
       console.warn('[Store] fetchExpenses warning:', err.message);
@@ -1042,9 +1046,13 @@ export const useAppStore = create((set, get) => ({
     try {
       const data = await ExpenseRepository.getCategories();
       if (Array.isArray(data)) {
-        storage.set('expense_categories', data);
-        set({ expenseCategories: data });
-        return data;
+        const current = get().expenseCategories || [];
+        if (data.length > 0 || current.length === 0) {
+          storage.set('expense_categories', data);
+          set({ expenseCategories: data });
+          return data;
+        }
+        return current;
       }
     } catch (err) {
       console.warn('[Store] fetchExpenseCategories warning:', err.message);

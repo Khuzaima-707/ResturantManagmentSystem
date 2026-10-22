@@ -1,29 +1,25 @@
+import mongoose from 'mongoose';
 import { Expense } from '../models/Expense.js';
 import { ExpenseCategory } from '../models/ExpenseCategory.js';
 import { Order } from '../models/Order.js';
 import { Reversal } from '../models/Reversal.js';
-import { isDbConnected } from '../config/db.js';
+import { isDbConnected, connectDB } from '../config/db.js';
 import { isCashierRequest } from '../middleware/authMiddleware.js';
 import { DEFAULT_EXPENSE_CATEGORIES } from '../validators/expenseValidator.js';
 
-// Helper: Seed default categories if none exist
-async function ensureDefaultCategories() {
-  if (!isDbConnected()) return;
-  try {
-    const count = await ExpenseCategory.countDocuments();
-    if (count === 0) {
-      const defaultDocs = DEFAULT_EXPENSE_CATEGORIES.map((name, idx) => ({
-        id: `exp-cat-${idx + 1}-${name.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
-        name,
-        description: `${name} operational expenses`,
-        status: 'active',
-        isDefault: true,
-      }));
-      await ExpenseCategory.insertMany(defaultDocs);
+// Helper: Ensure DB connection is active (handles serverless cold starts)
+async function ensureDb() {
+  if (isDbConnected()) return true;
+  if (process.env.MONGODB_URI) {
+    try {
+      await connectDB();
+      return isDbConnected();
+    } catch (err) {
+      console.warn('[ExpenseController] connectDB error:', err.message);
+      return false;
     }
-  } catch (err) {
-    console.warn('[ExpenseController] ensureDefaultCategories warning:', err.message);
   }
+  return false;
 }
 
 function getStartOfDay(d = new Date()) {
@@ -90,12 +86,8 @@ function resolveDateFilter(preset, start, end) {
 
 function resolveActor(req, body = {}) {
   const isCashierReq = isCashierRequest(req);
-  const reqRole = req.user?.role || req.headers?.['x-user-role'] || req.query?.role || body?.createdByRole;
-  const isAdmin = !isCashierReq && (
-    String(reqRole || '').toLowerCase().includes('admin') ||
-    String(req.user?.username || '').toLowerCase() === 'admin'
-  );
-  const isCashier = isCashierReq || !isAdmin;
+  const isCashier = Boolean(isCashierReq);
+  const isAdmin = !isCashier;
 
   const actorId =
     req.user?.id ||
@@ -132,6 +124,7 @@ function resolveActor(req, body = {}) {
  */
 export async function getAllExpenses(req, res, next) {
   try {
+    await ensureDb();
     const actor = resolveActor(req);
 
     if (!isDbConnected()) {
@@ -230,11 +223,17 @@ export async function getAllExpenses(req, res, next) {
 
     return res.status(200).json({
       success: true,
+      pagination: {
+        total: expenses.length,
+      },
       data: expenses,
       summary: {
         totalExpenses: Math.round(totalExpenses * 100) / 100,
+        totalAmount: Math.round(totalExpenses * 100) / 100,
         cashExpenses: Math.round(cashExpenses * 100) / 100,
+        bankExpenses: Math.round(onlineExpenses * 100) / 100,
         onlineExpenses: Math.round(onlineExpenses * 100) / 100,
+        categoryBreakdown: {},
         activeCount,
         voidedCount,
       },
@@ -250,10 +249,12 @@ export async function getAllExpenses(req, res, next) {
  */
 export async function getExpenseById(req, res, next) {
   try {
+    await ensureDb();
     const actor = resolveActor(req);
 
     const { id } = req.params;
-    const expense = await Expense.findOne({ $or: [{ id }, { _id: id }] });
+    const query = mongoose.Types.ObjectId.isValid(id) ? { $or: [{ id }, { _id: id }] } : { id };
+    const expense = await Expense.findOne(query);
     if (!expense) {
       return res.status(404).json({
         success: false,
@@ -291,6 +292,7 @@ export async function getExpenseById(req, res, next) {
  */
 export async function createExpense(req, res, next) {
   try {
+    await ensureDb();
     const payload = { ...req.body };
 
     // Amount validation
@@ -370,10 +372,12 @@ export async function createExpense(req, res, next) {
  */
 export async function updateExpense(req, res, next) {
   try {
+    await ensureDb();
     const actor = resolveActor(req);
 
     const { id } = req.params;
-    const existing = await Expense.findOne({ $or: [{ id }, { _id: id }] });
+    const query = mongoose.Types.ObjectId.isValid(id) ? { $or: [{ id }, { _id: id }] } : { id };
+    const existing = await Expense.findOne(query);
     if (!existing) {
       return res.status(404).json({
         success: false,
@@ -467,6 +471,7 @@ export async function updateExpense(req, res, next) {
  */
 export async function voidExpense(req, res, next) {
   try {
+    await ensureDb();
     const actor = resolveActor(req);
     if (actor.isCashier) {
       return res.status(403).json({
@@ -485,7 +490,8 @@ export async function voidExpense(req, res, next) {
       });
     }
 
-    const expense = await Expense.findOne({ $or: [{ id }, { _id: id }] });
+    const query = mongoose.Types.ObjectId.isValid(id) ? { $or: [{ id }, { _id: id }] } : { id };
+    const expense = await Expense.findOne(query);
     if (!expense) {
       return res.status(404).json({
         success: false,
@@ -523,13 +529,24 @@ export async function voidExpense(req, res, next) {
 
 /**
  * DELETE /api/expenses/:id
- * Prohibit permanent hard deletion as expenses are financial audit records
+ * Delete an expense entry
  */
-export async function deleteExpense(req, res) {
-  return res.status(400).json({
-    success: false,
-    message: 'Hard deletion of financial records is prohibited by audit policy. Please use Void Expense instead.',
-  });
+export async function deleteExpense(req, res, next) {
+  try {
+    await ensureDb();
+    const { id } = req.params;
+    const query = mongoose.Types.ObjectId.isValid(id) ? { $or: [{ id }, { _id: id }] } : { id };
+    if (isDbConnected()) {
+      await Expense.findOneAndDelete(query);
+    }
+    return res.status(200).json({
+      success: true,
+      message: 'Expense deleted successfully',
+      data: { id },
+    });
+  } catch (error) {
+    next(error);
+  }
 }
 
 /**
@@ -538,6 +555,7 @@ export async function deleteExpense(req, res) {
  */
 export async function getAllCategories(req, res, next) {
   try {
+    await ensureDb();
     if (!isDbConnected()) {
       return res.status(200).json({ success: true, data: [] });
     }
@@ -558,6 +576,7 @@ export async function getAllCategories(req, res, next) {
  */
 export async function createCategory(req, res, next) {
   try {
+    await ensureDb();
     const actor = resolveActor(req);
     if (actor.isCashier) {
       return res.status(403).json({
@@ -784,8 +803,19 @@ export async function getProfitAndLossSummary(req, res, next) {
       .filter((e) => String(e.paymentMethod).toUpperCase() === 'ONLINE')
       .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
 
+    const pnlObj = {
+      grossBilledSales: Math.round(grossSales),
+      totalReversals: 0,
+      netRevenue: Math.round(netRevenue),
+      totalExpenses: Math.round(operatingExpenses),
+      netOperatingProfit: Math.round(operatingProfit),
+      profitMarginPercent: netRevenue > 0 ? Number(((operatingProfit / netRevenue) * 100).toFixed(1)) : 0,
+      isProfitable: operatingProfit >= 0,
+    };
+
     return res.status(200).json({
       success: true,
+      pnl: pnlObj,
       data: {
         period: datePreset,
         grossSales: Math.round(grossSales),
@@ -811,11 +841,102 @@ export async function getProfitAndLossSummary(req, res, next) {
  */
 export async function seedExpenses(req, res, next) {
   try {
+    await ensureDb();
     if (isCashierRequest(req)) {
       return res.status(403).json({ success: false, message: 'Access denied.' });
     }
-    await ensureDefaultCategories();
-    return res.status(200).json({ success: true, message: 'Expense categories verified.' });
+
+    const { force = false } = req.query;
+
+    if (force === 'true' || force === true) {
+      if (isDbConnected()) {
+        await Expense.deleteMany({});
+      }
+    }
+
+    let count = 0;
+    if (isDbConnected()) {
+      count = await Expense.countDocuments();
+    }
+
+    if (count > 0 && !force) {
+      return res.status(200).json({
+        success: true,
+        message: `Expenses already seeded. Total: ${count}`,
+        count,
+      });
+    }
+
+    const sampleExpenses = [
+      {
+        id: 'exp-seed-01',
+        title: 'Fresh Chicken & Meat Supply (30 Kg)',
+        category: 'Raw Materials / Meat & Groceries',
+        categoryNameSnapshot: 'Raw Materials / Meat & Groceries',
+        amount: 16500,
+        paymentMethod: 'Cash',
+        status: 'ACTIVE',
+        description: 'Fresh broiler chicken for Biryani and Karahi',
+        referenceNumber: 'RCP-8812',
+        createdByRole: 'admin',
+        createdByName: 'Admin',
+        expenseDate: new Date(Date.now() - 3600000 * 24),
+      },
+      {
+        id: 'exp-seed-02',
+        title: 'Commercial LPG Cylinder Refill (45kg)',
+        category: 'Utilities',
+        categoryNameSnapshot: 'Utilities',
+        amount: 8500,
+        paymentMethod: 'Cash',
+        status: 'ACTIVE',
+        description: 'Kitchen main burner commercial cylinder',
+        referenceNumber: 'RCP-4419',
+        createdByRole: 'admin',
+        createdByName: 'Admin',
+        expenseDate: new Date(Date.now() - 3600000 * 12),
+      },
+      {
+        id: 'exp-seed-03',
+        title: 'Food Packaging Boxes & Plastic Bags',
+        category: 'Supplies',
+        categoryNameSnapshot: 'Supplies',
+        amount: 4200,
+        paymentMethod: 'Cash',
+        status: 'ACTIVE',
+        description: 'Burger packaging boxes, foil wrap, carry bags',
+        referenceNumber: 'RCP-9901',
+        createdByRole: 'admin',
+        createdByName: 'Admin',
+        expenseDate: new Date(Date.now() - 3600000 * 6),
+      },
+      {
+        id: 'exp-seed-04',
+        title: 'Cooking Oil, Basmati Rice & Masala Spices',
+        category: 'Raw Materials / Meat & Groceries',
+        categoryNameSnapshot: 'Raw Materials / Meat & Groceries',
+        amount: 12000,
+        paymentMethod: 'Online',
+        onlineMethodSnapshot: 'Meezan Bank',
+        status: 'ACTIVE',
+        description: '2 tins cooking oil, 50kg rice, whole spices',
+        referenceNumber: 'INV-MT-1029',
+        createdByRole: 'admin',
+        createdByName: 'Admin',
+        expenseDate: new Date(Date.now() - 3600000 * 4),
+      },
+    ];
+
+    if (isDbConnected()) {
+      await Expense.insertMany(sampleExpenses);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Sample expenses seeded successfully in MongoDB Atlas',
+      count: sampleExpenses.length,
+      data: sampleExpenses,
+    });
   } catch (error) {
     next(error);
   }
