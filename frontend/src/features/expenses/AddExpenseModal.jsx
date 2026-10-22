@@ -1,26 +1,12 @@
 import React, { useState } from 'react';
 import { X, Upload, CheckCircle2, AlertCircle, Banknote, Globe, Loader2 } from 'lucide-react';
 import { useAppStore } from '../../store';
-import { DEFAULT_EXPENSE_CATEGORIES } from '../../domain/rules/expenseRules';
-
-const POPULAR_ONLINE_SUGGESTIONS = [
-  'JazzCash',
-  'Easypaisa',
-  'Meezan Bank',
-  'HBL',
-  'UBL',
-  'NayaPay',
-  'SadaPay',
-  'Bank Alfalah',
-  'Owner Account',
-  'Restaurant Wallet',
-];
 
 /**
  * AddExpenseModal Component
  * Handles creating new expense entries or editing active ones.
  * - Strict payment methods: Cash or Online only
- * - When Online: Free text Online Method / Account * required
+ * - When Online: Accounts pulled from Settings -> Payment Accounts (or custom)
  * - Auto-derives Entered By from authenticated user
  * - Attachment upload via Cloudinary (/api/upload)
  * - Submission locking to prevent duplicate posting
@@ -32,18 +18,24 @@ export const AddExpenseModal = ({
   categories = [],
   onSuccess,
 }) => {
-  const { user, addExpense, updateExpense } = useAppStore();
+  const { user, addExpense, updateExpense, settings } = useAppStore();
 
   const isEditing = Boolean(expenseToEdit);
   const isOnlineEdit = (expenseToEdit?.paymentMethod || '').toUpperCase() === 'ONLINE';
 
-  // Available Categories (filter active ones for selection)
+  // Available Categories (only show configured active categories, no hardcoded fallback)
   const activeCategories = React.useMemo(() => {
-    if (categories && categories.length > 0) {
-      return categories.filter((c) => c.status !== 'inactive');
+    if (Array.isArray(categories)) {
+      return categories.filter((c) => c && c.status !== 'inactive');
     }
-    return DEFAULT_EXPENSE_CATEGORIES.map((name) => ({ id: name, name }));
+    return [];
   }, [categories]);
+
+  // Configured online payment accounts from Settings
+  const configuredPaymentAccounts = React.useMemo(() => {
+    const list = Array.isArray(settings?.paymentAccounts) ? settings.paymentAccounts : [];
+    return list.filter((a) => a && a.isActive !== false);
+  }, [settings?.paymentAccounts]);
 
   const defaultCategory =
     expenseToEdit?.categoryNameSnapshot ||
@@ -63,14 +55,31 @@ export const AddExpenseModal = ({
   const [categoryId, setCategoryId] = useState(() => defaultCategoryId);
   const [categoryNameSnapshot, setCategoryNameSnapshot] = useState(() => defaultCategory);
   const isCustomInitially = Boolean(
-    defaultCategory &&
-    activeCategories.length > 0 &&
-    !activeCategories.some((c) => c.name.toLowerCase() === defaultCategory.toLowerCase())
+    activeCategories.length === 0 ||
+    (defaultCategory &&
+      !activeCategories.some((c) => c.name.toLowerCase() === defaultCategory.toLowerCase()))
   );
   const [isCustomCategory, setIsCustomCategory] = useState(isCustomInitially);
   const [amount, setAmount] = useState(() => (expenseToEdit?.amount != null ? String(expenseToEdit.amount) : ''));
   const [paymentMethod, setPaymentMethod] = useState(() => (isOnlineEdit ? 'Online' : 'Cash'));
   const [onlineMethodSnapshot, setOnlineMethodSnapshot] = useState(() => expenseToEdit?.onlineMethodSnapshot || '');
+
+  const isCustomOnlineInitially = Boolean(
+    configuredPaymentAccounts.length === 0 ||
+    (expenseToEdit?.onlineMethodSnapshot &&
+      !configuredPaymentAccounts.some((a) => {
+        const fullVal = `${a.bankName || a.channel}${a.accountNumber ? ` - ${a.accountNumber}` : ''}${a.title ? ` (${a.title})` : ''}`;
+        const shortVal = a.bankName || a.channel || '';
+        const titleVal = a.title || '';
+        const cur = (expenseToEdit.onlineMethodSnapshot || '').toLowerCase().trim();
+        return (
+          cur === fullVal.toLowerCase().trim() ||
+          cur === shortVal.toLowerCase().trim() ||
+          cur === titleVal.toLowerCase().trim()
+        );
+      }))
+  );
+  const [isCustomOnline, setIsCustomOnline] = useState(isCustomOnlineInitially);
   const [description, setDescription] = useState(() => expenseToEdit?.description || '');
   const [referenceNumber, setReferenceNumber] = useState(() => expenseToEdit?.referenceNumber || '');
   const [attachment, setAttachment] = useState(() => expenseToEdit?.attachment || '');
@@ -290,31 +299,36 @@ export const AddExpenseModal = ({
                   {isCustomCategory ? 'Custom Category' : 'Expense Category'}{' '}
                   <span className="text-rose-500">*</span>
                 </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsCustomCategory(!isCustomCategory);
-                    if (!isCustomCategory) {
-                      setCategoryNameSnapshot('');
-                      setCategoryId('');
-                    }
-                  }}
-                  className={`text-[11px] font-bold cursor-pointer transition-colors ${
-                    isCustomCategory
-                      ? 'text-slate-500 hover:text-slate-800'
-                      : 'text-[#FF5C28] hover:underline'
-                  }`}
-                >
-                  {isCustomCategory ? '← Select from list' : '+ Type Custom'}
-                </button>
+                {activeCategories.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCustomCategory(!isCustomCategory);
+                      if (!isCustomCategory) {
+                        setCategoryNameSnapshot('');
+                        setCategoryId('');
+                      }
+                    }}
+                    className={`text-[11px] font-bold cursor-pointer transition-colors ${
+                      isCustomCategory
+                        ? 'text-slate-500 hover:text-slate-800'
+                        : 'text-[#FF5C28] hover:underline'
+                    }`}
+                  >
+                    {isCustomCategory ? '← Select from list' : '+ Type Custom'}
+                  </button>
+                ) : (
+                  <span className="text-[10px] text-slate-400 font-medium">
+                    (No categories added yet)
+                  </span>
+                )}
               </div>
 
-              {isCustomCategory ? (
+              {isCustomCategory || activeCategories.length === 0 ? (
                 <div className="relative">
                   <input
                     type="text"
                     required
-                    autoFocus
                     placeholder="Type custom category name..."
                     value={categoryNameSnapshot}
                     onChange={(e) => {
@@ -424,31 +438,108 @@ export const AddExpenseModal = ({
           {/* 3. Conditional Online Method / Account */}
           {paymentMethod === 'Online' && (
             <div className="p-3 bg-blue-50/50 border border-blue-200/80 rounded-xl space-y-2 animate-in fade-in duration-150">
-              <label className="block text-xs font-bold text-blue-950">
-                Online Method / Account <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="Type JazzCash, Easypaisa, Meezan Bank, HBL, SadaPay..."
-                value={onlineMethodSnapshot}
-                onChange={(e) => setOnlineMethodSnapshot(e.target.value)}
-                className="w-full h-9 px-3 bg-white border border-blue-200 rounded-lg text-xs font-medium text-slate-800 placeholder-blue-300 focus:outline-none focus:border-blue-500"
-              />
-              {/* Quick suggestions */}
-              <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                <span className="text-[10px] text-blue-600 font-semibold mr-1">Quick pick:</span>
-                {POPULAR_ONLINE_SUGGESTIONS.slice(0, 6).map((sugg) => (
+              <div className="flex items-center justify-between mb-0.5">
+                <label className="block text-xs font-bold text-blue-950">
+                  {isCustomOnline ? 'Custom Online Method / Account' : 'Online Method / Account'}{' '}
+                  <span className="text-rose-500">*</span>
+                </label>
+                {configuredPaymentAccounts.length > 0 && (
                   <button
-                    key={sugg}
                     type="button"
-                    onClick={() => setOnlineMethodSnapshot(sugg)}
-                    className="px-2 py-0.5 bg-white hover:bg-blue-100 text-blue-700 border border-blue-200 text-[10px] font-medium rounded-full transition-colors cursor-pointer"
+                    onClick={() => {
+                      setIsCustomOnline(!isCustomOnline);
+                      if (!isCustomOnline) {
+                        setOnlineMethodSnapshot('');
+                      }
+                    }}
+                    className="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer"
                   >
-                    {sugg}
+                    {isCustomOnline ? '← Select Online Account' : '+ Type Custom'}
                   </button>
-                ))}
+                )}
               </div>
+
+              {configuredPaymentAccounts.length > 0 && !isCustomOnline ? (
+                <select
+                  required
+                  value={onlineMethodSnapshot}
+                  onChange={(e) => {
+                    if (e.target.value === '__CUSTOM__') {
+                      setIsCustomOnline(true);
+                      setOnlineMethodSnapshot('');
+                    } else {
+                      setOnlineMethodSnapshot(e.target.value);
+                    }
+                  }}
+                  className="w-full h-9 px-3 bg-white border border-blue-200 rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-500 cursor-pointer"
+                >
+                  <option value="">Select Online Account</option>
+                  {configuredPaymentAccounts.map((acc) => {
+                    const accValue = `${acc.bankName || acc.channel}${acc.accountNumber ? ` - ${acc.accountNumber}` : ''}${acc.title ? ` (${acc.title})` : ''}`;
+                    return (
+                      <option key={acc.id} value={accValue}>
+                        {acc.bankName || acc.channel} - {acc.accountNumber} ({acc.title}){acc.isDefault ? ' ★' : ''}
+                      </option>
+                    );
+                  })}
+                  <option value="__CUSTOM__">+ Other / Custom Account...</option>
+                </select>
+              ) : (
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    placeholder={
+                      configuredPaymentAccounts.length > 0
+                        ? 'Type custom online account name...'
+                        : 'Type online method / account (e.g. JazzCash, Meezan Bank)...'
+                    }
+                    value={onlineMethodSnapshot}
+                    onChange={(e) => setOnlineMethodSnapshot(e.target.value)}
+                    className="w-full h-9 px-3 bg-white border border-blue-200 rounded-lg text-xs font-medium text-slate-800 placeholder-blue-300 focus:outline-none focus:border-blue-500"
+                  />
+                  {onlineMethodSnapshot && isCustomOnline && configuredPaymentAccounts.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setOnlineMethodSnapshot('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                      title="Clear"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Quick suggestions from Configured Settings Accounts only */}
+              {configuredPaymentAccounts.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[10px] text-blue-600 font-semibold mr-1">Quick pick:</span>
+                  {configuredPaymentAccounts.map((acc) => {
+                    const accValue = `${acc.bankName || acc.channel}${acc.accountNumber ? ` - ${acc.accountNumber}` : ''}${acc.title ? ` (${acc.title})` : ''}`;
+                    const pillLabel = `${acc.bankName || acc.channel}${acc.title ? ` (${acc.title})` : ''}`;
+                    const isSelected = onlineMethodSnapshot === accValue;
+                    return (
+                      <button
+                        key={acc.id}
+                        type="button"
+                        onClick={() => {
+                          setIsCustomOnline(false);
+                          setOnlineMethodSnapshot(accValue);
+                        }}
+                        className={`px-2.5 py-0.5 text-[10px] font-medium rounded-full border transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                            : 'bg-white hover:bg-blue-100 text-blue-700 border-blue-200'
+                        }`}
+                      >
+                        {pillLabel}
+                        {acc.isDefault && <span className="ml-1 opacity-80">★</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 

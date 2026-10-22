@@ -76,10 +76,10 @@ export const ExpenseTable = ({
       headerClassName: 'w-24 text-center whitespace-nowrap',
       align: 'center',
       cellClassName: 'text-center whitespace-nowrap',
-      render: (pm, row) => {
+      render: (pm) => {
         const isOnline = (pm || '').toUpperCase() === 'ONLINE';
         return (
-          <div className="flex flex-col items-center justify-center">
+          <div className="flex items-center justify-center">
             <span
               className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
                 isOnline
@@ -89,14 +89,6 @@ export const ExpenseTable = ({
             >
               {isOnline ? 'Online' : 'Cash'}
             </span>
-            {isOnline && row.onlineMethodSnapshot && (
-              <span
-                className="text-[10px] text-blue-600 font-semibold mt-0.5 truncate max-w-[100px]"
-                title={row.onlineMethodSnapshot}
-              >
-                {row.onlineMethodSnapshot}
-              </span>
-            )}
           </div>
         );
       },
