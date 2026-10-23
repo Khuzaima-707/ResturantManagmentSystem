@@ -18,13 +18,45 @@ export const ExpenseCategoryTab = () => {
     deleteExpenseCategory,
   } = useAppStore();
 
-  // Combine store categories (do not resurrect deleted categories)
+  // Combine store categories and auto-detected categories from expenses
   const categoriesList = React.useMemo(() => {
-    if (Array.isArray(expenseCategories)) {
-      return expenseCategories;
-    }
-    return [];
-  }, [expenseCategories]);
+    const list = Array.isArray(expenseCategories) ? [...expenseCategories] : [];
+    const knownNames = new Set(list.map((c) => (c.name || '').trim().toLowerCase()));
+
+    // Collect any categories already recorded in expenses (e.g. chai, Tea, Electricity Bill, bill)
+    (expenses || []).forEach((exp) => {
+      const catName = (exp.categoryNameSnapshot || exp.category || '').trim();
+      if (catName && !knownNames.has(catName.toLowerCase())) {
+        knownNames.add(catName.toLowerCase());
+        list.push({
+          id: exp.categoryId || `cat-${catName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+          name: catName,
+          description: '',
+          status: 'active',
+          createdAt: exp.createdAt || new Date().toISOString(),
+        });
+      }
+    });
+
+    return list;
+  }, [expenseCategories, expenses]);
+
+  // Synchronize any auto-detected categories into store/localStorage
+  React.useEffect(() => {
+    if (!Array.isArray(expenses) || expenses.length === 0) return;
+    const knownNames = new Set((expenseCategories || []).map((c) => (c.name || '').trim().toLowerCase()));
+    expenses.forEach((exp) => {
+      const catName = (exp.categoryNameSnapshot || exp.category || '').trim();
+      if (catName && !knownNames.has(catName.toLowerCase())) {
+        knownNames.add(catName.toLowerCase());
+        addExpenseCategory({
+          name: catName,
+          description: '',
+          status: 'active',
+        }).catch(() => {});
+      }
+    });
+  }, [expenses, expenseCategories, addExpenseCategory]);
 
   // Map category usage count
   const categoryUsageCount = React.useMemo(() => {

@@ -130,8 +130,12 @@ export const LoginPage = () => {
         {/* Top Brand Identity Badge */}
         <div className="relative z-10 flex items-center gap-2.5">
           {logoUrl ? (
-            <div className="w-10 h-10 flex items-center justify-center shrink-0">
-              <img src={logoUrl} alt="Logo" className="max-w-full max-h-full object-contain" />
+            <div className="w-10 h-10 flex items-center justify-center shrink-0 bg-transparent">
+              <img
+                src={logoUrl}
+                alt="Logo"
+                className="max-w-full max-h-full object-contain [filter:drop-shadow(0_1px_2px_rgba(0,0,0,0.15))] mix-blend-multiply"
+              />
             </div>
           ) : (
             <div className="w-10 h-10 rounded-xl bg-white/15 backdrop-blur-md border border-white/25 flex items-center justify-center text-white shadow-lg overflow-hidden shrink-0">
@@ -194,7 +198,7 @@ export const LoginPage = () => {
           </div>
           <div className="flex flex-col items-center gap-0.5">
             <ShieldCheck className="w-3.5 h-3.5 text-orange-200" />
-            <span className="text-[10px] xl:text-[11px] font-semibold text-white">JWT Secured</span>
+            <span className="text-[10px] xl:text-[11px] font-semibold text-white">SSL Encrypted</span>
           </div>
         </div>
       </div>
@@ -207,8 +211,8 @@ export const LoginPage = () => {
           {/* Mobile-only Header Logo */}
           <div className="flex lg:hidden items-center gap-2 mb-1">
             {logoUrl ? (
-              <div className="w-9 h-9 flex items-center justify-center shrink-0">
-                <img src={logoUrl} alt="Logo" className="max-w-full max-h-full object-contain" />
+              <div className="w-9 h-9 flex items-center justify-center shrink-0 bg-transparent">
+                <img src={logoUrl} alt="Logo" className="max-w-full max-h-full object-contain mix-blend-multiply" />
               </div>
             ) : (
               <div className="w-9 h-9 rounded-xl bg-[#FF5C28] text-white flex items-center justify-center shadow-md overflow-hidden shrink-0">
@@ -375,9 +379,14 @@ export const LoginPage = () => {
                       </span>
                       <CheckCircle2 className="w-3.5 h-3.5 text-slate-300 group-hover:text-[#FF5C28]" />
                     </div>
-                    <span className="text-[10px] text-slate-400 block mt-0.5">
-                      cashier / {cashierPwd}
-                    </span>
+                    {(() => {
+                      const activeCashier = storage.get('active_cashier_user', null) || storage.get('user_profiles', {})?.cashier;
+                      return (
+                        <span className="text-[10px] text-slate-400 block mt-0.5 truncate" title={activeCashier?.name || 'Cashier'}>
+                          {activeCashier?.name ? `${activeCashier.name} • ` : ''}cashier / {cashierPwd}
+                        </span>
+                      );
+                    })()}
                   </button>
                 </div>
               );

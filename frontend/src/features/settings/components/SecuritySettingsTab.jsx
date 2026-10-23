@@ -1,200 +1,410 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
-  User,
+  Search,
+  MoreVertical,
+  CheckCircle2,
+  Trash2,
   Lock,
+  Building2,
   Eye,
   EyeOff,
-  Save,
-  CheckCircle,
-  AlertCircle,
-  UserCog,
-  UserPlus,
-  Trash2,
-  Mail,
-  Phone,
   UserCheck,
+  X,
+  AlertCircle,
+  Sparkles,
 } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../../../components/ui/Card';
-import { FormField } from '../../../components/ui/FormField';
-import { Input } from '../../../components/ui/Input';
-import { Button } from '../../../components/ui/Button';
 import { useAppStore } from '../../../store';
 import { storage } from '../../../services/persistence/storage';
 import { CreateUserModal } from './CreateUserModal';
 
-/**
- * SecuritySettingsTab Component (User & Access Control)
- * Comprehensive user management, credentials provisioning, and role-based permissions.
- */
+// Default system users with restaurant specific data
+const INITIAL_SYSTEM_USERS = [
+  {
+    id: 'user_admin',
+    name: 'Admin',
+    officialTitle: 'Executive Officer / Owner',
+    username: 'admin',
+    email: 'admin@spicehub.pk',
+    phone: '03001112233',
+    portalRole: 'Admin',
+    systemRole: 'Admin',
+    role: 'admin',
+    branch: 'All Branches',
+    linkedEmployeeRecord: 'Direct System User',
+    status: 'active',
+    isFixedAdmin: true,
+  },
+  {
+    id: 'user_cashier_1',
+    name: 'Hamza Farooq',
+    officialTitle: 'Main Counter Cashier & Billing',
+    username: 'cashier',
+    email: 'cashier@spicehub.pk',
+    phone: '03003334455',
+    portalRole: 'Sales & Billing',
+    systemRole: 'Sales & Billing',
+    role: 'cashier',
+    branch: 'All Branches',
+    linkedEmployeeRecord: 'Direct System User',
+    status: 'active',
+    isActiveCashier: true,
+    isFixedAdmin: false,
+    password: 'cashier123',
+  },
+  {
+    id: 'user_cashier_2',
+    name: 'Bilal Ahmed',
+    officialTitle: 'Evening Shift Cashier',
+    username: 'bilal.cashier',
+    email: 'bilal.cashier@spicehub.pk',
+    phone: '03215558899',
+    portalRole: 'Sales & Billing',
+    systemRole: 'Sales & Billing',
+    role: 'cashier',
+    branch: 'All Branches',
+    linkedEmployeeRecord: 'Direct System User',
+    status: 'deactivated',
+    isActiveCashier: false,
+    isFixedAdmin: false,
+    password: 'cashier123',
+  },
+  {
+    id: 'user_cashier_3',
+    name: 'Amna Sheikh',
+    officialTitle: 'Floor Cashier & Ordering',
+    username: 'amna.sheikh',
+    email: 'amna.sheikh@spicehub.pk',
+    phone: '03002223344',
+    portalRole: 'Sales & Billing',
+    systemRole: 'Sales & Billing',
+    role: 'cashier',
+    branch: 'All Branches',
+    linkedEmployeeRecord: 'Direct System User',
+    status: 'deactivated',
+    isActiveCashier: false,
+    isFixedAdmin: false,
+    password: 'cashier123',
+  },
+  {
+    id: 'user_cashier_4',
+    name: 'Zeeshan Akram',
+    officialTitle: 'Weekend Counter Cashier',
+    username: 'zeeshan.cashier',
+    email: 'zeeshan.cashier@spicehub.pk',
+    phone: '03004445566',
+    portalRole: 'Sales & Billing',
+    systemRole: 'Sales & Billing',
+    role: 'cashier',
+    branch: 'All Branches',
+    linkedEmployeeRecord: 'Direct System User',
+    status: 'deactivated',
+    isActiveCashier: false,
+    isFixedAdmin: false,
+    password: 'cashier123',
+  },
+];
+
 export const SecuritySettingsTab = ({
   isCreateModalOpen: propIsOpen,
   setIsCreateModalOpen: propSetIsOpen,
 } = {}) => {
-  const { user, changePassword } = useAppStore();
-  const isCashier = Boolean(
-    (user?.role?.toLowerCase().includes('cashier') && !user?.role?.toLowerCase().includes('admin')) ||
-    (user?.username?.toLowerCase() === 'cashier' && user?.username?.toLowerCase() !== 'admin')
-  );
+  const { user } = useAppStore();
 
   // Modal State
   const [internalIsOpen, setInternalIsOpen] = useState(false);
   const isCreateModalOpen = propIsOpen !== undefined ? propIsOpen : internalIsOpen;
   const setIsCreateModalOpen = propSetIsOpen || setInternalIsOpen;
-  const [customUsers, setCustomUsers] = useState(() => {
-    const saved = storage.get('rms_custom_users', []);
-    return Array.isArray(saved) ? saved : [];
+
+  // Users State (Strictly normalized to All Branches and Admin)
+  const [usersList, setUsersList] = useState(() => {
+    const saved = storage.get('rms_users_list', null);
+    if (Array.isArray(saved) && saved.length > 0) {
+      const normalized = saved.map((u) => {
+        const isAdmin = Boolean(
+          u.isFixedAdmin ||
+          u.id === 'user_admin' ||
+          u.username === 'admin' ||
+          u.username === 'superadmin' ||
+          u.email?.includes('superadmin') ||
+          u.name?.toLowerCase().includes('admin') ||
+          u.role === 'admin' ||
+          u.portalRole?.toLowerCase().includes('admin')
+        );
+        if (isAdmin) {
+          return {
+            ...u,
+            id: 'user_admin',
+            name: 'Admin',
+            officialTitle: 'Executive Officer / Owner',
+            username: 'admin',
+            email: 'admin@spicehub.pk',
+            phone: '03001112233',
+            portalRole: 'Admin',
+            systemRole: 'Admin',
+            role: 'admin',
+            branch: 'All Branches',
+            linkedEmployeeRecord: 'Direct System User',
+            status: 'active',
+            isFixedAdmin: true,
+          };
+        }
+        return {
+          ...u,
+          branch: 'All Branches',
+          portalRole: u.portalRole || 'Sales & Billing',
+          systemRole: u.systemRole || 'Sales & Billing',
+        };
+      });
+      storage.set('rms_users_list', normalized);
+      return normalized;
+    }
+    const customUsers = storage.get('rms_custom_users', []);
+    if (Array.isArray(customUsers) && customUsers.length > 0) {
+      const merged = [INITIAL_SYSTEM_USERS[0], ...customUsers].map((u) => ({ ...u, branch: 'All Branches' }));
+      storage.set('rms_users_list', merged);
+      return merged;
+    }
+    storage.set('rms_users_list', INITIAL_SYSTEM_USERS);
+    return INITIAL_SYSTEM_USERS;
   });
-  const [globalNotice, setGlobalNotice] = useState('');
 
-  // Admin Password Form State
-  const [adminNewPassword, setAdminNewPassword] = useState('');
-  const [adminConfirmPassword, setAdminConfirmPassword] = useState('');
-  const [showAdminPassword, setShowAdminPassword] = useState(false);
-  const [adminSaving, setAdminSaving] = useState(false);
-  const [adminSuccess, setAdminSuccess] = useState('');
-  const [adminError, setAdminError] = useState('');
+  // Filter & Search states (matching Screenshot 1)
+  const [searchTerm, setSearchTerm] = useState('');
+  const [branchFilter, setBranchFilter] = useState('All Branches');
+  const [roleFilter, setRoleFilter] = useState('All Roles');
+  const [statusFilter, setStatusFilter] = useState('All');
 
-  // Cashier Password Form State
-  const [cashierNewPassword, setCashierNewPassword] = useState('');
-  const [cashierConfirmPassword, setCashierConfirmPassword] = useState('');
-  const [showCashierPassword, setShowCashierPassword] = useState(false);
-  const [cashierSaving, setCashierSaving] = useState(false);
-  const [cashierSuccess, setCashierSuccess] = useState('');
-  const [cashierError, setCashierError] = useState('');
+  // Menu and modal action states
+  const [openActionMenuId, setOpenActionMenuId] = useState(null);
+  const [passwordModalUser, setPasswordModalUser] = useState(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [notification, setNotification] = useState('');
 
-  // Editing custom user password state
-  const [editingUserId, setEditingUserId] = useState(null);
-  const [editingUserPassword, setEditingUserPassword] = useState('');
-  const [showEditingPassword, setShowEditingPassword] = useState(false);
+  // Close menus on outside click
+  React.useEffect(() => {
+    const handleOutsideClick = () => setOpenActionMenuId(null);
+    window.addEventListener('click', handleOutsideClick);
+    return () => window.removeEventListener('click', handleOutsideClick);
+  }, []);
 
-  const handleUpdateAdminPassword = async (e) => {
-    e?.preventDefault();
-    setAdminError('');
-    setAdminSuccess('');
+  /**
+   * Activate Cashier Handler
+   * Sets this cashier as Active, deactivates all other cashiers,
+   * and immediately updates the active cashier on Cashier Portal & POS.
+   */
+  const handleActivateCashier = (targetCashier) => {
+    if (targetCashier.isFixedAdmin) return;
 
-    if (!adminNewPassword) {
-      setAdminError('Please enter a new password for Admin');
-      return;
-    }
-    if (adminNewPassword.length < 4) {
-      setAdminError('Password must be at least 4 characters long');
-      return;
-    }
-    if (adminNewPassword !== adminConfirmPassword) {
-      setAdminError('New password and confirm password do not match');
-      return;
-    }
-
-    try {
-      setAdminSaving(true);
-      const res = await changePassword({
-        targetRole: 'admin',
-        newPassword: adminNewPassword,
-      });
-      if (res.success) {
-        setAdminSuccess('Admin password updated successfully!');
-        setAdminNewPassword('');
-        setAdminConfirmPassword('');
-        setTimeout(() => setAdminSuccess(''), 4000);
-      } else {
-        setAdminError(res.message || 'Failed to update Admin password');
+    const updated = usersList.map((u) => {
+      if (u.isFixedAdmin) return u;
+      if (u.id === targetCashier.id) {
+        return {
+          ...u,
+          status: 'active',
+          isActiveCashier: true,
+        };
       }
-    } catch {
-      setAdminError('Error updating Admin password');
-    } finally {
-      setAdminSaving(false);
+      return {
+        ...u,
+        status: 'deactivated',
+        isActiveCashier: false,
+      };
+    });
+
+    setUsersList(updated);
+    storage.set('rms_users_list', updated);
+    storage.set('rms_custom_users', updated.filter((u) => !u.isFixedAdmin));
+
+    // Save active cashier references
+    const activeCashierPayload = {
+      id: targetCashier.id,
+      name: targetCashier.name || targetCashier.fullName,
+      username: targetCashier.username || targetCashier.loginIdentifier || 'cashier',
+      email: targetCashier.email,
+      phone: targetCashier.phone,
+      branch: targetCashier.branch,
+      role: 'Cashier',
+      officialTitle: targetCashier.officialTitle,
+      avatarUrl: targetCashier.avatarUrl || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80',
+    };
+    storage.set('active_cashier_user', activeCashierPayload);
+    storage.set('active_cashier_id', targetCashier.id);
+
+    // Update user_profiles.cashier in storage
+    const profiles = storage.get('user_profiles', {});
+    profiles.cashier = {
+      ...activeCashierPayload,
+      initials: (activeCashierPayload.name || 'C1').split(' ').filter(Boolean).map((n) => n[0].toUpperCase()).slice(0, 2).join('') || 'C1',
+    };
+    storage.set('user_profiles', profiles);
+
+    // If currently logged into cashier portal, update store state directly
+    const currentRole = String(useAppStore.getState().user?.role || '').toLowerCase();
+    if (currentRole.includes('cashier')) {
+      useAppStore.setState({ user: profiles.cashier });
+      storage.set('active_user', profiles.cashier);
     }
+
+    setOpenActionMenuId(null);
+    setNotification(`Cashier "${targetCashier.name}" is now the ACTIVE cashier on Cashier Portal & POS!`);
+    setTimeout(() => setNotification(''), 5000);
   };
 
-  const handleUpdateCashierPassword = async (e) => {
-    e?.preventDefault();
-    setCashierError('');
-    setCashierSuccess('');
+  /**
+   * Deactivate Cashier Handler
+   */
+  const handleDeactivateCashier = (targetCashier) => {
+    if (targetCashier.isFixedAdmin) return;
 
-    if (!cashierNewPassword) {
-      setCashierError('Please enter a new password for Cashier');
-      return;
-    }
-    if (cashierNewPassword.length < 4) {
-      setCashierError('Password must be at least 4 characters long');
-      return;
-    }
-    if (cashierNewPassword !== cashierConfirmPassword) {
-      setCashierError('New password and confirm password do not match');
-      return;
-    }
-
-    try {
-      setCashierSaving(true);
-      const res = await changePassword({
-        targetRole: 'cashier',
-        newPassword: cashierNewPassword,
-      });
-      if (res.success) {
-        setCashierSuccess('Cashier password updated successfully!');
-        setCashierNewPassword('');
-        setCashierConfirmPassword('');
-        setTimeout(() => setCashierSuccess(''), 4000);
-      } else {
-        setCashierError(res.message || 'Failed to update Cashier password');
-      }
-    } catch {
-      setCashierError('Error updating Cashier password');
-    } finally {
-      setCashierSaving(false);
-    }
-  };
-
-  const handleUserCreated = (newUser) => {
-    const updated = [newUser, ...customUsers];
-    setCustomUsers(updated);
-    storage.set('rms_custom_users', updated);
-    setGlobalNotice(`User account for "${newUser.fullName}" created successfully! Credentials are now active.`);
-    setTimeout(() => setGlobalNotice(''), 5000);
-  };
-
-  const handleDeleteUser = (userId, userName) => {
-    if (window.confirm(`Are you sure you want to delete access for "${userName}"?`)) {
-      const updated = customUsers.filter((u) => u.id !== userId);
-      setCustomUsers(updated);
-      storage.set('rms_custom_users', updated);
-      setGlobalNotice(`Account for "${userName}" removed.`);
-      setTimeout(() => setGlobalNotice(''), 4000);
-    }
-  };
-
-  const handleSaveCustomUserPassword = (userId) => {
-    if (!editingUserPassword || editingUserPassword.length < 4) {
-      alert('Password must be at least 4 characters long');
-      return;
-    }
-    const updated = customUsers.map((u) => {
-      if (u.id === userId) {
-        return { ...u, password: editingUserPassword };
+    const updated = usersList.map((u) => {
+      if (u.id === targetCashier.id) {
+        return {
+          ...u,
+          status: 'deactivated',
+          isActiveCashier: false,
+        };
       }
       return u;
     });
-    setCustomUsers(updated);
-    storage.set('rms_custom_users', updated);
-    setEditingUserId(null);
-    setEditingUserPassword('');
-    setGlobalNotice('Password updated successfully for user account.');
-    setTimeout(() => setGlobalNotice(''), 4000);
+
+    setUsersList(updated);
+    storage.set('rms_users_list', updated);
+    storage.set('rms_custom_users', updated.filter((u) => !u.isFixedAdmin));
+    setOpenActionMenuId(null);
+    setNotification(`Cashier "${targetCashier.name}" access deactivated.`);
+    setTimeout(() => setNotification(''), 4000);
   };
 
+  /**
+   * Delete Cashier Handler
+   */
+  const handleDeleteCashier = (targetCashier) => {
+    if (targetCashier.isFixedAdmin) return;
+    if (window.confirm(`Are you sure you want to delete cashier account for "${targetCashier.name}"?`)) {
+      const updated = usersList.filter((u) => u.id !== targetCashier.id);
+      setUsersList(updated);
+      storage.set('rms_users_list', updated);
+      storage.set('rms_custom_users', updated.filter((u) => !u.isFixedAdmin));
+      setOpenActionMenuId(null);
+      setNotification(`Cashier account for "${targetCashier.name}" removed.`);
+      setTimeout(() => setNotification(''), 4000);
+    }
+  };
+
+  /**
+   * Save Password Handler
+   */
+  const handleSavePassword = (e) => {
+    e.preventDefault();
+    if (!newPassword || newPassword.length < 4) {
+      alert('Password must be at least 4 characters long.');
+      return;
+    }
+    if (!passwordModalUser) return;
+
+    if (passwordModalUser.isFixedAdmin) {
+      const creds = storage.get('auth_credentials', { admin: 'admin123', cashier: 'cashier123' });
+      creds.admin = newPassword;
+      storage.set('auth_credentials', creds);
+    } else {
+      const updated = usersList.map((u) => {
+        if (u.id === passwordModalUser.id) {
+          return { ...u, password: newPassword };
+        }
+        return u;
+      });
+      setUsersList(updated);
+      storage.set('rms_users_list', updated);
+      storage.set('rms_custom_users', updated.filter((u) => !u.isFixedAdmin));
+      if (passwordModalUser.isActiveCashier) {
+        const creds = storage.get('auth_credentials', { admin: 'admin123', cashier: 'cashier123' });
+        creds.cashier = newPassword;
+        storage.set('auth_credentials', creds);
+      }
+    }
+
+    setNotification(`Password updated for "${passwordModalUser.name}".`);
+    setPasswordModalUser(null);
+    setNewPassword('');
+    setTimeout(() => setNotification(''), 4000);
+  };
+
+  /**
+   * New Cashier Created Handler
+   */
+  const handleUserCreated = (newUser, setAsActive) => {
+    let updated;
+    if (setAsActive) {
+      updated = [
+        ...usersList.map((u) => (u.isFixedAdmin ? u : { ...u, status: 'deactivated', isActiveCashier: false })),
+        { ...newUser, status: 'active', isActiveCashier: true },
+      ];
+      handleActivateCashier(newUser);
+    } else {
+      updated = [...usersList, newUser];
+      setUsersList(updated);
+      storage.set('rms_users_list', updated);
+      storage.set('rms_custom_users', updated.filter((u) => !u.isFixedAdmin));
+      setNotification(`New cashier account "${newUser.name}" added successfully.`);
+      setTimeout(() => setNotification(''), 4000);
+    }
+  };
+
+  // Filtered Users List
+  const filteredUsers = useMemo(() => {
+    return usersList.filter((u) => {
+      // Search filter
+      if (searchTerm.trim()) {
+        const query = searchTerm.toLowerCase().trim();
+        const matchName = (u.name || '').toLowerCase().includes(query);
+        const matchEmail = (u.email || '').toLowerCase().includes(query);
+        const matchUsername = (u.username || '').toLowerCase().includes(query);
+        const matchTitle = (u.officialTitle || u.portalRole || '').toLowerCase().includes(query);
+        const matchPhone = (u.phone || '').toLowerCase().includes(query);
+        if (!matchName && !matchEmail && !matchUsername && !matchTitle && !matchPhone) {
+          return false;
+        }
+      }
+
+      // Branch filter
+      if (branchFilter !== 'All Branches') {
+        if (!u.branch?.toLowerCase().includes(branchFilter.toLowerCase().replace('branch', '').trim()) &&
+            !u.branch?.toLowerCase().includes('all branches')) {
+          return false;
+        }
+      }
+
+      // Role filter
+      if (roleFilter !== 'All Roles') {
+        if (roleFilter === 'Admin' && !u.isFixedAdmin) return false;
+        if (roleFilter === 'Cashier / Billing' && u.isFixedAdmin) return false;
+      }
+
+      // Status filter
+      if (statusFilter !== 'All') {
+        if (statusFilter.toLowerCase() !== u.status?.toLowerCase()) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [usersList, searchTerm, branchFilter, roleFilter, statusFilter]);
+
   return (
-    <div className="space-y-6">
-      {/* Global Success / Alert Banner */}
-      {globalNotice && (
-        <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between gap-2 animate-in fade-in duration-200">
-          <div className="flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span className="font-medium">{globalNotice}</span>
+    <div className="space-y-4">
+      {/* Toast Notification Banner */}
+      {notification && (
+        <div className="p-3 sm:p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between gap-2 shadow-sm animate-in fade-in slide-in-from-top-1 duration-200">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="font-semibold">{notification}</span>
           </div>
           <button
             type="button"
-            onClick={() => setGlobalNotice('')}
-            className="text-emerald-600 hover:text-emerald-800 font-bold text-xs"
+            onClick={() => setNotification('')}
+            className="text-emerald-700 hover:text-emerald-900 font-bold text-xs p-1"
           >
             ✕
           </button>
@@ -202,409 +412,381 @@ export const SecuritySettingsTab = ({
       )}
 
       {/* ======================================================== */}
-      {/* SECTION 1: DEFAULT SYSTEM ACCOUNTS (ADMIN & CASHIER) */}
+      {/* FILTER & SEARCH HEADER (Exact Match to Screenshot 1) */}
       {/* ======================================================== */}
-      <div>
-        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 px-1">
-          System Core Accounts
-        </h3>
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-3 sm:p-4 shadow-2xs flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+        {/* Search Bar */}
+        <div className="relative flex-1 max-w-lg">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search by name, email, or designation..."
+            className="w-full h-10 pl-4 pr-10 rounded-full border border-slate-200/90 bg-white text-xs text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#FF5C28] focus:ring-2 focus:ring-[#FF5C28]/20 transition-all shadow-inner/10"
+          />
+          <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-3 pointer-events-none" />
+        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* CARD 1: ADMIN PASSWORD CHANGE */}
-          <Card className="flex flex-col justify-between">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-orange-50 text-[#FF5C28] flex items-center justify-center">
-                    <UserCog className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <CardTitle>Admin Account Password</CardTitle>
-                    <CardDescription>
-                      Username: <strong className="text-slate-700">admin</strong> (Full Admin Portal Access)
-                    </CardDescription>
-                  </div>
-                </div>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-[#FF5C28]">
-                  Administrator
-                </span>
-              </div>
-            </CardHeader>
+        {/* Dropdown Filters */}
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-slate-600">
+          {/* Branch Filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="font-semibold text-slate-500 whitespace-nowrap text-[11px]">Branch:</span>
+            <select
+              value={branchFilter}
+              onChange={(e) => setBranchFilter(e.target.value)}
+              className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:border-[#FF5C28] focus:ring-1 focus:ring-[#FF5C28]/20 cursor-pointer shadow-2xs transition-colors"
+            >
+              <option value="All Branches">All Branches</option>
+            </select>
+          </div>
 
-            <form onSubmit={handleUpdateAdminPassword} className="flex-1 flex flex-col justify-between">
-              <CardContent className="space-y-4 pt-3">
-                {isCashier && (
-                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                    <span>Only logged-in Admin can modify Admin credentials.</span>
-                  </div>
-                )}
+          {/* Role Filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="font-semibold text-slate-500 whitespace-nowrap text-[11px]">Role:</span>
+            <select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+              className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:border-[#FF5C28] focus:ring-1 focus:ring-[#FF5C28]/20 cursor-pointer shadow-2xs transition-colors"
+            >
+              <option value="All Roles">All Roles</option>
+              <option value="Admin">Admin</option>
+              <option value="Cashier / Billing">Cashier / Billing</option>
+            </select>
+          </div>
 
-                {adminSuccess && (
-                  <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>{adminSuccess}</span>
-                  </div>
-                )}
-
-                {adminError && (
-                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                    <span>{adminError}</span>
-                  </div>
-                )}
-
-                {/* New Admin Password */}
-                <FormField label="New Admin Password" required hint="At least 4 characters">
-                  <div className="relative flex items-center">
-                    <Input
-                      type={showAdminPassword ? 'text' : 'password'}
-                      value={adminNewPassword}
-                      onChange={(e) => {
-                        setAdminNewPassword(e.target.value);
-                        if (adminError) setAdminError('');
-                      }}
-                      placeholder="Enter new admin password"
-                      disabled={isCashier}
-                      className="pr-10"
-                    />
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      onClick={() => setShowAdminPassword((p) => !p)}
-                      className="absolute right-2.5 text-slate-400 hover:text-slate-600 cursor-pointer p-1"
-                      title={showAdminPassword ? 'Hide password' : 'Show password'}
-                    >
-                      {showAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </FormField>
-
-                {/* Confirm Admin Password */}
-                <FormField label="Confirm Admin Password" required>
-                  <div className="relative flex items-center">
-                    <Input
-                      type={showAdminPassword ? 'text' : 'password'}
-                      value={adminConfirmPassword}
-                      onChange={(e) => {
-                        setAdminConfirmPassword(e.target.value);
-                        if (adminError) setAdminError('');
-                      }}
-                      placeholder="Confirm new admin password"
-                      disabled={isCashier}
-                      className="pr-10"
-                    />
-                  </div>
-                </FormField>
-              </CardContent>
-
-              <CardFooter className="flex items-center justify-between pt-4 border-t border-slate-100">
-                <span className="text-[11px] text-slate-400">
-                  Default: <code>admin123</code>
-                </span>
-                <Button
-                  variant="primary"
-                  type="submit"
-                  leftIcon={Save}
-                  isLoading={adminSaving}
-                  disabled={isCashier || !adminNewPassword || adminSaving}
-                >
-                  Save Admin Password
-                </Button>
-              </CardFooter>
-            </form>
-          </Card>
-
-          {/* CARD 2: CASHIER PASSWORD CHANGE */}
-          <Card className="flex flex-col justify-between">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-orange-50 text-[#FF5C28] flex items-center justify-center">
-                    <User className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <CardTitle>Cashier Account Password</CardTitle>
-                    <CardDescription>
-                      Username: <strong className="text-slate-700">cashier</strong> (POS & 1-Day Daily Report)
-                    </CardDescription>
-                  </div>
-                </div>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
-                  Cashier / Staff
-                </span>
-              </div>
-            </CardHeader>
-
-            <form onSubmit={handleUpdateCashierPassword} className="flex-1 flex flex-col justify-between">
-              <CardContent className="space-y-4 pt-3">
-                {cashierSuccess && (
-                  <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>{cashierSuccess}</span>
-                  </div>
-                )}
-
-                {cashierError && (
-                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                    <span>{cashierError}</span>
-                  </div>
-                )}
-
-                {/* New Cashier Password */}
-                <FormField label="New Cashier Password" required hint="At least 4 characters">
-                  <div className="relative flex items-center">
-                    <Input
-                      type={showCashierPassword ? 'text' : 'password'}
-                      value={cashierNewPassword}
-                      onChange={(e) => {
-                        setCashierNewPassword(e.target.value);
-                        if (cashierError) setCashierError('');
-                      }}
-                      placeholder="Enter new cashier password"
-                      className="pr-10"
-                    />
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      onClick={() => setShowCashierPassword((p) => !p)}
-                      className="absolute right-2.5 text-slate-400 hover:text-slate-600 cursor-pointer p-1"
-                      title={showCashierPassword ? 'Hide password' : 'Show password'}
-                    >
-                      {showCashierPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </FormField>
-
-                {/* Confirm Cashier Password */}
-                <FormField label="Confirm Cashier Password" required>
-                  <div className="relative flex items-center">
-                    <Input
-                      type={showCashierPassword ? 'text' : 'password'}
-                      value={cashierConfirmPassword}
-                      onChange={(e) => {
-                        setCashierConfirmPassword(e.target.value);
-                        if (cashierError) setCashierError('');
-                      }}
-                      placeholder="Confirm new cashier password"
-                      className="pr-10"
-                    />
-                  </div>
-                </FormField>
-
-                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-[11px] text-slate-500">
-                  ℹ️ Cashier will use this password to sign into the POS. Cashiers only have access to 1-day daily sales reports.
-                </div>
-              </CardContent>
-
-              <CardFooter className="flex items-center justify-between pt-4 border-t border-slate-100">
-                <span className="text-[11px] text-slate-400">
-                  Default: <code>cashier123</code>
-                </span>
-                <Button
-                  variant="primary"
-                  type="submit"
-                  leftIcon={Save}
-                  isLoading={cashierSaving}
-                  disabled={!cashierNewPassword || cashierSaving}
-                >
-                  Save Cashier Password
-                </Button>
-              </CardFooter>
-            </form>
-          </Card>
+          {/* Status Filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="font-semibold text-slate-500 whitespace-nowrap text-[11px]">Status:</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:border-[#FF5C28] focus:ring-1 focus:ring-[#FF5C28]/20 cursor-pointer shadow-2xs transition-colors"
+            >
+              <option value="All">All</option>
+              <option value="active">Active</option>
+              <option value="deactivated">Deactivated</option>
+            </select>
+          </div>
         </div>
       </div>
 
       {/* ======================================================== */}
-      {/* SECTION 2: PROVISIONED STAFF ACCOUNTS (CUSTOM USERS) */}
+      {/* ENTERPRISE USER MANAGEMENT TABLE (Matching Screenshot 1) */}
       {/* ======================================================== */}
-      <div className="pt-2">
-        <div className="flex items-center justify-between mb-3 px-1">
-          <div className="flex items-center gap-2">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Provisioned Staff & Portal Accounts
-            </h3>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
-              {customUsers.length} {customUsers.length === 1 ? 'Account' : 'Accounts'}
-            </span>
-          </div>
-          {!isCashier && customUsers.length > 0 && (
-            <button
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => setIsCreateModalOpen(true)}
-              className="text-xs font-semibold text-[#FF5C28] hover:text-[#E64A19] flex items-center gap-1 cursor-pointer"
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              <span>Add Another Account</span>
-            </button>
-          )}
-        </div>
+      {/* ======================================================== */}
+      {/* ======================================================== */}
+      {/* ENTERPRISE USER MANAGEMENT TABLE (Matching app section styling) */}
+      {/* ======================================================== */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.02),0_2px_8px_-2px_rgba(15,23,42,0.03)]">
+        <div className="w-full">
+          <table className="w-full text-left border-collapse table-auto">
+            {/* Table Header matching other sections */}
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50/50 text-slate-500 text-xs font-semibold select-none">
+                <th className="py-2.5 px-3">Name &amp; Title</th>
+                <th className="py-2.5 px-3">Login Identifier</th>
+                <th className="py-2.5 px-3 whitespace-nowrap">System Role</th>
+                <th className="py-2.5 px-3 whitespace-nowrap">Assigned Branch</th>
+                <th className="py-2.5 px-3 whitespace-nowrap">Linked Record</th>
+                <th className="py-2.5 px-3 whitespace-nowrap">Access Status</th>
+                <th className="py-2.5 px-3 whitespace-nowrap text-right">Actions</th>
+              </tr>
+            </thead>
 
-        {customUsers.length === 0 ? (
-          <div className="p-8 rounded-2xl border border-dashed border-slate-200 bg-white text-center space-y-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-orange-50 text-[#FF5C28] flex items-center justify-center mx-auto">
-              <UserCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-slate-800">No additional staff accounts provisioned yet</p>
-              <p className="text-xs text-slate-400 max-w-sm mx-auto mt-0.5">
-                Click "+ Create User Account" to add floor managers, cashiers, or kitchen accounts with custom login credentials.
-              </p>
-            </div>
-            {!isCashier && (
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => setIsCreateModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-[#FF5C28] bg-orange-50 hover:bg-orange-100 transition-colors cursor-pointer mt-1"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                <span>Create User Account</span>
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {customUsers.map((u) => {
-              const isAdmin = u.portalRole?.toLowerCase().includes('admin');
-              const isEditingThis = editingUserId === u.id;
-              const initials = (u.fullName || u.name || 'User')
-                .split(' ')
-                .filter(Boolean)
-                .map((n) => n[0].toUpperCase())
-                .slice(0, 2)
-                .join('');
+            {/* Table Body */}
+            <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+              {filteredUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                    <UserCheck className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                    <p className="font-semibold text-slate-600">No accounts match your current filter</p>
+                    <p className="text-[11px] mt-0.5">Try clearing your search query or reset filters.</p>
+                  </td>
+                </tr>
+              ) : (
+                filteredUsers.map((u, index) => {
+                  const isNearBottom = index >= Math.max(1, filteredUsers.length - 2);
+                  const isAdmin = Boolean(
+                    u.isFixedAdmin ||
+                    u.id === 'user_admin' ||
+                    u.username === 'admin' ||
+                    u.username === 'superadmin' ||
+                    u.role === 'admin' ||
+                    (u.name && u.name.toLowerCase().includes('admin'))
+                  );
+                  const isCurrentLoggedInUser =
+                    (user?.username && (u.username === user.username || (isAdmin && (user.username === 'admin' || user.username === 'superadmin')))) ||
+                    (user?.email && u.email === user.email);
+                  const isThisCashierActive = Boolean(u.status === 'active' && !isAdmin);
 
-              return (
-                <div
-                  key={u.id}
-                  className="p-4.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-3.5 flex flex-col justify-between"
-                >
-                  <div className="space-y-3">
-                    {/* User Header */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm ${isAdmin ? 'bg-orange-50 text-[#FF5C28] border border-orange-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-                          {initials}
+                  return (
+                    <tr
+                      key={u.id}
+                      className={`transition-colors duration-150 hover:bg-slate-50/60 ${
+                        isThisCashierActive ? 'bg-orange-50/20' : ''
+                      }`}
+                    >
+                      {/* 1. Name & Title (Clean text, no box logo) */}
+                      <td className="py-2.5 px-3 align-middle">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-semibold text-slate-900 text-xs">
+                              {isAdmin ? 'Admin' : u.name}
+                            </span>
+                            {isCurrentLoggedInUser && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-600 border border-blue-200">
+                                You
+                              </span>
+                            )}
+                            {isThisCashierActive && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
+                                <Sparkles className="w-2.5 h-2.5" />
+                                <span>Active POS</span>
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[11px] text-slate-500 block truncate font-normal mt-0.5">
+                            {isAdmin ? 'Executive Officer / Owner' : (u.officialTitle || 'Counter Cashier & Billing')}
+                          </span>
                         </div>
-                        <div>
-                          <h4 className="text-sm font-bold text-slate-900 leading-tight">
-                            {u.fullName || u.name}
-                          </h4>
-                          <p className="text-xs text-slate-500 font-medium mt-0.5">
-                            {u.portalRole}
-                          </p>
+                      </td>
+
+                      {/* 2. Login Identifier */}
+                      <td className="py-2.5 px-3 align-middle">
+                        <div className="min-w-0">
+                          <span className="text-slate-800 font-medium text-xs block truncate" title={isAdmin ? 'admin@spicehub.pk' : (u.email || u.username)}>
+                            {isAdmin ? 'admin@spicehub.pk' : (u.email || u.username)}
+                          </span>
+                          <span className="text-slate-500 text-[11px] block truncate mt-0.5 font-mono">
+                            {isAdmin ? '03001112233' : (u.phone || '03000000000')}
+                          </span>
                         </div>
-                      </div>
+                      </td>
 
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${isAdmin ? 'bg-orange-100 text-[#E64A19]' : 'bg-amber-100 text-amber-800'}`}>
-                        {u.portalRole}
-                      </span>
-                    </div>
+                      {/* 3. System Role */}
+                      <td className="py-2.5 px-3 align-middle whitespace-nowrap">
+                        {isAdmin ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-600" />
+                            <span>Admin</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                            <span>Sales &amp; Billing</span>
+                          </span>
+                        )}
+                      </td>
 
-                    {/* Metadata Grid */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-xs text-slate-600 bg-slate-50/70 p-2.5 rounded-xl border border-slate-100">
-                      <div className="flex items-center gap-1.5 truncate">
-                        <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span className="truncate font-mono text-[11px]" title={u.loginIdentifier || u.email}>
-                          {u.loginIdentifier || u.email}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 truncate">
-                        <UserCog className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span className="truncate">
-                          Role: {u.portalRole}
-                        </span>
-                      </div>
-                      {u.phone && (
-                        <div className="flex items-center gap-1.5 truncate">
-                          <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span className="truncate">{u.phone}</span>
+                      {/* 4. Assigned Branch */}
+                      <td className="py-2.5 px-3 align-middle whitespace-nowrap text-slate-600">
+                        <div className="flex items-center gap-1.5 text-xs">
+                          <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span>All Branches</span>
                         </div>
-                      )}
-                      <div className="flex items-center gap-1.5 truncate">
-                        <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span className="font-mono text-[11px] text-slate-500">
-                          Password: {u.password ? '••••••••' : 'Default'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+                      </td>
 
-                  {/* Inline Change Password or Actions */}
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
-                    {isEditingThis ? (
-                      <div className="flex items-center gap-2 w-full animate-in fade-in duration-150">
-                        <div className="relative flex-1">
-                          <input
-                            type={showEditingPassword ? 'text' : 'password'}
-                            value={editingUserPassword}
-                            onChange={(e) => setEditingUserPassword(e.target.value)}
-                            placeholder="New password (min 4)"
-                            className="w-full h-8 px-2.5 pr-8 rounded-lg border border-slate-200 text-xs text-slate-800 outline-none focus:border-[#FF5C28] focus:ring-1 focus:ring-[#FF5C28]/20"
-                          />
+                      {/* 5. Linked Employee Record */}
+                      <td className="py-2.5 px-3 align-middle whitespace-nowrap text-slate-500 text-xs">
+                        <span>{u.linkedEmployeeRecord || 'Direct System User'}</span>
+                      </td>
+
+                      {/* 6. Access Status */}
+                      <td className="py-2.5 px-3 align-middle whitespace-nowrap">
+                        {u.status === 'active' ? (
+                          <span className="inline-flex items-center justify-center gap-1.5 w-[84px] h-6 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 select-none">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            <span>Active</span>
+                          </span>
+                        ) : (
                           <button
                             type="button"
-                            onClick={() => setShowEditingPassword((p) => !p)}
-                            className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                            onClick={() => handleActivateCashier(u)}
+                            title="Click to activate this cashier"
+                            className="inline-flex items-center justify-center gap-1.5 w-[84px] h-6 rounded-full text-[11px] font-semibold bg-slate-50 hover:bg-emerald-50 text-slate-500 hover:text-emerald-700 border border-slate-200 hover:border-emerald-300 transition-colors cursor-pointer group shadow-2xs"
                           >
-                            {showEditingPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                          </button>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleSaveCustomUserPassword(u.id)}
-                          className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#FF5C28] hover:bg-[#E64A19] cursor-pointer"
-                        >
-                          Save
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingUserId(null);
-                            setEditingUserPassword('');
-                          }}
-                          className="px-2 py-1.5 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-800 cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingUserId(u.id);
-                            setEditingUserPassword(u.password || '');
-                          }}
-                          className="text-xs font-semibold text-[#FF5C28] hover:text-[#E64A19] flex items-center gap-1 cursor-pointer"
-                        >
-                          <Lock className="w-3 h-3" />
-                          <span>Change Password</span>
-                        </button>
-
-                        {!isCashier && (
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteUser(u.id, u.fullName || u.name)}
-                            className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                            title="Delete staff account"
-                          >
-                            <Trash2 className="w-4 h-4" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400 group-hover:bg-emerald-500 transition-colors" />
+                            <span>Deactive</span>
                           </button>
                         )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+                      </td>
+
+                      {/* 7. Actions */}
+                      <td className="py-2.5 px-3 align-middle text-right whitespace-nowrap relative">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenActionMenuId(openActionMenuId === u.id ? null : u.id);
+                          }}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer transition-colors"
+                          aria-label="Actions"
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </button>
+
+                        {/* Action Popover Menu */}
+                        {openActionMenuId === u.id && (
+                          <>
+                            {/* Backdrop to close menu on outside click */}
+                            <div
+                              className="fixed inset-0 z-40 cursor-default"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenActionMenuId(null);
+                              }}
+                            />
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              className={`absolute right-2 ${
+                                isNearBottom ? 'bottom-8 origin-bottom-right' : 'top-8 origin-top-right'
+                              } w-48 bg-white rounded-xl shadow-2xl border border-slate-200/90 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100 text-left`}
+                            >
+                              {!isAdmin && (
+                                <>
+                                  {u.status !== 'active' ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleActivateCashier(u)}
+                                      className="w-full px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 flex items-center gap-2 cursor-pointer transition-colors"
+                                    >
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                      <span>Set as Active Cashier</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeactivateCashier(u)}
+                                      className="w-full px-3 py-2 text-xs font-medium text-amber-700 hover:bg-amber-50 flex items-center gap-2 cursor-pointer transition-colors"
+                                    >
+                                      <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                                      <span>Deactivate Access</span>
+                                    </button>
+                                  )}
+                                </>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPasswordModalUser(u);
+                                  setNewPassword('');
+                                  setOpenActionMenuId(null);
+                                }}
+                                className="w-full px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer transition-colors"
+                              >
+                                <Lock className="w-3.5 h-3.5 text-slate-400" />
+                                <span>Change Password</span>
+                              </button>
+
+                              {!isAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCashier(u)}
+                                  className="w-full px-3 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer transition-colors border-t border-slate-100 mt-1"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                                  <span>Delete Cashier</span>
+                                </button>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Table Footer Summary */}
+        <div className="py-3 px-4 bg-slate-50/60 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 gap-2">
+          <div>
+            Showing <strong className="text-slate-700">{filteredUsers.length}</strong> of{' '}
+            <strong className="text-slate-700">{usersList.length}</strong> accounts (1 Core Administrator,{' '}
+            {usersList.length - 1} Cashier Operators)
           </div>
-        )}
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1 text-emerald-700 font-semibold">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              Active Cashier Portal operator enabled
+            </span>
+          </div>
+        </div>
       </div>
+
+      {/* Change Password Modal */}
+      {passwordModalUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs"
+            onClick={() => setPasswordModalUser(null)}
+          />
+          <div className="relative bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-md p-5 sm:p-6 z-10 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-orange-50 text-[#FF5C28] flex items-center justify-center">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Change Password</h3>
+                  <p className="text-xs text-slate-500">For {passwordModalUser.name}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPasswordModalUser(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePassword} className="mt-4 space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700 block">
+                  New Password (min 4 characters)
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Enter new password"
+                    className="w-full h-10 pl-3 pr-10 rounded-xl border border-slate-200 focus:border-[#FF5C28] focus:ring-2 focus:ring-[#FF5C28]/20 text-xs outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((p) => !p)}
+                    className="absolute right-2.5 p-1 text-slate-400 hover:text-slate-600"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setPasswordModalUser(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-[#FF5C28] hover:bg-[#E64A19] shadow-sm"
+                >
+                  Save Password
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Create User Modal Dialog */}
       <CreateUserModal

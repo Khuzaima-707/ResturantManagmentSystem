@@ -19,7 +19,7 @@ export const AddExpenseModal = ({
   categories = [],
   onSuccess,
 }) => {
-  const { user, addExpense, updateExpense, settings } = useAppStore();
+  const { user, addExpense, updateExpense, addExpenseCategory, expenseCategories, settings } = useAppStore();
 
   const isEditing = Boolean(expenseToEdit);
   const isOnlineEdit = (expenseToEdit?.paymentMethod || '').toUpperCase() === 'ONLINE';
@@ -227,6 +227,22 @@ export const AddExpenseModal = ({
         updateExpense(expenseToEdit.id, payload);
       } else {
         addExpense(payload);
+      }
+
+      // Auto-register category into configured expense categories if not already present
+      const cleanCat = categoryNameSnapshot.trim();
+      if (cleanCat && addExpenseCategory) {
+        const catList = Array.isArray(expenseCategories) ? expenseCategories : (categories || []);
+        const exists = catList.some(
+          (c) => (c.name || '').trim().toLowerCase() === cleanCat.toLowerCase()
+        );
+        if (!exists) {
+          addExpenseCategory({
+            name: cleanCat,
+            description: '',
+            status: 'active',
+          }).catch(() => {});
+        }
       }
 
       if (onSuccess) {

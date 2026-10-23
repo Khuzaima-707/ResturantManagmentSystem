@@ -301,6 +301,7 @@ export const useAppStore = create((set, get) => ({
 
   // Active User Profile
   user: (() => {
+    const activeCashier = storage.get('active_cashier_user', null);
     const defaultUserProfiles = {
       admin: {
         id: 'user_admin',
@@ -311,7 +312,15 @@ export const useAppStore = create((set, get) => ({
         initials: 'JH',
         avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
       },
-      cashier: {
+      cashier: activeCashier ? {
+        id: activeCashier.id || 'user_cashier',
+        name: activeCashier.name || activeCashier.fullName || 'Cashier 1',
+        username: activeCashier.username || activeCashier.loginIdentifier || 'cashier',
+        email: activeCashier.email || 'cashier@spicehub.pk',
+        role: 'Cashier',
+        initials: (activeCashier.name || activeCashier.fullName || 'C1').split(' ').filter(Boolean).map((n) => n[0].toUpperCase()).slice(0, 2).join('') || 'C1',
+        avatarUrl: activeCashier.avatarUrl || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80',
+      } : {
         id: 'user_cashier',
         name: 'Cashier 1',
         username: 'cashier',
@@ -351,6 +360,7 @@ export const useAppStore = create((set, get) => ({
   isAuthenticated: Boolean(storage.get('auth_token', null)),
 
   login: async ({ usernameOrEmail, password }) => {
+    const activeCashier = storage.get('active_cashier_user', null);
     const defaultUserProfiles = {
       admin: {
         id: 'user_admin',
@@ -361,7 +371,15 @@ export const useAppStore = create((set, get) => ({
         initials: 'JH',
         avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
       },
-      cashier: {
+      cashier: activeCashier ? {
+        id: activeCashier.id || 'user_cashier',
+        name: activeCashier.name || activeCashier.fullName || 'Cashier 1',
+        username: activeCashier.username || activeCashier.loginIdentifier || 'cashier',
+        email: activeCashier.email || 'cashier@spicehub.pk',
+        role: 'Cashier',
+        initials: (activeCashier.name || activeCashier.fullName || 'C1').split(' ').filter(Boolean).map((n) => n[0].toUpperCase()).slice(0, 2).join('') || 'C1',
+        avatarUrl: activeCashier.avatarUrl || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80',
+      } : {
         id: 'user_cashier',
         name: 'Cashier 1',
         username: 'cashier',
@@ -949,7 +967,30 @@ export const useAppStore = create((set, get) => ({
 
   expenseCategories: (() => {
     const saved = storage.get('expense_categories', null);
-    if (saved && Array.isArray(saved)) return saved;
+    if (saved && Array.isArray(saved) && saved.length > 0) return saved;
+    // Auto-detect and populate categories from existing expenses if expense_categories is empty
+    const exps = storage.get('expenses', []);
+    if (Array.isArray(exps) && exps.length > 0) {
+      const seen = new Set();
+      const extracted = [];
+      exps.forEach((e) => {
+        const name = (e.categoryNameSnapshot || e.category || '').trim();
+        if (name && !seen.has(name.toLowerCase())) {
+          seen.add(name.toLowerCase());
+          extracted.push({
+            id: e.categoryId || `cat-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+            name,
+            description: '',
+            status: 'active',
+            createdAt: e.createdAt || new Date().toISOString(),
+          });
+        }
+      });
+      if (extracted.length > 0) {
+        storage.set('expense_categories', extracted);
+        return extracted;
+      }
+    }
     return [];
   })(),
 
@@ -1089,14 +1130,41 @@ export const useAppStore = create((set, get) => ({
   fetchExpenseCategories: async () => {
     try {
       const data = await ExpenseRepository.getCategories();
-      if (Array.isArray(data)) {
-        const current = get().expenseCategories || [];
-        if (data.length > 0 || current.length === 0) {
-          storage.set('expense_categories', data);
-          set({ expenseCategories: data });
-          return data;
-        }
+      const current = get().expenseCategories || [];
+      if (Array.isArray(data) && data.length > 0) {
+        const known = new Set(data.map((c) => (c.name || '').trim().toLowerCase()));
+        const extraLocal = current.filter(
+          (c) => !known.has((c.name || '').trim().toLowerCase())
+        );
+        const merged = [...data, ...extraLocal];
+        storage.set('expense_categories', merged);
+        set({ expenseCategories: merged });
+        return merged;
+      }
+      if (current.length > 0) {
         return current;
+      }
+      // Scan expenses in memory
+      const exps = get().expenses || [];
+      const seen = new Set();
+      const extracted = [];
+      exps.forEach((e) => {
+        const name = (e.categoryNameSnapshot || e.category || '').trim();
+        if (name && !seen.has(name.toLowerCase())) {
+          seen.add(name.toLowerCase());
+          extracted.push({
+            id: e.categoryId || `cat-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+            name,
+            description: '',
+            status: 'active',
+            createdAt: e.createdAt || new Date().toISOString(),
+          });
+        }
+      });
+      if (extracted.length > 0) {
+        storage.set('expense_categories', extracted);
+        set({ expenseCategories: extracted });
+        return extracted;
       }
     } catch (err) {
       console.warn('[Store] fetchExpenseCategories warning:', err.message);
@@ -1112,9 +1180,15 @@ export const useAppStore = create((set, get) => ({
       console.warn('[Store] ExpenseCategory create warning:', err.message);
     }
     const current = get().expenseCategories || [];
-    const exists = current.some((c) => c.id === result.id || c.name === result.name);
+    const exists = current.some(
+      (c) => c.id === result.id || (c.name || '').trim().toLowerCase() === (result.name || '').trim().toLowerCase()
+    );
     const updated = exists
-      ? current.map((c) => (c.id === result.id ? result : c))
+      ? current.map((c) =>
+          c.id === result.id || (c.name || '').trim().toLowerCase() === (result.name || '').trim().toLowerCase()
+            ? { ...c, ...result }
+            : c
+        )
       : [...current, result];
     storage.set('expense_categories', updated);
     set({ expenseCategories: updated });
