@@ -305,11 +305,12 @@ export const useAppStore = create((set, get) => ({
     const defaultUserProfiles = {
       admin: {
         id: 'user_admin',
-        name: 'John Holland',
+        name: 'Admin',
         username: 'admin',
         email: 'admin@spicehub.pk',
-        role: 'Admin Cashier',
-        initials: 'JH',
+        role: 'Admin',
+        initials: 'AD',
+        officialTitle: 'Executive Officer / Owner',
         avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
       },
       cashier: activeCashier ? {
@@ -364,11 +365,12 @@ export const useAppStore = create((set, get) => ({
     const defaultUserProfiles = {
       admin: {
         id: 'user_admin',
-        name: 'John Holland',
+        name: 'Admin',
         username: 'admin',
         email: 'admin@spicehub.pk',
-        role: 'Admin Cashier',
-        initials: 'JH',
+        role: 'Admin',
+        initials: 'AD',
+        officialTitle: 'Executive Officer / Owner',
         avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
       },
       cashier: activeCashier ? {
@@ -461,7 +463,7 @@ export const useAppStore = create((set, get) => ({
     // INSTANT LOCAL AUTHENTICATION (0ms latency, instant dashboard entrance)
     if (isLocalAdminMatch || isLocalCashierMatch) {
       const role = isLocalAdminMatch ? 'admin' : 'cashier';
-      const roleTitle = isLocalAdminMatch ? 'Admin Cashier' : 'Cashier';
+      const roleTitle = isLocalAdminMatch ? 'Admin' : 'Cashier';
       const dummyToken = `jwt_${role}_${Date.now()}`;
 
       const profiles = storage.get('user_profiles', {});

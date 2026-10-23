@@ -188,6 +188,30 @@ export const SecuritySettingsTab = ({
     return () => window.removeEventListener('click', handleOutsideClick);
   }, []);
 
+  // Ensure that in Admin Settings, the current session user is strictly Admin
+  React.useEffect(() => {
+    const cur = useAppStore.getState().user;
+    const isCashierSession = Boolean(
+      cur &&
+      (cur.role?.toLowerCase().includes('cashier') || cur.username !== 'admin') &&
+      !cur.role?.toLowerCase().includes('admin')
+    );
+    if (isCashierSession) {
+      const adminProfile = {
+        id: 'user_admin',
+        name: 'Admin',
+        username: 'admin',
+        email: 'admin@spicehub.pk',
+        role: 'Admin',
+        branch: 'All Branches',
+        initials: 'AD',
+        officialTitle: 'Executive Officer / Owner',
+      };
+      useAppStore.setState({ user: adminProfile });
+      storage.set('active_user', adminProfile);
+    }
+  }, []);
+
   /**
    * Activate Cashier Handler
    * Sets this cashier as Active, deactivates all other cashiers,
@@ -239,12 +263,8 @@ export const SecuritySettingsTab = ({
     };
     storage.set('user_profiles', profiles);
 
-    // If currently logged into cashier portal, update store state directly
-    const currentRole = String(useAppStore.getState().user?.role || '').toLowerCase();
-    if (currentRole.includes('cashier')) {
-      useAppStore.setState({ user: profiles.cashier });
-      storage.set('active_user', profiles.cashier);
-    }
+    // Setting active cashier ONLY applies to Cashier Portal & POS.
+    // The Admin user remains logged in as Admin in this Admin portal.
 
     setOpenActionMenuId(null);
     setNotification(`Cashier "${targetCashier.name}" is now the ACTIVE cashier on Cashier Portal & POS!`);
@@ -515,9 +535,7 @@ export const SecuritySettingsTab = ({
                     u.role === 'admin' ||
                     (u.name && u.name.toLowerCase().includes('admin'))
                   );
-                  const isCurrentLoggedInUser =
-                    (user?.username && (u.username === user.username || (isAdmin && (user.username === 'admin' || user.username === 'superadmin')))) ||
-                    (user?.email && u.email === user.email);
+                  const isCurrentLoggedInUser = isAdmin;
                   const isThisCashierActive = Boolean(u.status === 'active' && !isAdmin);
 
                   return (
