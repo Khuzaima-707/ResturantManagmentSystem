@@ -25,6 +25,7 @@ import {
   Database,
   History,
   Receipt,
+  Users,
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { useAppStore } from '../../store';
@@ -193,12 +194,6 @@ export const Sidebar = ({ isOpen, onClose }) => {
         icon: Building2,
       },
       {
-        name: 'User & Access Control',
-        path: '/settings/security',
-        slug: 'security',
-        icon: ShieldCheck,
-      },
-      {
         name: 'Payment Accounts',
         path: '/settings/payment',
         slug: 'payment',
@@ -225,6 +220,14 @@ export const Sidebar = ({ isOpen, onClose }) => {
     ];
 
     if (!isCashier) {
+      // User & Access Control is strictly administrator-only
+      list.splice(1, 0, {
+        name: 'User & Access Control',
+        path: '/settings/security',
+        slug: 'security',
+        icon: ShieldCheck,
+      });
+
       list.push(
         {
           name: 'Data Management',
@@ -601,6 +604,20 @@ export const Sidebar = ({ isOpen, onClose }) => {
             >
               <Settings className="w-4 h-4 text-slate-400" />
               <span>Settings</span>
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={async (e) => {
+                e.currentTarget.blur();
+                setIsUserMenuOpen(false);
+                await logout();
+                navigate('/login?portal=cashier');
+              }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 rounded-xl transition-colors text-left cursor-pointer outline-none focus:outline-none focus-visible:outline-none focus:ring-0"
+            >
+              <Users className="w-4 h-4 text-emerald-600" />
+              <span>Switch Cashier / Portal</span>
             </button>
             <div className="h-px bg-slate-100 my-0.5" />
             <button

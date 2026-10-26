@@ -8,6 +8,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { useAppStore } from '../../store';
+import { storage } from '../../services/persistence/storage';
 import { isNotificationVisibleToUser } from '../../domain/selectors/invoiceSelectors';
 
 /**
@@ -49,7 +50,8 @@ export const NotificationDropdown = () => {
   } = useAppStore();
 
   const userNotifications = React.useMemo(() => {
-    return (notifications || []).filter((n) => isNotificationVisibleToUser(n, user));
+    const activeUser = user || storage.get('active_user', null);
+    return (notifications || []).filter((n) => isNotificationVisibleToUser(n, activeUser));
   }, [notifications, user]);
 
   const unreadCount = userNotifications.filter((n) => !n.read).length;

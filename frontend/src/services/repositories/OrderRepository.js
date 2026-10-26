@@ -27,27 +27,19 @@ export const OrderRepository = {
   },
   getAll: async (params = {}) => {
     try {
-      const query = new URLSearchParams(params).toString();
+      const activeUser = storage.get('active_user', null);
+      const isCashier = activeUser && !String(activeUser.role || '').toLowerCase().includes('admin') && String(activeUser.username || '').toLowerCase() !== 'admin';
+      const effectiveParams = { ...params };
+      if (isCashier) {
+        if (activeUser.id) effectiveParams.createdByUserId = activeUser.id;
+        if (activeUser.name) effectiveParams.cashierName = activeUser.name;
+        effectiveParams.role = 'cashier';
+      }
+      const query = new URLSearchParams(effectiveParams).toString();
       const endpoint = query ? `/orders?${query}` : '/orders';
       const res = await api.get(endpoint);
       if (res && res.success && Array.isArray(res.data)) {
-        const local = storage.get(STORAGE_KEY, []) || [];
-        if (res.data.length > 0) {
-          const backendKeys = new Set(res.data.map((o) => o.id || o.invoiceNumber));
-          const unsynced = local.filter((o) => {
-            const k = o.id || o.invoiceNumber;
-            return k && !backendKeys.has(k);
-          });
-          const merged = [...res.data, ...unsynced];
-          const healed = repairDuplicateInvoiceNumbersLocally(merged);
-          storage.set(STORAGE_KEY, healed);
-          return healed;
-        } else if (local.length > 0) {
-          return local;
-        } else {
-          storage.set(STORAGE_KEY, []);
-          return [];
-        }
+        return res.data;
       }
     } catch {
       // Backend offline fallback
@@ -79,36 +71,36 @@ export const OrderRepository = {
   },
 
   create: async (orderPayload) => {
-    try {
-      const res = await api.post('/orders', orderPayload);
-      if (res && res.success && res.data) {
-        const all = storage.get(STORAGE_KEY, []) || [];
-        let finalOrder = res.data;
-        const otherOrders = all.filter((o) => o.id !== res.data.id && o.id !== orderPayload.id);
-        const hasCollision = otherOrders.some((o) => o.invoiceNumber === res.data.invoiceNumber);
-        if (hasCollision && orderPayload.invoiceNumber && !otherOrders.some((o) => o.invoiceNumber === orderPayload.invoiceNumber)) {
-          finalOrder = { ...res.data, invoiceNumber: orderPayload.invoiceNumber, sequenceNumber: orderPayload.sequenceNumber };
-        }
-        const deduped = [finalOrder, ...otherOrders];
-        const healed = repairDuplicateInvoiceNumbersLocally(deduped);
-        storage.set(STORAGE_KEY, healed);
-        return finalOrder;
-      }
-    } catch (err) {
-      console.warn('[OrderRepository] Live API sync deferred, order safely stored locally:', err.message);
-    }
+    // Clean and sanitize payload to ensure seamless validation
+    const sanitized = {
+      ...orderPayload,
+      lines: (orderPayload.lines || []).map((l) => ({
+        ...l,
+        itemImageSnapshot: l.itemImageSnapshot || '',
+        categoryIdSnapshot: l.categoryIdSnapshot || '',
+        categoryNameSnapshot: l.categoryNameSnapshot || '',
+        pricingMode:
+          l.pricingMode === 'weight'
+            ? (l.selectedPortionLabel ? 'portion' : 'custom_weight')
+            : l.pricingMode === 'amount'
+            ? 'custom_weight'
+            : (l.pricingMode || (l.isDeal ? 'deal' : 'piece')),
+        basePriceSnapshot: Number(l.basePriceSnapshot) || 0,
+        unitPrice: Number(l.unitPrice) || 0,
+        quantity: Math.max(1, Number(l.quantity) || 1),
+        lineSubtotal: Number(l.lineSubtotal) || 0,
+        note: l.note || '',
+      })),
+      customerName: orderPayload.customerName || '',
+      customerPhone: orderPayload.customerPhone || '',
+      tableNumber: orderPayload.tableNumber || '',
+    };
 
-    // Offline client fallback: Ensure order is in storage without duplicating
-    const all = storage.get(STORAGE_KEY, []) || [];
-    const exists = all.some(
-      (o) =>
-        (orderPayload.id && o.id === orderPayload.id) ||
-        (orderPayload.invoiceNumber && o.invoiceNumber === orderPayload.invoiceNumber)
-    );
-    if (!exists) {
-      storage.set(STORAGE_KEY, [orderPayload, ...all]);
+    const res = await api.post('/orders', sanitized);
+    if (res && res.success && res.data) {
+      return res.data;
     }
-    return orderPayload;
+    throw new Error(res?.error?.message || res?.message || 'Failed to save order in MongoDB Atlas');
   },
 
   updateKitchenStatus: async (id, kitchenStatus) => {

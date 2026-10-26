@@ -21,7 +21,7 @@ export const DealCard = ({ deal, onAddToCart, showImage = true }) => {
       dealId: deal.id,
       isDeal: true,
       itemNameSnapshot: deal.name,
-      itemImageSnapshot: deal.imageRef || null,
+      itemImageSnapshot: deal.imageRef || '',
       categoryIdSnapshot: 'cat-deals',
       categoryNameSnapshot: 'Deals',
       pricingMode: 'deal',

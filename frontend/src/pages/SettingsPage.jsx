@@ -47,7 +47,7 @@ export const SettingsPage = () => {
 
   useEffect(() => {
     const target = resolveTabFromParams(section, searchParams.get('tab'));
-    if (isCashier && (target === 'history' || target === 'data')) {
+    if (isCashier && (target === 'security' || target === 'history' || target === 'data')) {
       setActiveTabState('profile');
     } else {
       setActiveTabState(target);
@@ -55,7 +55,7 @@ export const SettingsPage = () => {
   }, [section, searchParams, isCashier]);
 
   const setActiveTab = (newTab) => {
-    if (isCashier && (newTab === 'history' || newTab === 'data')) return;
+    if (isCashier && (newTab === 'security' || newTab === 'history' || newTab === 'data')) return;
     setActiveTabState(newTab);
     navigate(`/settings/${newTab}`);
   };
@@ -147,10 +147,17 @@ export const SettingsPage = () => {
       )}
 
       {activeTab === 'security' && (
-        <SecuritySettingsTab
-          isCreateModalOpen={isCreateUserModalOpen}
-          setIsCreateModalOpen={setIsCreateUserModalOpen}
-        />
+        !isCashier ? (
+          <SecuritySettingsTab
+            isCreateModalOpen={isCreateUserModalOpen}
+            setIsCreateModalOpen={setIsCreateUserModalOpen}
+          />
+        ) : (
+          <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-2xs">
+            <h3 className="text-sm font-bold text-slate-800">Administrator Access Required</h3>
+            <p className="text-xs text-slate-500 mt-1">Cashier accounts cannot access User & Access Control.</p>
+          </div>
+        )
       )}
 
       {activeTab === 'payment' && (

@@ -90,7 +90,11 @@ const DONUT_COLORS = [
  * using historical transaction snapshots and reconciling 100% with accounting rules.
  */
 export const ReportsPage = () => {
-  const { orders, reversals, categories, settings, items, addons, deals, user, expenses } = useAppStore();
+  const { orders, reversals, categories, settings, items, addons, deals, user, expenses, syncWithBackend } = useAppStore();
+
+  useEffect(() => {
+    syncWithBackend?.();
+  }, [syncWithBackend]);
 
   const isCashier = Boolean(
     (user?.role?.toLowerCase().includes('cashier') && !user?.role?.toLowerCase().includes('admin')) ||
@@ -183,8 +187,8 @@ export const ReportsPage = () => {
     }
   }, [activeTab, isCashier]);
 
-  // Unified Filter States (Cashier strictly locked to 'Today')
-  const [datePreset, setDatePreset] = useState(isCashier ? 'Today' : 'All Dates');
+  // Unified Filter States (Defaults to 'All Dates')
+  const [datePreset, setDatePreset] = useState('All Dates');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -206,46 +210,46 @@ export const ReportsPage = () => {
   // Modal for Viewing Historical Invoice (Read-Only)
   const [selectedInvoiceForView, setSelectedInvoiceForView] = useState(null);
 
-  // Cashier cannot see wholesale costs & profit margins or company financial summary
-  const tabs = useMemo(() => {
-    if (isCashier) {
-      return [
-        { id: 'Sales', label: "Today's Sales" },
-        { id: 'Revenue', label: "Today's Revenue" },
-        { id: 'Reversals', label: "Today's Reversals" },
-      ];
-    }
-    return [
-      { id: 'Sales', label: 'Sales' },
-      { id: 'Revenue', label: 'Revenue' },
-      { id: 'Reversals', label: 'Reversals' },
-      { id: 'Profit', label: 'Profit & Cost' },
-      { id: 'FinancialSummary', label: 'Financial Summary' },
-    ];
-  }, [isCashier]);
-
   useEffect(() => {
     if (isCashier && (activeTab === 'Profit' || activeTab === 'FinancialSummary')) {
       setActiveTab('Sales');
     }
   }, [isCashier, activeTab]);
 
-  const effectiveDatePreset = isCashier ? 'Today' : datePreset;
+  const effectiveDatePreset = datePreset;
   const effectiveCustomRange = useMemo(() => {
-    return isCashier
-      ? null
-      : (datePreset === 'Custom' && customStartDate && customEndDate
-          ? { startDate: customStartDate, endDate: customEndDate }
-          : null);
-  }, [isCashier, datePreset, customStartDate, customEndDate]);
+    return datePreset === 'Custom' && customStartDate && customEndDate
+      ? { startDate: customStartDate, endDate: customEndDate }
+      : null;
+  }, [datePreset, customStartDate, customEndDate]);
 
   const customRange = effectiveCustomRange;
 
-  // Role-based visible datasets
+  // Role-based visible datasets, enriched with reversals
   const visibleOrders = useMemo(() => {
     const scoped = filterOrdersByOwnership(orders, user);
-    return repairDuplicateInvoiceNumbersLocally(scoped);
-  }, [orders, user]);
+    const healed = repairDuplicateInvoiceNumbersLocally(scoped);
+    const revMap = new Map();
+    for (const r of reversals || []) {
+      if (r.originalOrderId) revMap.set(r.originalOrderId, r);
+      if (r.originalInvoiceNumber) revMap.set(r.originalInvoiceNumber, r);
+      if (r.orderId) revMap.set(r.orderId, r);
+      if (r.invoiceNumber) revMap.set(r.invoiceNumber, r);
+    }
+    return healed.map((o) => {
+      const rev = revMap.get(o.id) || revMap.get(o.invoiceNumber);
+      if (rev) {
+        return {
+          ...o,
+          status: 'reversed',
+          reversalId: rev.id,
+          reversalReason: rev.reason,
+          reversedAt: rev.reversedAt || rev.createdAt,
+        };
+      }
+      return o;
+    });
+  }, [orders, user, reversals]);
 
   const visibleReversals = useMemo(() => {
     if (!isCashier) return reversals;
@@ -319,7 +323,7 @@ export const ReportsPage = () => {
 
   // Reset Filters
   const handleResetFilters = () => {
-    setDatePreset(isCashier ? 'Today' : 'All Dates');
+    setDatePreset('All Dates');
     setCustomStartDate('');
     setCustomEndDate('');
     setSelectedCategory('All');
@@ -1671,7 +1675,6 @@ export const ReportsPage = () => {
 
 
 
-
       {/* 3. Common Filter Toolbar (Single Shared Filter Source) */}
       <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-2xs space-y-2.5 no-print">
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
@@ -1695,30 +1698,23 @@ export const ReportsPage = () => {
           {/* Filters Group */}
           <div className="flex items-center gap-1.5 flex-wrap text-xs">
             {/* Date Preset */}
-            {isCashier ? (
-              <div className="h-9 px-2.5 bg-amber-50 border border-amber-200 rounded-xl font-bold text-amber-800 flex items-center gap-1.5 text-xs select-none shrink-0">
-                <Calendar className="w-3.5 h-3.5 text-amber-600" />
-                <span>Today (1 Day)</span>
-              </div>
-            ) : (
-              <select
-                value={datePreset}
-                onChange={(e) => {
-                  setDatePreset(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="h-9 px-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer text-xs shrink-0"
-              >
-                <option value="All Dates">All Dates</option>
-                <option value="Today">Today</option>
-                <option value="Yesterday">Yesterday</option>
-                <option value="This Week">This Week</option>
-                <option value="Last Week">Last Week</option>
-                <option value="This Month">This Month</option>
-                <option value="Last Month">Last Month</option>
-                <option value="Custom">Custom Range</option>
-              </select>
-            )}
+            <select
+              value={datePreset}
+              onChange={(e) => {
+                setDatePreset(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="h-9 px-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer text-xs shrink-0"
+            >
+              <option value="All Dates">All Dates</option>
+              <option value="Today">Today</option>
+              <option value="Yesterday">Yesterday</option>
+              <option value="This Week">This Week</option>
+              <option value="Last Week">Last Week</option>
+              <option value="This Month">This Month</option>
+              <option value="Last Month">Last Month</option>
+              <option value="Custom">Custom Range</option>
+            </select>
 
             {/* Custom Range Inputs */}
             {!isCashier && datePreset === 'Custom' && (
@@ -1756,7 +1752,7 @@ export const ReportsPage = () => {
                 className="h-9 px-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-[#FF5C28] cursor-pointer text-xs shrink-0"
               >
                 <option value="All">All Categories</option>
-                <option value="Deals">Deals</option>
+                {hasAnyDeals && <option value="Deals">Deals</option>}
                 {(activeTab === 'Profit' || activeTab === 'FinancialSummary') && <option value="Add-ons">Add-ons</option>}
                 {(categories || [])
                   .filter((c) => c && c.name && c.name.toLowerCase() !== 'add-ons' && c.name.toLowerCase() !== 'deals')
@@ -1821,6 +1817,7 @@ export const ReportsPage = () => {
                 <option value="Cash">Cash</option>
                 <option value="Card">Card</option>
                 <option value="Online">Online</option>
+                <option value="Split">Split</option>
               </select>
             )}
 
@@ -1884,7 +1881,7 @@ export const ReportsPage = () => {
               selectedCategory !== 'All' ||
               (selectedItem && selectedItem !== 'All') ||
               (selectedReason && selectedReason !== 'All') ||
-              datePreset !== (isCashier ? 'Today' : 'All Dates') ||
+              datePreset !== 'All Dates' ||
               Boolean(searchQuery)) && (
               <button
                 type="button"

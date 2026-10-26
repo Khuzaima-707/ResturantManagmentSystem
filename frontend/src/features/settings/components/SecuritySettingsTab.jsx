@@ -107,8 +107,27 @@ const INITIAL_SYSTEM_USERS = [
 export const SecuritySettingsTab = ({
   isCreateModalOpen: propIsOpen,
   setIsCreateModalOpen: propSetIsOpen,
-} = {}) => {
+}) => {
   const { user } = useAppStore();
+
+  const isCashier = Boolean(
+    (user?.role?.toLowerCase().includes('cashier') && !user?.role?.toLowerCase().includes('admin')) ||
+    (user?.username?.toLowerCase() === 'cashier' && user?.username?.toLowerCase() !== 'admin')
+  );
+
+  if (isCashier) {
+    return (
+      <div className="p-12 text-center bg-white rounded-2xl border border-slate-200/80 shadow-2xs space-y-3">
+        <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-500 mx-auto">
+          <Lock className="w-6 h-6 text-slate-600" />
+        </div>
+        <h3 className="text-base font-bold text-slate-800">Administrator Access Required</h3>
+        <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+          User &amp; Access Control is restricted to restaurant administrators only. Cashiers cannot view or modify system users.
+        </p>
+      </div>
+    );
+  }
 
   // Modal State
   const [internalIsOpen, setInternalIsOpen] = useState(false);
@@ -118,6 +137,9 @@ export const SecuritySettingsTab = ({
   // Users State (Strictly normalized to All Branches and Admin)
   const [usersList, setUsersList] = useState(() => {
     const saved = storage.get('rms_users_list', null);
+    const userProfiles = storage.get('user_profiles', {});
+    const savedAdmin = userProfiles?.admin || {};
+
     if (Array.isArray(saved) && saved.length > 0) {
       const normalized = saved.map((u) => {
         const isAdmin = Boolean(
@@ -126,26 +148,30 @@ export const SecuritySettingsTab = ({
           u.username === 'admin' ||
           u.username === 'superadmin' ||
           u.email?.includes('superadmin') ||
-          u.name?.toLowerCase().includes('admin') ||
           u.role === 'admin' ||
           u.portalRole?.toLowerCase().includes('admin')
         );
         if (isAdmin) {
+          const currentAdminName =
+            savedAdmin.name ||
+            (u.name && u.name !== 'Admin' ? u.name : (u.name || 'Admin'));
           return {
             ...u,
             id: 'user_admin',
-            name: 'Admin',
-            officialTitle: 'Executive Officer / Owner',
+            name: currentAdminName,
+            fullName: currentAdminName,
+            officialTitle: savedAdmin.officialTitle || u.officialTitle || 'Executive Officer / Owner',
             username: 'admin',
             email: 'admin@spicehub.pk',
             phone: '03001112233',
-            portalRole: 'Admin',
-            systemRole: 'Admin',
+            portalRole: savedAdmin.role || 'Admin',
+            systemRole: savedAdmin.role || 'Admin',
             role: 'admin',
             branch: 'All Branches',
             linkedEmployeeRecord: 'Direct System User',
             status: 'active',
             isFixedAdmin: true,
+            avatarUrl: savedAdmin.avatarUrl !== undefined ? savedAdmin.avatarUrl : u.avatarUrl,
           };
         }
         return {
@@ -158,14 +184,21 @@ export const SecuritySettingsTab = ({
       storage.set('rms_users_list', normalized);
       return normalized;
     }
+    const defaultAdmin = {
+      ...INITIAL_SYSTEM_USERS[0],
+      ...(savedAdmin.name ? { name: savedAdmin.name, fullName: savedAdmin.name } : {}),
+      ...(savedAdmin.avatarUrl !== undefined ? { avatarUrl: savedAdmin.avatarUrl } : {}),
+    };
+
     const customUsers = storage.get('rms_custom_users', []);
     if (Array.isArray(customUsers) && customUsers.length > 0) {
-      const merged = [INITIAL_SYSTEM_USERS[0], ...customUsers].map((u) => ({ ...u, branch: 'All Branches' }));
+      const merged = [defaultAdmin, ...customUsers].map((u) => ({ ...u, branch: 'All Branches' }));
       storage.set('rms_users_list', merged);
       return merged;
     }
-    storage.set('rms_users_list', INITIAL_SYSTEM_USERS);
-    return INITIAL_SYSTEM_USERS;
+    const initialList = [defaultAdmin, ...INITIAL_SYSTEM_USERS.slice(1)];
+    storage.set('rms_users_list', initialList);
+    return initialList;
   });
 
   // Filter & Search states (matching Screenshot 1)
@@ -214,14 +247,12 @@ export const SecuritySettingsTab = ({
 
   /**
    * Activate Cashier Handler
-   * Sets this cashier as Active, deactivates all other cashiers,
-   * and immediately updates the active cashier on Cashier Portal & POS.
+   * Activates this specific cashier for Cashier Portal & POS without deactivating other active cashiers.
    */
   const handleActivateCashier = (targetCashier) => {
     if (targetCashier.isFixedAdmin) return;
 
     const updated = usersList.map((u) => {
-      if (u.isFixedAdmin) return u;
       if (u.id === targetCashier.id) {
         return {
           ...u,
@@ -229,18 +260,17 @@ export const SecuritySettingsTab = ({
           isActiveCashier: true,
         };
       }
-      return {
-        ...u,
-        status: 'deactivated',
-        isActiveCashier: false,
-      };
+      return u;
     });
 
     setUsersList(updated);
     storage.set('rms_users_list', updated);
     storage.set('rms_custom_users', updated.filter((u) => !u.isFixedAdmin));
 
-    // Save active cashier references
+    // Save active cashier references for Cashier Portal
+    const activeCashiers = updated.filter((u) => !u.isFixedAdmin && u.status === 'active');
+    storage.set('active_cashier_users', activeCashiers);
+
     const activeCashierPayload = {
       id: targetCashier.id,
       name: targetCashier.name || targetCashier.fullName,
@@ -263,11 +293,8 @@ export const SecuritySettingsTab = ({
     };
     storage.set('user_profiles', profiles);
 
-    // Setting active cashier ONLY applies to Cashier Portal & POS.
-    // The Admin user remains logged in as Admin in this Admin portal.
-
     setOpenActionMenuId(null);
-    setNotification(`Cashier "${targetCashier.name}" is now the ACTIVE cashier on Cashier Portal & POS!`);
+    setNotification(`Cashier "${targetCashier.name}" is now ACTIVE on Cashier Portal & POS!`);
     setTimeout(() => setNotification(''), 5000);
   };
 
@@ -291,9 +318,74 @@ export const SecuritySettingsTab = ({
     setUsersList(updated);
     storage.set('rms_users_list', updated);
     storage.set('rms_custom_users', updated.filter((u) => !u.isFixedAdmin));
+
+    const activeCashiers = updated.filter((u) => !u.isFixedAdmin && u.status === 'active');
+    storage.set('active_cashier_users', activeCashiers);
+
+    if (activeCashiers.length > 0) {
+      storage.set('active_cashier_user', activeCashiers[0]);
+      storage.set('active_cashier_id', activeCashiers[0].id);
+    } else {
+      storage.remove('active_cashier_user');
+      storage.remove('active_cashier_id');
+    }
+
     setOpenActionMenuId(null);
     setNotification(`Cashier "${targetCashier.name}" access deactivated.`);
     setTimeout(() => setNotification(''), 4000);
+  };
+
+  /**
+   * Activate All Cashiers Handler
+   * Enables all cashiers simultaneously for Cashier Portal
+   */
+  const handleActivateAllCashiers = () => {
+    const updated = usersList.map((u) => {
+      if (u.isFixedAdmin) return u;
+      return {
+        ...u,
+        status: 'active',
+        isActiveCashier: true,
+      };
+    });
+
+    setUsersList(updated);
+    storage.set('rms_users_list', updated);
+    storage.set('rms_custom_users', updated.filter((u) => !u.isFixedAdmin));
+
+    const activeCashiers = updated.filter((u) => !u.isFixedAdmin);
+    storage.set('active_cashier_users', activeCashiers);
+    if (activeCashiers[0]) {
+      storage.set('active_cashier_user', activeCashiers[0]);
+      storage.set('active_cashier_id', activeCashiers[0].id);
+    }
+
+    setNotification('All cashiers have been ACTIVATED for Cashier Portal & POS!');
+    setTimeout(() => setNotification(''), 5000);
+  };
+
+  /**
+   * Deactivate All Cashiers Handler
+   */
+  const handleDeactivateAllCashiers = () => {
+    const updated = usersList.map((u) => {
+      if (u.isFixedAdmin) return u;
+      return {
+        ...u,
+        status: 'deactivated',
+        isActiveCashier: false,
+      };
+    });
+
+    setUsersList(updated);
+    storage.set('rms_users_list', updated);
+    storage.set('rms_custom_users', updated.filter((u) => !u.isFixedAdmin));
+    storage.set('active_cashier_users', []);
+    storage.remove('active_cashier_user');
+    storage.remove('active_cashier_id');
+
+    setNotification('All cashier accounts have been DEACTIVATED.');
+    setTimeout(() => setNotification(''), 5000);
   };
 
   /**
@@ -491,12 +583,44 @@ export const SecuritySettingsTab = ({
         </div>
       </div>
 
+      {/* Quick Cashier Activation Controls (Voice Requirement) */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-4 py-3 bg-gradient-to-r from-orange-50/70 via-white to-emerald-50/60 rounded-2xl border border-orange-200/70 shadow-2xs">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="text-xs font-bold text-slate-800">
+            Cashier Portal Availability:
+          </span>
+          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+            {usersList.filter((u) => !u.isFixedAdmin && u.status === 'active').length} of {usersList.filter((u) => !u.isFixedAdmin).length} Cashiers Active
+          </span>
+          <span className="text-[11px] text-slate-500 hidden md:inline">
+            (Active cashiers appear directly on Cashier Login screen)
+          </span>
+        </div>
+        <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+          <button
+            type="button"
+            onClick={handleActivateAllCashiers}
+            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
+            title="Make all cashiers active on the Cashier Portal"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>Activate All Cashiers</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleDeactivateAllCashiers}
+            className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 hover:border-rose-200 text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
+            title="Deactivate all cashiers"
+          >
+            <X className="w-3.5 h-3.5" />
+            <span>Deactivate All</span>
+          </button>
+        </div>
+      </div>
+
       {/* ======================================================== */}
       {/* ENTERPRISE USER MANAGEMENT TABLE (Matching Screenshot 1) */}
-      {/* ======================================================== */}
-      {/* ======================================================== */}
-      {/* ======================================================== */}
-      {/* ENTERPRISE USER MANAGEMENT TABLE (Matching app section styling) */}
       {/* ======================================================== */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.02),0_2px_8px_-2px_rgba(15,23,42,0.03)]">
         <div className="w-full">
@@ -610,22 +734,36 @@ export const SecuritySettingsTab = ({
                         <span>{u.linkedEmployeeRecord || 'Direct System User'}</span>
                       </td>
 
-                      {/* 6. Access Status */}
+                      {/* 6. Access Status (1-Click Interactive Toggle) */}
                       <td className="py-2.5 px-3 align-middle whitespace-nowrap">
                         {u.status === 'active' ? (
-                          <span className="inline-flex items-center justify-center gap-1.5 w-[84px] h-6 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 select-none">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            <span>Active</span>
-                          </span>
+                          isAdmin ? (
+                            <span className="inline-flex items-center justify-center gap-1.5 w-[88px] h-6 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 select-none">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              <span>Active</span>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleDeactivateCashier(u)}
+                              title="Click to deactivate this cashier"
+                              className="inline-flex items-center justify-center gap-1.5 w-[88px] h-6 rounded-full text-[11px] font-semibold bg-emerald-50 hover:bg-rose-50 text-emerald-700 hover:text-rose-700 border border-emerald-200 hover:border-rose-300 transition-colors cursor-pointer group/status shadow-2xs"
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 group-hover/status:bg-rose-500" />
+                              <span className="group-hover/status:hidden">Active</span>
+                              <span className="hidden group-hover/status:inline">Deactivate</span>
+                            </button>
+                          )
                         ) : (
                           <button
                             type="button"
                             onClick={() => handleActivateCashier(u)}
-                            title="Click to activate this cashier"
-                            className="inline-flex items-center justify-center gap-1.5 w-[84px] h-6 rounded-full text-[11px] font-semibold bg-slate-50 hover:bg-emerald-50 text-slate-500 hover:text-emerald-700 border border-slate-200 hover:border-emerald-300 transition-colors cursor-pointer group shadow-2xs"
+                            title="Click to activate this cashier for Cashier Portal"
+                            className="inline-flex items-center justify-center gap-1.5 w-[88px] h-6 rounded-full text-[11px] font-semibold bg-slate-50 hover:bg-emerald-50 text-slate-500 hover:text-emerald-700 border border-slate-200 hover:border-emerald-300 transition-colors cursor-pointer group/status shadow-2xs"
                           >
-                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400 group-hover:bg-emerald-500 transition-colors" />
-                            <span>Deactive</span>
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400 group-hover/status:bg-emerald-500 transition-colors" />
+                            <span className="group-hover/status:hidden">Deactive</span>
+                            <span className="hidden group-hover/status:inline">Activate</span>
                           </button>
                         )}
                       </td>
@@ -728,9 +866,9 @@ export const SecuritySettingsTab = ({
             {usersList.length - 1} Cashier Operators)
           </div>
           <div className="flex items-center gap-2">
-            <span className="flex items-center gap-1 text-emerald-700 font-semibold">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              Active Cashier Portal operator enabled
+            <span className="flex items-center gap-1.5 text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>{usersList.filter((u) => !u.isFixedAdmin && u.status === 'active').length} Active Cashiers on Portal</span>
             </span>
           </div>
         </div>

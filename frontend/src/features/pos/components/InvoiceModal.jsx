@@ -5,7 +5,6 @@ import {
   RotateCcw,
   PlusCircle,
   ChefHat,
-  AlertCircle,
   Wallet,
 } from 'lucide-react';
 import { Modal } from '../../../components/ui/Modal';
@@ -195,25 +194,6 @@ export const InvoiceModal = ({
             </button>
           </div>
 
-          {/* Reversed Alert Banner */}
-          {isReversed && (
-            <div className="p-3 rounded-2xl bg-gradient-to-r from-rose-50 to-red-50 border border-rose-200 text-rose-800 space-y-1 text-xs shadow-2xs mb-2">
-              <div className="flex items-center justify-between font-bold text-rose-700">
-                <span className="flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span className="font-extrabold tracking-wide">TRANSACTION REVERSED</span>
-                </span>
-                <span className="px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] uppercase font-bold border border-rose-200">
-                  Void / Reversed
-                </span>
-              </div>
-              {linkedReversal?.reason && (
-                <p className="text-[11px] text-rose-700 pt-0.5 pl-6">
-                  <span className="font-semibold text-rose-800">Reason:</span> {linkedReversal.reason}
-                </p>
-              )}
-            </div>
-          )}
 
           {/* Clean Receipt Container (Thermal Receipt Format with taller vertical spacing) */}
           <div className="rounded-2xl border border-slate-200/90 p-5 sm:p-6 bg-white shadow-2xs text-xs text-slate-700 min-h-[490px] flex flex-col justify-between">

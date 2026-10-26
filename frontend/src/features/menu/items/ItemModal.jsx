@@ -78,6 +78,7 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
 
   const [description, setDescription] = useState(item?.description || '');
   const [imageRef, setImageRef] = useState(item?.imageRef || null);
+  const [isImageUploading, setIsImageUploading] = useState(false);
 
   // Extra Add-ons (Optional)
   const [extraAddons, setExtraAddons] = useState(() => {
@@ -275,7 +276,7 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
       baseUnit: finalUnit,
       unitType: isWeightUnit ? 'weight' : isVolumeUnit ? 'volume' : 'piece',
       description: description.trim(),
-      imageRef,
+      imageRef: imageRef ? String(imageRef).trim() : '',
       status: item?.status || 'active',
       addons: formattedAddons,
       addonIds: resolvedAddonIds,
@@ -318,7 +319,11 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
           <label className="text-[11px] font-bold text-slate-800 select-none">
             Item Photo
           </label>
-          <ImageUploader value={imageRef} onChange={setImageRef} />
+          <ImageUploader
+            value={imageRef}
+            onChange={setImageRef}
+            onProcessingChange={setIsImageUploading}
+          />
         </div>
 
         {/* Item Name * */}
@@ -717,9 +722,14 @@ const ItemModalForm = ({ isOpen, onClose, item = null }) => {
           </button>
           <button
             type="submit"
-            className="h-8 px-5 rounded-full bg-[#FF5C28] hover:bg-[#E04D1D] text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+            disabled={isImageUploading}
+            className="h-8 px-5 rounded-full bg-[#FF5C28] hover:bg-[#E04D1D] text-white text-xs font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
           >
-            Save Item
+            {isImageUploading ? (
+              <span>Uploading Photo...</span>
+            ) : (
+              <span>{isEdit ? 'Update Item' : 'Save Item'}</span>
+            )}
           </button>
         </div>
       </form>

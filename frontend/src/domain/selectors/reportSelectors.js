@@ -18,7 +18,7 @@ import {
 import {
   getDateIntervalForPreset,
   getValidNonReversedOrders,
-} from './dashboardSelectors';
+} from './dashboardSelectors.js';
 import { storage } from '../../services/persistence/storage';
 import { filterExpenses, calculateExpenseSummary } from '../rules/expenseRules';
 
@@ -132,47 +132,94 @@ export function filterReportOrders(orders = [], filters = {}) {
 
     // Status filter
     if (status && status !== 'All') {
-      const orderStatus = (order.status || 'completed').toLowerCase();
+      const isOrderReversed =
+        (order.status || '').toLowerCase() === 'reversed' ||
+        Boolean(order.reversalId);
       const isPartial =
         (Number(order.balanceDue) > 0 || (order.paymentStatus || '').toLowerCase() === 'partial') &&
-        orderStatus !== 'reversed';
+        !isOrderReversed;
       const target = status.toLowerCase();
 
       if (target === 'partial' || target === 'outstanding') {
         if (!isPartial) return false;
+      } else if (target === 'reversed') {
+        if (!isOrderReversed) return false;
       } else if (target === 'completed') {
-        if (orderStatus !== 'completed' || isPartial) return false;
-      } else if (orderStatus !== target) {
+        if (isOrderReversed || isPartial || (order.status || '').toLowerCase() !== 'completed') return false;
+      } else if ((order.status || '').toLowerCase() !== target) {
         return false;
       }
     }
 
     // Payment method filter
     if (paymentMethod && paymentMethod !== 'All') {
-      if (String(order.paymentMethod || '').toLowerCase() !== paymentMethod.toLowerCase()) {
+      const pTarget = paymentMethod.toLowerCase().trim();
+      const pOrder = String(order.paymentMethod || '').toLowerCase().trim();
+      if (pTarget === 'split') {
+        if (pOrder !== 'split' && !order.splitDetails) return false;
+      } else if (pTarget === 'cash') {
+        if (pOrder !== 'cash' && !(pOrder === 'split' && Number(order.splitDetails?.cashAmount) > 0)) {
+          return false;
+        }
+      } else if (pTarget === 'online') {
+        if (pOrder !== 'online' && !(pOrder === 'split' && Number(order.splitDetails?.onlineAmount) > 0)) {
+          return false;
+        }
+      } else if (pTarget === 'card') {
+        if (pOrder !== 'card' && !order.cardNetwork) {
+          return false;
+        }
+      } else if (pOrder !== pTarget) {
         return false;
       }
     }
 
     // Order type filter
     if (orderType && orderType !== 'All') {
-      if (String(order.orderType || '').toLowerCase() !== orderType.toLowerCase()) {
+      const targetType = orderType.toLowerCase().replace(/[^a-z]/g, '');
+      const oType = String(order.orderType || '').toLowerCase().replace(/[^a-z]/g, '');
+      if (oType !== targetType && !oType.includes(targetType) && !targetType.includes(oType)) {
         return false;
       }
     }
 
     // Category filter
     if (category && category !== 'All') {
-      const catLower = category.toLowerCase();
+      const catLower = category.toLowerCase().trim();
       const isAddonFilter = catLower === 'add-ons' || catLower === 'addon' || catLower === 'add-on';
+      const isDealFilter = catLower === 'deals' || catLower === 'deal';
       const hasCategoryMatch = (order.lines || []).some((l) => {
-        const lineCat = String(l.categoryNameSnapshot || l.categoryName || '').toLowerCase();
+        const lineCat = String(l.categoryNameSnapshot || l.categoryName || '').toLowerCase().trim();
+        const lineCatId = String(l.categoryIdSnapshot || l.categoryId || '').toLowerCase().trim();
+        const isDealLine = Boolean(
+          l.isDeal ||
+          l.dealId ||
+          l.dealSnapshot ||
+          l.pricingMode === 'deal' ||
+          lineCat.includes('deal') ||
+          String(l.itemNameSnapshot || '').toLowerCase().includes('deal')
+        );
+        if (isDealFilter) return isDealLine;
+
         const hasAddonMatch =
           isAddonFilter &&
           ((Array.isArray(l.addonSnapshots) && l.addonSnapshots.length > 0) ||
             (Array.isArray(l.addons) && l.addons.length > 0) ||
             (Array.isArray(l.selectedAddons) && l.selectedAddons.length > 0));
-        return lineCat === catLower || lineCat.includes(catLower) || hasAddonMatch;
+
+        // Exact, substring, or singular/plural comparison (e.g. Burger vs Burgers, Roll vs Rolls)
+        const nameMatches =
+          lineCat === catLower ||
+          lineCat.includes(catLower) ||
+          catLower.includes(lineCat) ||
+          lineCat.replace(/s$/, '') === catLower.replace(/s$/, '') ||
+          lineCatId === catLower;
+
+        // Also check if line item name matches category (e.g. "Chicken Biryani" matches "Rice" / "Biryani")
+        const itemNameLower = String(l.itemNameSnapshot || l.name || '').toLowerCase();
+        const itemMatchesCategory = catLower.length > 2 && itemNameLower.includes(catLower.replace(/s$/, ''));
+
+        return nameMatches || itemMatchesCategory || hasAddonMatch;
       });
       if (!hasCategoryMatch) return false;
     }
@@ -920,7 +967,11 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
       const isWeight = Boolean(
         line.pricingMode === 'portion' ||
         line.pricingMode === 'custom_weight' ||
-        (line.selectedWeightGrams && Number(line.selectedWeightGrams) > 0)
+        line.pricingMode === 'weight' ||
+        (line.selectedWeightGrams && Number(line.selectedWeightGrams) > 0) ||
+        (line.weightGramsSnapshot && Number(line.weightGramsSnapshot) > 0) ||
+        (matchedCatItem?.unit && String(matchedCatItem.unit).toLowerCase().includes('kg')) ||
+        (line.baseUnitSnapshot && String(line.baseUnitSnapshot).toLowerCase().includes('kg'))
       );
 
       // Helper function for portion or piece COGS
@@ -929,7 +980,7 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
           return null;
         }
         if (isWeight) {
-          let derivedGrams = Number(line.selectedWeightGrams) || 0;
+          let derivedGrams = Number(line.selectedWeightGrams || line.weightGramsSnapshot) || 0;
           if (derivedGrams <= 0) {
             const label = String(line.selectedPortionLabel || line.portion || '').toLowerCase();
             if (label.includes('1kg') || label === '1 kg') derivedGrams = 1000;
@@ -998,6 +1049,15 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
       let itemCOGSVal = null;
       if (isDealLine && lineItemCostPrice !== null) {
         itemCOGSVal = Math.round(lineItemCostPrice * qty);
+      } else if (isWeight) {
+        const baseWeightCOGS = calcItemBaseCOGS();
+        if (baseWeightCOGS !== null) {
+          itemCOGSVal = baseWeightCOGS;
+        } else if (line.totalCOGS !== undefined && line.totalCOGS !== null) {
+          itemCOGSVal = Math.max(0, Number(line.totalCOGS) - lineAddonsTotalCOGS);
+        } else if (line.itemCOGS !== undefined && line.itemCOGS !== null) {
+          itemCOGSVal = Number(line.itemCOGS);
+        }
       } else if (processedAddons.length === 0) {
         if (line.totalCOGS !== undefined && line.totalCOGS !== null) {
           itemCOGSVal = Number(line.totalCOGS);
@@ -1378,12 +1438,31 @@ export function groupFinancialTrendByDate(
     let dayCOGS = 0;
     validOrdersOnDay.forEach((o) => {
       (o.lines || []).forEach((l) => {
-        if (l.totalCOGS !== undefined && l.totalCOGS !== null) {
+        const qty = Math.max(1, Number(l.quantity || 1));
+        const isWeight = Boolean(
+          l.pricingMode === 'portion' ||
+          l.pricingMode === 'custom_weight' ||
+          l.pricingMode === 'weight' ||
+          (l.selectedWeightGrams && Number(l.selectedWeightGrams) > 0) ||
+          (l.weightGramsSnapshot && Number(l.weightGramsSnapshot) > 0) ||
+          (l.baseUnitSnapshot && String(l.baseUnitSnapshot).toLowerCase().includes('kg'))
+        );
+        let derivedGrams = Number(l.selectedWeightGrams || l.weightGramsSnapshot) || 0;
+        if (derivedGrams <= 0 && isWeight) {
+          const label = String(l.selectedPortionLabel || l.portion || '').toLowerCase();
+          if (label.includes('1kg') || label === '1 kg') derivedGrams = 1000;
+          else if (label.match(/(\d+)\s*g/)) derivedGrams = Number(label.match(/(\d+)\s*g/)[1]);
+          else if (label.includes('half')) derivedGrams = 500;
+          else if (label.includes('quarter')) derivedGrams = 250;
+        }
+
+        if (isWeight && derivedGrams > 0 && l.costPriceSnapshot !== undefined && l.costPriceSnapshot !== null) {
+          dayCOGS += Math.round((derivedGrams / 1000) * Number(l.costPriceSnapshot) * qty) + (Number(l.addonCOGS) || 0);
+        } else if (l.totalCOGS !== undefined && l.totalCOGS !== null) {
           dayCOGS += Number(l.totalCOGS);
         } else if (l.itemCOGS !== undefined && l.itemCOGS !== null) {
           dayCOGS += Number(l.itemCOGS) + (Number(l.addonCOGS) || 0);
         } else if (l.costPriceSnapshot !== undefined && l.costPriceSnapshot !== null) {
-          const qty = Math.max(1, Number(l.quantity || 1));
           dayCOGS += Number(l.costPriceSnapshot) * qty;
         }
       });

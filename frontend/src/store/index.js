@@ -2,12 +2,6 @@ import { create } from 'zustand';
 import { storage } from '../services/persistence/storage';
 import { clearAllImages } from '../services/persistence/imageStorage';
 import {
-  defaultSeedData,
-  seedCategories,
-  seedMenuItems,
-  seedAddons,
-} from '../services/mock/demoData';
-import {
   getDefaultSettings,
   normalizeSettings,
   mergeSettings,
@@ -32,6 +26,10 @@ import {
   isCashierUser,
 } from '../domain/selectors/invoiceSelectors';
 import { getApiBaseUrl } from '../services/adapters/apiClient';
+
+let backendSyncPromise = null;
+let lastBackendSyncTime = 0;
+const SYNC_COOLDOWN_MS = 10000;
 
 /**
  * Global RMS Store
@@ -365,11 +363,11 @@ export const useAppStore = create((set, get) => ({
     const defaultUserProfiles = {
       admin: {
         id: 'user_admin',
-        name: 'Admin',
+        name: 'John Holland',
         username: 'admin',
         email: 'admin@spicehub.pk',
         role: 'Admin',
-        initials: 'AD',
+        initials: 'JH',
         officialTitle: 'Executive Officer / Owner',
         avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
       },
@@ -398,6 +396,136 @@ export const useAppStore = create((set, get) => ({
       cashier: '1234',
     });
 
+    // Check provisioned and system users from User & Access Control
+    const savedUsersList = storage.get('rms_users_list', null);
+    const customUsers = storage.get('rms_custom_users', []);
+    const allUsers = Array.isArray(savedUsersList) && savedUsersList.length > 0
+      ? savedUsersList
+      : (Array.isArray(customUsers) && customUsers.length > 0 ? customUsers : []);
+
+    const matchedUser = allUsers.find(
+      (u) =>
+        u.email?.toLowerCase().trim() === norm ||
+        u.username?.toLowerCase().trim() === norm ||
+        u.loginIdentifier?.toLowerCase().trim() === norm ||
+        (norm === 'cashier' && (u.username === 'cashier' || u.id === 'user_cashier_1' || u.id === 'user_cashier'))
+    );
+
+    if (matchedUser) {
+      const isRoleAdmin =
+        Boolean(matchedUser.isFixedAdmin) ||
+        matchedUser.id === 'user_admin' ||
+        matchedUser.username === 'admin' ||
+        matchedUser.portalRole?.toLowerCase().includes('admin') ||
+        matchedUser.role?.toLowerCase().includes('admin');
+
+      // Cashier active status check: deactivated cashiers cannot log in
+      if (!isRoleAdmin && (matchedUser.status === 'deactivated' || matchedUser.status === 'inactive')) {
+        return {
+          success: false,
+          error: `Cashier account "${matchedUser.name}" is currently deactivated in Admin Settings. Please activate it in Settings > User & Access Control.`,
+        };
+      }
+
+      // Password verification
+      const isPwdMatch =
+        password === matchedUser.password ||
+        (isRoleAdmin && (password === creds.admin || password === 'admin123' || password === '12345')) ||
+        (!isRoleAdmin && (password === creds.cashier || password === 'cashier123' || password === '1234'));
+
+      if (isPwdMatch) {
+        const role = isRoleAdmin ? 'admin' : 'cashier';
+        const roleTitle = isRoleAdmin ? 'Admin' : 'Cashier';
+        const dummyToken = `jwt_${role}_${matchedUser.id}_${Date.now()}`;
+
+        // Look up any custom saved profile so edited name/role/avatar are never lost
+        const profiles = storage.get('user_profiles', {});
+        const savedProfile =
+          profiles[role] ||
+          profiles[matchedUser.id] ||
+          (matchedUser.username ? profiles[matchedUser.username] : null) ||
+          {};
+
+        const resolvedName =
+          savedProfile.name ||
+          matchedUser.name ||
+          matchedUser.fullName ||
+          (isRoleAdmin ? 'Admin' : 'Cashier');
+
+        const resolvedRole = savedProfile.role || matchedUser.role || roleTitle;
+        const resolvedAvatar =
+          savedProfile.avatarUrl !== undefined
+            ? savedProfile.avatarUrl
+            : (matchedUser.avatarUrl || (isRoleAdmin ? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80' : 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80'));
+
+        const userObj = {
+          ...matchedUser,
+          ...savedProfile,
+          id: matchedUser.id,
+          username: matchedUser.username || matchedUser.loginIdentifier || (isRoleAdmin ? 'admin' : 'cashier'),
+          email: matchedUser.email || (isRoleAdmin ? 'admin@spicehub.pk' : 'cashier@spicehub.pk'),
+          role: resolvedRole,
+          name: resolvedName,
+          fullName: resolvedName,
+          officialTitle: savedProfile.officialTitle || matchedUser.officialTitle || (isRoleAdmin ? 'Executive Officer / Owner' : 'Counter Cashier & Billing'),
+          branch: matchedUser.branch || 'All Branches',
+          phone: matchedUser.phone || '',
+          avatarUrl: resolvedAvatar,
+        };
+        if (!userObj.initials && userObj.name) {
+          userObj.initials =
+            userObj.name
+              .split(' ')
+              .filter(Boolean)
+              .map((n) => n[0].toUpperCase())
+              .slice(0, 2)
+              .join('') || (isRoleAdmin ? 'JH' : 'C1');
+        }
+
+        storage.set('auth_token', dummyToken);
+        storage.set('active_user', userObj);
+        if (!isRoleAdmin) {
+          storage.set('active_cashier_user', userObj);
+          storage.set('active_cashier_id', userObj.id);
+        }
+
+        profiles[role] = userObj;
+        profiles[matchedUser.id] = userObj;
+        if (userObj.username) {
+          profiles[userObj.username] = userObj;
+        }
+        storage.set('user_profiles', profiles);
+
+        const userCartKey = getUserCartStorageKey(userObj);
+        const userCart = storage.get(userCartKey, []);
+
+        set({
+          token: dummyToken,
+          user: userObj,
+          isAuthenticated: true,
+          cart: Array.isArray(userCart) ? userCart : [],
+        });
+
+        // Non-blocking background token upgrade with backend
+        const baseUrl = getApiBaseUrl();
+        fetch(`${baseUrl}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ usernameOrEmail, password }),
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            if (data?.success && data?.token) {
+              storage.set('auth_token', data.token);
+              set({ token: data.token });
+            }
+          })
+          .catch(() => {});
+
+        return { success: true };
+      }
+    }
+
     const isLocalAdminMatch =
       (norm === 'admin' || norm === 'admin@spicehub.pk') &&
       (password === creds.admin || password === 'admin123' || password === '12345');
@@ -406,61 +534,6 @@ export const useAppStore = create((set, get) => ({
       (norm === 'cashier' || norm === 'cashier@spicehub.pk') &&
       (password === creds.cashier || password === 'cashier123' || password === '1234');
 
-    // Check provisioned custom users from User & Access Control
-    const customUsers = storage.get('rms_custom_users', []);
-    const customUser = customUsers.find(
-      (u) =>
-        (u.email?.toLowerCase().trim() === norm ||
-          u.username?.toLowerCase().trim() === norm ||
-          u.loginIdentifier?.toLowerCase().trim() === norm) &&
-        u.password === password
-    );
-
-    if (customUser) {
-      const isRoleAdmin =
-        customUser.portalRole?.toLowerCase().includes('admin') ||
-        customUser.role?.toLowerCase().includes('admin');
-      const role = isRoleAdmin ? 'admin' : 'cashier';
-      const roleTitle = customUser.officialTitle || customUser.portalRole || (isRoleAdmin ? 'Branch Administrator' : 'Cashier');
-      const dummyToken = `jwt_${role}_custom_${Date.now()}`;
-
-      const userObj = {
-        id: customUser.id,
-        username: customUser.username || customUser.email || customUser.loginIdentifier,
-        email: customUser.email || customUser.loginIdentifier,
-        role: roleTitle,
-        name: customUser.fullName || customUser.name,
-        branch: customUser.branchScope || 'Main Branch',
-        phone: customUser.phone || '',
-        avatarUrl: customUser.avatarUrl || '',
-      };
-      if (!userObj.initials && userObj.name) {
-        userObj.initials =
-          userObj.name
-            .split(' ')
-            .filter(Boolean)
-            .map((n) => n[0].toUpperCase())
-            .slice(0, 2)
-            .join('') || 'U';
-      }
-
-      storage.set('auth_token', dummyToken);
-      storage.set('active_user', userObj);
-
-      const userCartKey = getUserCartStorageKey(userObj);
-      const userCart = storage.get(userCartKey, []);
-
-      set({
-        token: dummyToken,
-        user: userObj,
-        isAuthenticated: true,
-        cart: Array.isArray(userCart) ? userCart : [],
-      });
-
-      return { success: true };
-    }
-
-    // INSTANT LOCAL AUTHENTICATION (0ms latency, instant dashboard entrance)
     if (isLocalAdminMatch || isLocalCashierMatch) {
       const role = isLocalAdminMatch ? 'admin' : 'cashier';
       const roleTitle = isLocalAdminMatch ? 'Admin' : 'Cashier';
@@ -518,16 +591,15 @@ export const useAppStore = create((set, get) => ({
               const currentProfiles = storage.get('user_profiles', {});
               const customProfile = currentProfiles[role] || {};
               const resolvedName =
-                customProfile.name &&
-                customProfile.name !== 'John Holland' &&
-                customProfile.name !== 'Cashier 1'
-                  ? customProfile.name
-                  : (data.user.name || customProfile.name || userObj.name);
+                customProfile.name ||
+                data.user.name ||
+                userObj.name;
 
               const mergedUser = {
                 ...userObj,
                 ...data.user,
                 name: resolvedName,
+                fullName: resolvedName,
                 role: customProfile.role || data.user.role || userObj.role,
                 avatarUrl:
                   customProfile.avatarUrl !== undefined
@@ -574,16 +646,15 @@ export const useAppStore = create((set, get) => ({
         const userProfiles = storage.get('user_profiles', {});
         const customProfile = userProfiles[role] || {};
         const resolvedName =
-          customProfile.name &&
-          customProfile.name !== 'John Holland' &&
-          customProfile.name !== 'Cashier 1'
-            ? customProfile.name
-            : (data.user?.name || customProfile.name || 'User');
+          customProfile.name ||
+          data.user?.name ||
+          'User';
 
         const finalUser = {
           ...customProfile,
           ...(data.user || {}),
           name: resolvedName,
+          fullName: resolvedName,
         };
         if (!finalUser.initials && finalUser.name) {
           finalUser.initials =
@@ -678,13 +749,69 @@ export const useAppStore = create((set, get) => ({
       // 1. Update active user session
       storage.set('active_user', updatedUser);
 
-      // 2. Persist in user_profiles by role key so it never resets across logout/login
-      const userKey = isCashierUser(updatedUser) ? 'cashier' : 'admin';
+      // 2. Persist in user_profiles by role key, id, and username so it never resets across logout/login
+      const isRoleCashier = isCashierUser(updatedUser);
+      const userKey = isRoleCashier ? 'cashier' : 'admin';
       const userProfiles = storage.get('user_profiles', {});
       userProfiles[userKey] = updatedUser;
+      if (updatedUser.id) {
+        userProfiles[updatedUser.id] = updatedUser;
+      }
+      if (updatedUser.username) {
+        userProfiles[updatedUser.username] = updatedUser;
+      }
       storage.set('user_profiles', userProfiles);
 
-      // 3. Asynchronously sync to backend profile endpoint
+      // 3. Persist in rms_users_list so User Management & Login Page reflect the new name immediately
+      const savedUsersList = storage.get('rms_users_list', null);
+      if (Array.isArray(savedUsersList) && savedUsersList.length > 0) {
+        const updatedUsersList = savedUsersList.map((u) => {
+          const isTarget =
+            (u.id && u.id === updatedUser.id) ||
+            (u.username && u.username === updatedUser.username) ||
+            (!isRoleCashier && (u.isFixedAdmin || u.id === 'user_admin' || u.username === 'admin'));
+          if (isTarget) {
+            return {
+              ...u,
+              name: updatedUser.name,
+              fullName: updatedUser.name,
+              ...(updatedUser.role ? { role: updatedUser.role, portalRole: updatedUser.role, systemRole: updatedUser.role } : {}),
+              ...(updatedUser.avatarUrl !== undefined ? { avatarUrl: updatedUser.avatarUrl } : {}),
+              ...(updatedUser.initials ? { initials: updatedUser.initials } : {}),
+            };
+          }
+          return u;
+        });
+        storage.set('rms_users_list', updatedUsersList);
+      }
+
+      // Also update custom users if present
+      const customUsers = storage.get('rms_custom_users', []);
+      if (Array.isArray(customUsers) && customUsers.length > 0) {
+        const updatedCustom = customUsers.map((u) => {
+          const isTarget =
+            (u.id && u.id === updatedUser.id) ||
+            (u.username && u.username === updatedUser.username);
+          if (isTarget) {
+            return {
+              ...u,
+              name: updatedUser.name,
+              fullName: updatedUser.name,
+              ...(updatedUser.role ? { role: updatedUser.role } : {}),
+              ...(updatedUser.avatarUrl !== undefined ? { avatarUrl: updatedUser.avatarUrl } : {}),
+            };
+          }
+          return u;
+        });
+        storage.set('rms_custom_users', updatedCustom);
+      }
+
+      // If cashier, keep active_cashier_user in sync
+      if (isRoleCashier) {
+        storage.set('active_cashier_user', updatedUser);
+      }
+
+      // 4. Asynchronously sync to backend profile endpoint
       const baseUrl = getApiBaseUrl();
       fetch(`${baseUrl}/auth/profile`, {
         method: 'PUT',
@@ -718,8 +845,8 @@ export const useAppStore = create((set, get) => ({
   // Transaction Ledger (Canonical Orders & Reversals)
   orders: (() => {
     const saved = storage.get('orders', null);
-    const catalogItems = storage.get('menu_items', seedMenuItems);
-    const catalogAddons = storage.get('addons', seedAddons);
+    const catalogItems = storage.get('menu_items', []);
+    const catalogAddons = storage.get('addons', []);
     const catalogDeals = storage.get('deals', []);
 
     const enrichOrderLines = (orderList) => {
@@ -807,7 +934,26 @@ export const useAppStore = create((set, get) => ({
             }
           }
 
-          if (l.costPriceSnapshot !== undefined && l.costPriceSnapshot !== null && Number(l.costPriceSnapshot) > 0 && l.itemCOGS !== undefined) {
+          const isWeight = Boolean(
+            l.pricingMode === 'portion' ||
+            l.pricingMode === 'custom_weight' ||
+            l.pricingMode === 'weight' ||
+            (l.selectedWeightGrams && Number(l.selectedWeightGrams) > 0) ||
+            (l.weightGramsSnapshot && Number(l.weightGramsSnapshot) > 0)
+          );
+          let derivedGrams = Number(l.selectedWeightGrams || l.weightGramsSnapshot) || 0;
+          if (isWeight && derivedGrams <= 0) {
+            const label = String(l.selectedPortionLabel || l.portion || '').toLowerCase();
+            if (label.includes('1kg') || label === '1 kg') derivedGrams = 1000;
+            else if (label.match(/(\d+)\s*g/)) derivedGrams = Number(label.match(/(\d+)\s*g/)[1]);
+            else if (label.includes('half')) derivedGrams = 500;
+            else if (label.includes('quarter')) derivedGrams = 250;
+          }
+
+          const hasValidCostSnap = l.costPriceSnapshot !== undefined && l.costPriceSnapshot !== null && Number(l.costPriceSnapshot) > 0;
+          const isPortionCostDistorted = isWeight && derivedGrams > 0 && derivedGrams < 1000 && hasValidCostSnap && Number(l.itemCOGS) >= Number(l.costPriceSnapshot) * qty;
+
+          if (hasValidCostSnap && l.itemCOGS !== undefined && !isPortionCostDistorted) {
             return l;
           }
           orderHasChange = true;
@@ -817,15 +963,6 @@ export const useAppStore = create((set, get) => ({
           const itemCost = (l.costPriceSnapshot && Number(l.costPriceSnapshot) > 0)
             ? Number(l.costPriceSnapshot)
             : (foundItem?.costPrice || Math.round((Number(l.unitPrice) || 0) * 0.55));
-          const isWeight = Boolean(l.pricingMode === 'portion' || l.pricingMode === 'custom_weight' || l.selectedWeightGrams);
-          let derivedGrams = Number(l.selectedWeightGrams) || 0;
-          if (isWeight && derivedGrams <= 0) {
-            const label = String(l.selectedPortionLabel || l.portion || '').toLowerCase();
-            if (label.includes('1kg') || label === '1 kg') derivedGrams = 1000;
-            else if (label.match(/(\d+)\s*g/)) derivedGrams = Number(label.match(/(\d+)\s*g/)[1]);
-            else if (label.includes('half')) derivedGrams = 500;
-            else if (label.includes('quarter')) derivedGrams = 250;
-          }
           let lineItemCOGS = itemCost * qty;
           if (isWeight) {
             if (derivedGrams > 0) {
@@ -1324,34 +1461,20 @@ export const useAppStore = create((set, get) => ({
     });
   },
 
-  // Notifications State
+  // Notifications State (persisted to storage for continuity across reloads)
   notifications: (() => {
     const saved = storage.get('notifications', null);
-    if (saved && Array.isArray(saved)) return saved;
-    // Derive initial notifications from recent seed orders
-    const existingOrders = storage.get('orders', defaultSeedData.orders);
-    if (Array.isArray(existingOrders) && existingOrders.length > 0) {
-      const initial = existingOrders.slice(0, 5).map((o, idx) => ({
-        id: `notif-${o.id || idx}`,
-        type: 'order',
-        title: `New Order #${o.invoiceNumber}`,
-        description: `${o.orderType || 'Dine-In'} • Rs ${o.grandTotal || 0} • ${o.paymentMethod || 'Cash'}`,
-        orderId: o.id,
-        invoiceNumber: o.invoiceNumber,
-        amount: o.grandTotal,
-        orderType: o.orderType,
-        read: idx >= 3,
-        timestamp: o.completedAt || o.createdAt || new Date().toISOString(),
-        createdByUserId: o.createdByUserId || 'user_cashier',
-        createdByRole: o.createdByRole || 'cashier',
-        targetUserId: o.createdByUserId || null,
-        targetRoles: o.createdByRole === 'admin' ? ['admin'] : ['cashier'],
-      }));
-      storage.set('notifications', initial);
-      return initial;
-    }
-    return [];
+    return Array.isArray(saved) ? saved : [];
   })(),
+
+  // Active toast notification for on-screen popup
+  activeToast: null,
+  showToast: (toast) => {
+    set({ activeToast: toast });
+  },
+  dismissToast: () => {
+    set({ activeToast: null });
+  },
 
   markNotificationAsRead: (id) => {
     const updated = (get().notifications || []).map((n) =>
@@ -1423,6 +1546,18 @@ export const useAppStore = create((set, get) => ({
     storage.set('notifications', updatedNotifs);
 
     set({ orders: updated, notifications: updatedNotifs });
+
+    // Trigger visual on-screen floating toast notification
+    try {
+      get().showToast({
+        id: `toast-${Date.now()}`,
+        type: 'order',
+        title: `Order Placed #${order.invoiceNumber}`,
+        description: `${order.orderType || 'Dine-In'} • Rs ${Number(order.grandTotal || 0).toLocaleString()} • ${order.paymentMethod || 'Cash'}`,
+        amount: order.grandTotal,
+        invoiceNumber: order.invoiceNumber,
+      });
+    } catch {}
 
     // Live sync to MongoDB Atlas via OrderRepository (non-blocking for instant POS checkout)
     OrderRepository.create(order)
@@ -1895,12 +2030,12 @@ export const useAppStore = create((set, get) => ({
       createdAt: item.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    const updated = [...get().items, newRecord];
+    const updated = [newRecord, ...get().items.filter((i) => i.id !== newRecord.id)];
     storage.set('menu_items', updated);
     set({ items: updated });
 
     // Live sync to MongoDB Atlas via ItemRepository
-    ItemRepository.create(newRecord)
+    return ItemRepository.create(newRecord)
       .then((synced) => {
         if (synced && synced.id) {
           const liveItems = get().items || [];
@@ -1909,13 +2044,14 @@ export const useAppStore = create((set, get) => ({
           );
           storage.set('menu_items', replaced);
           set({ items: replaced });
+          return synced;
         }
+        return newRecord;
       })
       .catch((err) => {
         console.warn('[Store] Item Atlas sync warning:', err.message);
+        return newRecord;
       });
-
-    return newRecord;
   },
 
   updateItem: (id, updates) => {
@@ -2152,35 +2288,79 @@ export const useAppStore = create((set, get) => ({
     set({ orders: [], reversals: [] });
   },
 
-  // Reset to default seed catalog and transactions
-  resetToDemoData: () => {
-    storage.set('categories', seedCategories);
-    storage.set('menu_items', seedMenuItems);
-    storage.set('addons', seedAddons);
-    storage.set('orders', defaultSeedData.orders);
-    storage.set('reversals', defaultSeedData.reversals);
-    set({
-      categories: seedCategories,
-      items: seedMenuItems,
-      addons: seedAddons,
-      orders: defaultSeedData.orders,
-      reversals: defaultSeedData.reversals,
-    });
+  // Reset to live database state
+  resetToDemoData: async () => {
+    await get().syncWithBackend();
   },
 
-  // Reset to default seed transactions
-  resetToDemoTransactions: () => {
-    storage.set('orders', defaultSeedData.orders);
-    storage.set('reversals', defaultSeedData.reversals);
-    set({ orders: defaultSeedData.orders, reversals: defaultSeedData.reversals });
+  // Reset to live database transactions
+  resetToDemoTransactions: async () => {
+    await get().syncWithBackend();
+  },
+
+  fetchCategories: async () => {
+    try {
+      const cats = await CategoryRepository.getAll();
+      if (Array.isArray(cats)) {
+        storage.set('categories', cats);
+        set({ categories: cats });
+        return cats;
+      }
+    } catch (err) {
+      console.warn('[Store] fetchCategories warning:', err.message);
+    }
+    return get().categories || [];
+  },
+
+  fetchItems: async () => {
+    try {
+      const its = await ItemRepository.getAll();
+      if (Array.isArray(its)) {
+        const cats = get().categories || [];
+        const healed = healMiscategorizedItems(its, cats);
+        storage.set('menu_items', healed);
+        set({ items: healed });
+        return healed;
+      }
+    } catch (err) {
+      console.warn('[Store] fetchItems warning:', err.message);
+    }
+    return get().items || [];
   },
 
   // Synchronize store with live Express + MongoDB Atlas backend
-  syncWithBackend: async () => {
-    try {
-      const [cats, its, adds, dls, ords, revs, exps, expCats, tbls, curShift] = await Promise.all([
+  syncWithBackend: async (force = false) => {
+    if (backendSyncPromise) {
+      return backendSyncPromise;
+    }
+    if (!force && Date.now() - lastBackendSyncTime < SYNC_COOLDOWN_MS && (get().categories?.length > 0)) {
+      return Promise.resolve();
+    }
+
+    backendSyncPromise = (async () => {
+      try {
+        // Step 1: Immediately fetch categories and menu items from MongoDB Atlas
+      const [cats, its] = await Promise.all([
         CategoryRepository.getAll().catch(() => null),
         ItemRepository.getAll().catch(() => null),
+      ]);
+
+      const initialUpdates = {};
+      if (Array.isArray(cats)) {
+        initialUpdates.categories = cats;
+        storage.set('categories', cats);
+      }
+      if (Array.isArray(its)) {
+        const healed = healMiscategorizedItems(its, initialUpdates.categories || get().categories || []);
+        initialUpdates.items = healed;
+        storage.set('menu_items', healed);
+      }
+      if (Object.keys(initialUpdates).length > 0) {
+        set(initialUpdates);
+      }
+
+      // Step 2: Fetch remaining background collections
+      const [adds, dls, ords, revs, exps, expCats, tbls, curShift, liveSettings] = await Promise.all([
         AddonRepository.getAll().catch(() => null),
         DealRepository.getAll().catch(() => null),
         OrderRepository.getAll().catch(() => null),
@@ -2189,86 +2369,26 @@ export const useAppStore = create((set, get) => ({
         ExpenseRepository.getCategories().catch(() => null),
         TableRepository.getAll().catch(() => null),
         ShiftRepository.getCurrent().catch(() => null),
+        SettingsRepository.fetchSettings().catch(() => null),
       ]);
 
       const updates = {};
 
-      // 1. Categories
-      if (Array.isArray(cats)) {
-        const localCats = get().categories || [];
-        const backendCatMap = new Map((cats || []).map((c) => [c.id, c]));
-        const unsyncedCats = localCats.filter((c) => c?.id && !backendCatMap.has(c.id));
-        unsyncedCats.forEach((c) => {
-          CategoryRepository.create(c).catch(() => {});
-        });
-        const mergedCats = [...cats, ...unsyncedCats];
-        updates.categories = mergedCats;
-        storage.set('categories', mergedCats);
-      }
-
-      // 2. Menu Items
-      if (Array.isArray(its)) {
-        const localItems = get().items || [];
-        const backendItemMap = new Map((its || []).map((i) => [i.id, i]));
-        const unsyncedItems = localItems.filter((i) => i?.id && !backendItemMap.has(i.id));
-        unsyncedItems.forEach((i) => {
-          ItemRepository.create(i).catch(() => {});
-        });
-        const mergedItems = [...its, ...unsyncedItems];
-        const healedItems = healMiscategorizedItems(mergedItems, get().categories || []);
-        updates.items = healedItems;
-        storage.set('menu_items', healedItems);
-      }
-
       // 3. Add-ons
       if (Array.isArray(adds)) {
-        const localAdds = get().addons || [];
-        const backendAddMap = new Map((adds || []).map((a) => [a.id, a]));
-        const unsyncedAdds = localAdds.filter((a) => a?.id && !backendAddMap.has(a.id));
-        unsyncedAdds.forEach((a) => {
-          AddonRepository.create(a).catch(() => {});
-        });
-        const mergedAdds = [...adds, ...unsyncedAdds];
-        updates.addons = mergedAdds;
-        storage.set('addons', mergedAdds);
+        updates.addons = adds;
+        storage.set('addons', adds);
       }
 
       // 3.5. Deals
       if (Array.isArray(dls)) {
-        const localDeals = get().deals || [];
-        const backendDealMap = new Map((dls || []).map((d) => [d.id, d]));
-        const unsyncedDeals = localDeals.filter((d) => d?.id && !backendDealMap.has(d.id));
-        unsyncedDeals.forEach((d) => {
-          DealRepository.create(d).catch(() => {});
-        });
-        const mergedDeals = [...dls, ...unsyncedDeals];
-        updates.deals = mergedDeals;
-        storage.set('deals', mergedDeals);
+        updates.deals = dls;
+        storage.set('deals', dls);
       }
 
-      // 4. Orders
+      // 4. Orders (Canonical from MongoDB)
       if (Array.isArray(ords)) {
-        const localOrds = get().orders || [];
-        const seenOrd = new Set();
-        const mergedOrds = [];
-        for (const o of ords) {
-          const key = o.id || o.invoiceNumber;
-          if (key && !seenOrd.has(key)) {
-            seenOrd.add(key);
-            mergedOrds.push(o);
-          } else if (!key) {
-            mergedOrds.push(o);
-          }
-        }
-        for (const loc of localOrds) {
-          const key = loc?.id || loc?.invoiceNumber;
-          if (key && !seenOrd.has(key)) {
-            seenOrd.add(key);
-            mergedOrds.push(loc);
-            OrderRepository.create(loc).catch(() => {});
-          }
-        }
-        const healed = repairDuplicateInvoiceNumbersLocally(mergedOrds);
+        const healed = repairDuplicateInvoiceNumbersLocally(ords);
         const getSeq = (o) => {
           if (o.sequenceNumber != null && !isNaN(Number(o.sequenceNumber)) && Number(o.sequenceNumber) > 0) return Number(o.sequenceNumber);
           const m = String(o.invoiceNumber || o.id || '').match(/(\d+)/g);
@@ -2287,30 +2407,37 @@ export const useAppStore = create((set, get) => ({
         storage.set('orders', sorted);
       }
 
-      // 5. Reversals
+      // 5. Reversals (Canonical from MongoDB)
       if (Array.isArray(revs)) {
-        const localRevs = get().reversals || [];
-        const seenRev = new Set();
-        const mergedRevs = [];
+        updates.reversals = revs;
+        storage.set('reversals', revs);
+
+        // Reconcile and guarantee orders with active reversals are marked status = 'reversed'
+        const activeOrders = updates.orders || get().orders || [];
+        const revMap = new Map();
         for (const r of revs) {
-          const key = r.originalOrderId || r.originalInvoiceNumber || r.id;
-          if (key && !seenRev.has(key)) {
-            seenRev.add(key);
-            mergedRevs.push(r);
-          } else if (!key) {
-            mergedRevs.push(r);
-          }
+          if (r.originalOrderId) revMap.set(r.originalOrderId, r);
+          if (r.originalInvoiceNumber) revMap.set(r.originalInvoiceNumber, r);
+          if (r.orderId) revMap.set(r.orderId, r);
+          if (r.invoiceNumber) revMap.set(r.invoiceNumber, r);
         }
-        for (const loc of localRevs) {
-          const key = loc?.originalOrderId || loc?.originalInvoiceNumber || loc?.id;
-          if (key && !seenRev.has(key)) {
-            seenRev.add(key);
-            mergedRevs.push(loc);
-            ReversalRepository.create(loc).catch(() => {});
-          }
+        if (revMap.size > 0 && activeOrders.length > 0) {
+          const syncedOrders = activeOrders.map((o) => {
+            const rev = revMap.get(o.id) || revMap.get(o.invoiceNumber);
+            if (rev) {
+              return {
+                ...o,
+                status: 'reversed',
+                reversalId: rev.id,
+                reversalReason: rev.reason,
+                reversedAt: rev.reversedAt || rev.createdAt,
+              };
+            }
+            return o;
+          });
+          updates.orders = syncedOrders;
+          storage.set('orders', syncedOrders);
         }
-        updates.reversals = mergedRevs;
-        storage.set('reversals', mergedRevs);
       }
 
       // 6. Expenses
@@ -2336,13 +2463,24 @@ export const useAppStore = create((set, get) => ({
         updates.currentShift = curShift;
       }
 
+      // 9. Settings
+      if (liveSettings) {
+        updates.settings = liveSettings;
+      }
+
       if (Object.keys(updates).length > 0) {
         set(updates);
       }
     } catch (err) {
       console.warn('[Store] syncWithBackend warning:', err.message);
+    } finally {
+      backendSyncPromise = null;
+      lastBackendSyncTime = Date.now();
     }
-  },
+  })();
+
+  return backendSyncPromise;
+},
 }));
 
 export default useAppStore;

@@ -145,13 +145,13 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
   );
 
   // Cash change calculation:
-  // If cashReceived is empty (''), treat as Exact Cash Tendered for instant 1-click checkout
+  // If cashReceived is empty (''), received amount is 0 until user enters payment
   const isCashExplicitlyEntered = typeof cashReceived === 'string' && cashReceived.trim() !== '';
-  const parsedCashReceived = isCashExplicitlyEntered ? (Number(cashReceived) || 0) : grandTotal;
+  const parsedCashReceived = isCashExplicitlyEntered ? (Number(cashReceived) || 0) : 0;
   const changeAmount = useMemo(() => {
-    if (paymentMethod !== 'Cash') return 0;
+    if (paymentMethod !== 'Cash' || !isCashExplicitlyEntered) return 0;
     return calculateChange(parsedCashReceived, grandTotal);
-  }, [paymentMethod, parsedCashReceived, grandTotal]);
+  }, [paymentMethod, isCashExplicitlyEntered, parsedCashReceived, grandTotal]);
 
   // Online partial calculation (Supports Full, Half 50%, or custom online amount)
   const isOnlineExplicitlyEntered = typeof onlineAmountReceived === 'string' && onlineAmountReceived.trim() !== '';
@@ -199,10 +199,15 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
     );
   };
 
+  const isCashIncomplete =
+    paymentMethod === 'Cash' &&
+    (!isCashExplicitlyEntered || Number(cashReceived) <= 0);
+
   const isCashPartial =
     paymentMethod === 'Cash' &&
     grandTotal > 0 &&
     isCashExplicitlyEntered &&
+    parsedCashReceived > 0 &&
     parsedCashReceived < grandTotal;
 
   const isOnlinePartial =
@@ -223,6 +228,7 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
 
   const isCheckoutDisabled =
     cart.length === 0 ||
+    isCashIncomplete ||
     isOnlineIncomplete ||
     isSplitIncomplete;
 
@@ -262,7 +268,11 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
     }
 
     if (paymentMethod === 'Cash') {
-      if (isCashExplicitlyEntered && parsedCashReceived < 0) {
+      if (!isCashExplicitlyEntered || Number(cashReceived) <= 0) {
+        setValidationError('Please enter cash received amount before completing sale.');
+        return;
+      }
+      if (parsedCashReceived < 0) {
         setValidationError('Amount received cannot be negative.');
         return;
       }
@@ -976,7 +986,7 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
                       setCashReceived(e.target.value);
                       setValidationError('');
                     }}
-                    placeholder={grandTotal > 0 ? String(grandTotal) : '0'}
+                    placeholder="0"
                     className="w-20 h-6 px-1.5 text-right text-xs font-bold bg-white rounded border border-slate-300 focus:outline-none focus:border-[#FF5C28]"
                   />
                 </div>
@@ -1290,7 +1300,7 @@ export const OrderCartPanel = ({ onOrderCompleted, onClose }) => {
           type="button"
           disabled={isCheckoutDisabled || isSubmitting}
           onClick={handleCheckout}
-          className="w-full h-8.5 px-3 rounded-lg bg-[#FF5C28] hover:bg-[#E04D1D] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+          className="w-full h-8.5 px-3 rounded-lg bg-[#FF5C28] hover:bg-[#E04D1D] disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:hover:bg-slate-300 disabled:shadow-none text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
         >
           {isSubmitting ? (
             <>

@@ -28,7 +28,7 @@ const OrderLineSchema = new mongoose.Schema(
     },
     pricingMode: {
       type: String,
-      enum: ['piece', 'portion', 'custom_weight', 'deal'],
+      enum: ['piece', 'portion', 'custom_weight', 'weight', 'amount', 'deal'],
       default: 'piece',
     },
     isDeal: {
@@ -208,7 +208,7 @@ const OrderSchema = new mongoose.Schema(
     },
     orderType: {
       type: String,
-      enum: ['Dine-In', 'Takeaway'],
+      enum: ['Dine-In', 'Takeaway', 'Delivery'],
       default: 'Dine-In',
       index: true,
     },

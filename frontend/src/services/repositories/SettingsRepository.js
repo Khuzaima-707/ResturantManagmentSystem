@@ -15,6 +15,20 @@ export class SettingsRepository {
     this.storage = customStorage;
   }
 
+  async fetchSettings() {
+    try {
+      const res = await api.get('/settings');
+      if (res && res.success && res.data) {
+        const normalized = normalizeSettings(res.data);
+        this.storage.set(STORAGE_KEY, normalized);
+        return normalized;
+      }
+    } catch (err) {
+      console.warn('[SettingsRepository] API fetch failed:', err?.message);
+    }
+    return this.getSettings();
+  }
+
   getSettings() {
     const saved = this.storage.get(STORAGE_KEY, null);
     if (saved) {
@@ -57,6 +71,10 @@ export class SettingsRepository {
   }
 
   // Static helpers for direct calls without instantiation
+  static async fetchSettings() {
+    return new SettingsRepository(storage).fetchSettings();
+  }
+
   static getSettings() {
     return new SettingsRepository(storage).getSettings();
   }

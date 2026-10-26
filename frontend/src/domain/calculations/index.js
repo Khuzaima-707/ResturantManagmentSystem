@@ -271,19 +271,33 @@ export function buildOrderLineSnapshots(cartLines = [], itemsMaster = [], addons
     const hasValidItemCost =
       costPriceSnapshot !== null && !isNaN(costPriceSnapshot) && costPriceSnapshot >= 0;
 
-    // Weight detection
-    const isWeight =
+    // Weight detection & portion grams resolution
+    const isWeight = Boolean(
       line.pricingMode === 'portion' ||
       line.pricingMode === 'custom_weight' ||
-      (line.selectedWeightGrams !== undefined && line.selectedWeightGrams !== null && line.selectedWeightGrams > 0);
+      line.pricingMode === 'weight' ||
+      (line.selectedWeightGrams !== undefined && line.selectedWeightGrams !== null && Number(line.selectedWeightGrams) > 0) ||
+      (line.weightGramsSnapshot !== undefined && line.weightGramsSnapshot !== null && Number(line.weightGramsSnapshot) > 0) ||
+      (catalogItem?.unit && String(catalogItem.unit).toLowerCase().includes('kg')) ||
+      (line.baseUnitSnapshot && String(line.baseUnitSnapshot).toLowerCase().includes('kg'))
+    );
 
-    const weightGramsSnapshot = isWeight ? Number(line.selectedWeightGrams) || 0 : null;
+    let derivedGrams = Number(line.selectedWeightGrams ?? line.weightGramsSnapshot) || 0;
+    if (derivedGrams <= 0 && isWeight) {
+      const label = String(line.selectedPortionLabel || line.portion || '').toLowerCase();
+      if (label.includes('1kg') || label === '1 kg') derivedGrams = 1000;
+      else if (label.match(/(\d+)\s*g/)) derivedGrams = Number(label.match(/(\d+)\s*g/)[1]);
+      else if (label.includes('half')) derivedGrams = 500;
+      else if (label.includes('quarter')) derivedGrams = 250;
+    }
+
+    const weightGramsSnapshot = isWeight && derivedGrams > 0 ? derivedGrams : null;
 
     // Item COGS
     let itemCOGS = null;
     if (hasValidItemCost) {
-      if (isWeight) {
-        itemCOGS = Math.round((weightGramsSnapshot / 1000) * costPriceSnapshot * quantitySnapshot);
+      if (isWeight && derivedGrams > 0) {
+        itemCOGS = Math.round((derivedGrams / 1000) * costPriceSnapshot * quantitySnapshot);
       } else {
         itemCOGS = Math.round(costPriceSnapshot * quantitySnapshot);
       }

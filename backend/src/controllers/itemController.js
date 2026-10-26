@@ -169,48 +169,81 @@ export async function createItem(req, res, next) {
   try {
     const payload = { ...req.body };
 
-    // Validate that categoryId exists in database
-    const category = await Category.findOne({ id: payload.categoryId });
-    if (!category) {
-      return res.status(400).json({
-        success: false,
-        error: { message: `Referenced Category ID '${payload.categoryId}' does not exist` },
+    // Validate that category exists or find/create safely
+    let category = null;
+    const catName = (payload.categoryName || '').trim();
+
+    if (payload.categoryId) {
+      category = await Category.findOne({ id: payload.categoryId });
+    }
+
+    if (!category && catName) {
+      category = await Category.findOne({
+        name: new RegExp(`^${escapeRegex(catName)}$`, 'i'),
       });
     }
 
-    // Set categoryName snapshot if not passed
-    if (!payload.categoryName) {
-      payload.categoryName = category.name;
-    }
-
-    // Auto-generate unique ID if not provided
-    if (!payload.id) {
-      const randomSuffix = Math.random().toString(36).substring(2, 6);
-      payload.id = `item-${Date.now()}-${randomSuffix}`;
-    }
-
-    // Auto-upload base64 images to Cloudinary so MongoDB stays lightweight
-    if (payload.imageRef && payload.imageRef.startsWith('data:')) {
+    if (!category && catName) {
+      const slug = catName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
       try {
-        const uploadRes = await cloudinary.uploader.upload(payload.imageRef, {
-          folder: 'rms_pos/menu',
-          resource_type: 'image',
+        category = await Category.findOneAndUpdate(
+          { $or: [{ id: payload.categoryId || '' }, { slug }, { name: catName }] },
+          {
+            $setOnInsert: {
+              id: payload.categoryId || `cat-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+              name: catName,
+              slug,
+              status: 'active',
+            },
+          },
+          { upsert: true, new: true }
+        );
+      } catch {
+        category = await Category.findOne({
+          $or: [{ id: payload.categoryId }, { slug }, { name: new RegExp(`^${escapeRegex(catName)}$`, 'i') }],
         });
-        payload.imageRef = uploadRes.secure_url;
-      } catch (err) {
-        console.warn('[itemController] Cloudinary auto-upload warning:', err.message);
-        // Avoid persisting multi-megabyte base64 strings into MongoDB document on failure
-        delete payload.imageRef;
       }
     }
 
-    // Check duplicate ID
-    const existing = await MenuItem.findOne({ id: payload.id });
-    if (existing) {
-      return res.status(409).json({
-        success: false,
-        error: { message: `Menu item with ID '${payload.id}' already exists` },
-      });
+    if (category) {
+      payload.categoryId = category.id;
+      payload.categoryName = category.name;
+    } else {
+      payload.categoryId = payload.categoryId || 'cat-general';
+      payload.categoryName = catName || 'General';
+    }
+
+    // Auto-generate or ensure unique ID
+    if (!payload.id) {
+      const randomSuffix = Math.random().toString(36).substring(2, 6);
+      payload.id = `item-${Date.now()}-${randomSuffix}`;
+    } else {
+      const existing = await MenuItem.findOne({ id: payload.id });
+      if (existing) {
+        const randomSuffix = Math.random().toString(36).substring(2, 6);
+        payload.id = `item-${Date.now()}-${randomSuffix}`;
+      }
+    }
+
+    // Auto-upload base64 images to Cloudinary with safe fallback
+    if (typeof payload.imageRef === 'string') {
+      payload.imageRef = payload.imageRef.trim();
+      if (payload.imageRef.startsWith('data:')) {
+        try {
+          const uploadRes = await cloudinary.uploader.upload(payload.imageRef, {
+            folder: 'rms_pos/menu',
+            resource_type: 'image',
+          });
+          if (uploadRes && uploadRes.secure_url) {
+            payload.imageRef = uploadRes.secure_url;
+          }
+        } catch (uploadErr) {
+          console.warn('[itemController] Cloudinary upload fallback warning:', uploadErr.message);
+          // Fallback: keep base64 imageRef so item creation is NEVER blocked
+        }
+      }
+    } else {
+      payload.imageRef = '';
     }
 
     const item = await MenuItem.create(payload);
@@ -221,6 +254,7 @@ export async function createItem(req, res, next) {
       data: item,
     });
   } catch (error) {
+    console.error('[createItem error]:', error);
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
@@ -246,30 +280,35 @@ export async function updateItem(req, res, next) {
 
     // If categoryId is changed, verify new category exists and update categoryName
     if (updates.categoryId) {
-      const category = await Category.findOne({ id: updates.categoryId });
-      if (!category) {
-        return res.status(400).json({
-          success: false,
-          error: { message: `Referenced Category ID '${updates.categoryId}' does not exist` },
+      let category = await Category.findOne({ id: updates.categoryId });
+      if (!category && updates.categoryName) {
+        category = await Category.findOne({
+          name: new RegExp(`^${escapeRegex(updates.categoryName.trim())}$`, 'i'),
         });
+        if (category) {
+          updates.categoryId = category.id;
+        }
       }
-      if (!updates.categoryName) {
+      if (category && !updates.categoryName) {
         updates.categoryName = category.name;
       }
     }
 
-    // Auto-upload base64 images to Cloudinary so MongoDB stays lightweight
-    if (updates.imageRef && updates.imageRef.startsWith('data:')) {
-      try {
-        const uploadRes = await cloudinary.uploader.upload(updates.imageRef, {
-          folder: 'rms_pos/menu',
-          resource_type: 'image',
-        });
-        updates.imageRef = uploadRes.secure_url;
-      } catch (err) {
-        console.warn('[itemController] Cloudinary auto-upload warning:', err.message);
-        // Don't overwrite imageRef with huge raw base64 data on failed upload
-        delete updates.imageRef;
+    // Auto-upload base64 images to Cloudinary with safe fallback
+    if (typeof updates.imageRef === 'string') {
+      updates.imageRef = updates.imageRef.trim();
+      if (updates.imageRef.startsWith('data:')) {
+        try {
+          const uploadRes = await cloudinary.uploader.upload(updates.imageRef, {
+            folder: 'rms_pos/menu',
+            resource_type: 'image',
+          });
+          if (uploadRes && uploadRes.secure_url) {
+            updates.imageRef = uploadRes.secure_url;
+          }
+        } catch (uploadErr) {
+          console.warn('[itemController] Cloudinary update upload fallback warning:', uploadErr.message);
+        }
       }
     }
 

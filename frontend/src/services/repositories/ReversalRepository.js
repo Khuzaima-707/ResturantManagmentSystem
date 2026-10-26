@@ -58,9 +58,17 @@ export const ReversalRepository = {
   create: async (reversalPayload) => {
     const orderKey = reversalPayload.originalOrderId || reversalPayload.orderId;
     const invKey = reversalPayload.originalInvoiceNumber || reversalPayload.invoiceNumber;
+    const payload = {
+      ...reversalPayload,
+      orderId: orderKey,
+      invoiceNumber: invKey,
+      originalOrderId: orderKey,
+      originalInvoiceNumber: invKey,
+      cashierName: reversalPayload.reversedBy || reversalPayload.cashierName || 'Cashier 1',
+    };
 
     try {
-      const res = await api.post('/reversals', reversalPayload);
+      const res = await api.post('/reversals', payload);
       if (res && res.success && res.data) {
         const { reversal, order } = res.data;
         const allReversals = storage.get(STORAGE_KEY, []) || [];
@@ -75,7 +83,9 @@ export const ReversalRepository = {
         // Update local orders cache status to 'reversed'
         const allOrders = storage.get('orders', []) || [];
         const updatedOrders = allOrders.map((o) =>
-          o.id === order.id ? { ...o, status: 'reversed', reversalId: reversal.id } : o
+          o.id === order.id || o.invoiceNumber === order.invoiceNumber || o.id === orderKey || o.invoiceNumber === invKey
+            ? { ...o, status: 'reversed', reversalId: reversal.id, reversalReason: reversal.reason }
+            : o
         );
         storage.set('orders', updatedOrders);
 

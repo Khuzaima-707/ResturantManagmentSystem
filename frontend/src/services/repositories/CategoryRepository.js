@@ -13,22 +13,11 @@ export const CategoryRepository = {
     try {
       const res = await api.get('/categories');
       if (res && res.success && Array.isArray(res.data)) {
-        const local = storage.get(STORAGE_KEY, []) || [];
-        if (res.data.length > 0) {
-          const backendIds = new Set(res.data.map((c) => c.id));
-          const unsynced = local.filter((loc) => loc?.id && !backendIds.has(loc.id));
-          const merged = [...res.data, ...unsynced];
-          storage.set(STORAGE_KEY, merged);
-          return merged;
-        } else if (local.length > 0) {
-          return local;
-        } else {
-          storage.set(STORAGE_KEY, []);
-          return [];
-        }
+        storage.set(STORAGE_KEY, res.data);
+        return res.data;
       }
-    } catch {
-      // Backend offline fallback
+    } catch (err) {
+      console.warn('[CategoryRepository] API fetch failed, using cached storage:', err?.message);
     }
 
     const saved = storage.get(STORAGE_KEY, null);

@@ -17,6 +17,7 @@ import { cn } from '../../../utils/cn';
 export const ImageUploader = ({
   value, // image URL or ref
   onChange, // callback(imageRefOrUrl)
+  onProcessingChange, // callback(isProcessing)
   className,
 }) => {
   const fileInputRef = useRef(null);
@@ -37,34 +38,37 @@ export const ImageUploader = ({
 
     try {
       setIsProcessing(true);
-      // Fast, uniform 1:1 square crop (instant local canvas render)
-      const previewDataUrl = await normalizeAndCropImage(file, { targetSize: 500, quality: 0.88 });
+      onProcessingChange?.(true);
+
+      // Fast, uniform 1:1 square crop (standard 360x360 canvas render, ~25-35KB lightweight base64)
+      const previewDataUrl = await normalizeAndCropImage(file, { targetSize: 360, quality: 0.82 });
       
-      // INSTANT PREVIEW: Update image immediately without waiting for network or Cloudinary
+      // Update preview immediately so user sees it with zero latency
       if (previewDataUrl) {
         onChange?.(previewDataUrl);
       }
-      setIsProcessing(false);
 
-      // Background local and cloud persistence (non-blocking)
+      // Background local IndexedDB persistence for offline fast-loading
       const imageId = `img_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
       const croppedBlob = dataUrlToBlob(previewDataUrl);
       if (croppedBlob) {
         saveImage(imageId, croppedBlob).catch(() => {});
       }
 
-      // Sync with Cloudinary in background so database stays light
-      uploadImageToCloudinary(previewDataUrl, 'rms_pos/menu')
-        .then((cloudinaryUrl) => {
-          if (cloudinaryUrl) {
-            onChange?.(cloudinaryUrl);
-          }
-        })
-        .catch(() => {});
+      // Upload to Cloudinary for permanent CDN URL
+      try {
+        const cdnUrl = await uploadImageToCloudinary(previewDataUrl, 'rms_pos/menu');
+        if (cdnUrl) {
+          onChange?.(cdnUrl);
+        }
+      } catch (uploadErr) {
+        console.warn('[ImageUploader] Cloudinary async upload notice:', uploadErr);
+      }
     } catch {
       setError('Failed to process image. Please try another file.');
-      setIsProcessing(false);
     } finally {
+      setIsProcessing(false);
+      onProcessingChange?.(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -128,7 +132,7 @@ export const ImageUploader = ({
           ) : (
             <Upload className="w-3.5 h-3.5 text-[#FF5C28] stroke-[2]" />
           )}
-          <span>{value ? 'Change Food Photo' : 'Upload Food Photo'}</span>
+          <span>{isProcessing ? 'Uploading Photo...' : value ? 'Change Food Photo' : 'Upload Food Photo'}</span>
         </button>
       </div>
 

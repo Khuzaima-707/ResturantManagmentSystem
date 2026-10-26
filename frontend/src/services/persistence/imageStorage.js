@@ -4,6 +4,8 @@
  * Includes memory fallback for headless/Node/Vitest environments.
  */
 
+import { getApiBaseUrl } from '../adapters/apiClient';
+
 const DB_NAME = 'rms_pos_images_v1';
 const STORE_NAME = 'food_images';
 const DB_VERSION = 1;
@@ -364,7 +366,8 @@ export async function uploadImageToCloudinary(dataUrlOrFile, folder = 'rms_pos/m
 
     if (!base64String || typeof base64String !== 'string') return null;
 
-    const res = await fetch('/api/upload', {
+    const baseUrl = getApiBaseUrl();
+    const res = await fetch(`${baseUrl}/upload`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

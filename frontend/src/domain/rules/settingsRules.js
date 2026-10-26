@@ -131,19 +131,33 @@ export function normalizeSettings(raw = {}) {
     ...(raw.business || {}),
   };
   // Fallback from top-level ONLY if raw.business did not explicitly specify it
-  if (raw.restaurantName && (!raw.business || !('name' in raw.business))) business.name = raw.restaurantName;
+  if ((raw.restaurantName || raw.businessName || raw.storeName) && (!raw.business || !('name' in raw.business))) {
+    business.name = raw.restaurantName || raw.businessName || raw.storeName;
+  }
   if (raw.tagline && (!raw.business || !('tagline' in raw.business))) business.tagline = raw.tagline;
   if (raw.address && (!raw.business || !('address' in raw.business))) business.address = raw.address;
   if (raw.phone && (!raw.business || !('phone' in raw.business))) business.phone = raw.phone;
   if (raw.email && (!raw.business || !('email' in raw.business))) business.email = raw.email;
-  if (raw.logoRef !== undefined && (!raw.business || !('logoRef' in raw.business))) business.logoRef = raw.logoRef;
+  if ((raw.logoRef !== undefined || raw.logo !== undefined) && (!raw.business || !('logoRef' in raw.business))) {
+    business.logoRef = raw.logoRef !== undefined ? raw.logoRef : raw.logo;
+  }
+  if ((raw.registrationNumber !== undefined || raw.ntn !== undefined) && (!raw.business || !('registrationNumber' in raw.business))) {
+    business.registrationNumber = raw.registrationNumber !== undefined ? raw.registrationNumber : raw.ntn;
+  }
+  if ((raw.currency || raw.currencySymbol) && (!raw.business || !('currency' in raw.business))) {
+    business.currency = raw.currency || raw.currencySymbol;
+  }
 
   const tax = {
     ...defaults.tax,
     ...(raw.tax || {}),
   };
-  if (raw.taxRate !== undefined && (!raw.tax || !('rate' in raw.tax))) tax.rate = Number(raw.taxRate);
-  if (raw.taxEnabled !== undefined && (!raw.tax || !('enabled' in raw.tax))) tax.enabled = Boolean(raw.taxEnabled);
+  if ((raw.taxRate !== undefined || raw.defaultTaxRate !== undefined) && (!raw.tax || !('rate' in raw.tax))) {
+    tax.rate = Number(raw.taxRate !== undefined ? raw.taxRate : raw.defaultTaxRate);
+  }
+  if ((raw.taxEnabled !== undefined || raw.isTaxEnabled !== undefined) && (!raw.tax || !('enabled' in raw.tax))) {
+    tax.enabled = Boolean(raw.taxEnabled !== undefined ? raw.taxEnabled : raw.isTaxEnabled);
+  }
 
   const pos = {
     ...defaults.pos,
@@ -156,7 +170,9 @@ export function normalizeSettings(raw = {}) {
     ...defaults.invoice,
     ...(raw.invoice || {}),
   };
-  if (raw.invoiceFooter && (!raw.invoice || !('footer' in raw.invoice))) invoice.footer = raw.invoiceFooter;
+  if ((raw.invoiceFooter || raw.footerNote) && (!raw.invoice || !('footer' in raw.invoice))) {
+    invoice.footer = raw.invoiceFooter || raw.footerNote;
+  }
   if (!invoice.footer || !invoice.footer.trim()) {
     invoice.footer = defaults.invoice.footer;
   }
@@ -197,8 +213,8 @@ export function mergeSettings(currentSettings, updates) {
     ...base.business,
     ...(updates.business || {}),
   };
-  if (updates.restaurantName && (!updates.business || !('name' in updates.business))) {
-    updatedBusiness.name = updates.restaurantName;
+  if ((updates.restaurantName || updates.businessName || updates.storeName) && (!updates.business || !('name' in updates.business))) {
+    updatedBusiness.name = updates.restaurantName || updates.businessName || updates.storeName;
   }
   if (updates.tagline && (!updates.business || !('tagline' in updates.business))) {
     updatedBusiness.tagline = updates.tagline;
@@ -212,19 +228,25 @@ export function mergeSettings(currentSettings, updates) {
   if (updates.email && (!updates.business || !('email' in updates.business))) {
     updatedBusiness.email = updates.email;
   }
-  if (updates.logoRef !== undefined && (!updates.business || !('logoRef' in updates.business))) {
-    updatedBusiness.logoRef = updates.logoRef;
+  if ((updates.logoRef !== undefined || updates.logo !== undefined) && (!updates.business || !('logoRef' in updates.business))) {
+    updatedBusiness.logoRef = updates.logoRef !== undefined ? updates.logoRef : updates.logo;
+  }
+  if ((updates.registrationNumber !== undefined || updates.ntn !== undefined) && (!updates.business || !('registrationNumber' in updates.business))) {
+    updatedBusiness.registrationNumber = updates.registrationNumber !== undefined ? updates.registrationNumber : updates.ntn;
+  }
+  if ((updates.currency || updates.currencySymbol) && (!updates.business || !('currency' in updates.business))) {
+    updatedBusiness.currency = updates.currency || updates.currencySymbol;
   }
 
   const updatedTax = {
     ...base.tax,
     ...(updates.tax || {}),
   };
-  if (updates.taxRate !== undefined && (!updates.tax || !('rate' in updates.tax))) {
-    updatedTax.rate = Number(updates.taxRate);
+  if ((updates.taxRate !== undefined || updates.defaultTaxRate !== undefined) && (!updates.tax || !('rate' in updates.tax))) {
+    updatedTax.rate = Number(updates.taxRate !== undefined ? updates.taxRate : updates.defaultTaxRate);
   }
-  if (updates.taxEnabled !== undefined && (!updates.tax || !('enabled' in updates.tax))) {
-    updatedTax.enabled = Boolean(updates.taxEnabled);
+  if ((updates.taxEnabled !== undefined || updates.isTaxEnabled !== undefined) && (!updates.tax || !('enabled' in updates.tax))) {
+    updatedTax.enabled = Boolean(updates.taxEnabled !== undefined ? updates.taxEnabled : updates.isTaxEnabled);
   }
 
   const updatedPos = {

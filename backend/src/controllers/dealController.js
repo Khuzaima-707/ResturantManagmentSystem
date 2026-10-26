@@ -1,6 +1,7 @@
 import { Deal } from '../models/Deal.js';
 import { isDbConnected } from '../config/db.js';
 import { isCashierRequest } from '../middleware/authMiddleware.js';
+import cloudinary from '../config/cloudinary.js';
 
 /**
  * GET /api/deals
@@ -147,6 +148,20 @@ export async function createDeal(req, res, next) {
 
     const dealId = id || `deal-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
 
+    let finalImageRef = (imageRef || '').trim();
+    if (finalImageRef.startsWith('data:')) {
+      try {
+        const uploadRes = await cloudinary.uploader.upload(finalImageRef, {
+          folder: 'rms_pos/deals',
+          resource_type: 'image',
+        });
+        finalImageRef = uploadRes.secure_url;
+      } catch (err) {
+        console.warn('[dealController] Cloudinary auto-upload warning:', err.message);
+        finalImageRef = '';
+      }
+    }
+
     // Ensure unique id
     const existing = await Deal.findOne({ id: dealId });
     if (existing) {
@@ -160,7 +175,7 @@ export async function createDeal(req, res, next) {
       id: dealId,
       name: name.trim(),
       description: description.trim(),
-      imageRef: imageRef.trim(),
+      imageRef: finalImageRef,
       dealPrice,
       status,
       includedItems,
@@ -193,6 +208,19 @@ export async function updateDeal(req, res, next) {
     const { id } = req.params;
     const updates = { ...req.body };
     delete updates.id; // Prevent updating id
+
+    if (updates.imageRef && typeof updates.imageRef === 'string' && updates.imageRef.startsWith('data:')) {
+      try {
+        const uploadRes = await cloudinary.uploader.upload(updates.imageRef, {
+          folder: 'rms_pos/deals',
+          resource_type: 'image',
+        });
+        updates.imageRef = uploadRes.secure_url;
+      } catch (err) {
+        console.warn('[dealController] Cloudinary auto-upload warning on update:', err.message);
+        delete updates.imageRef;
+      }
+    }
 
     const deal = await Deal.findOneAndUpdate({ id }, updates, {
       new: true,

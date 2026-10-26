@@ -95,8 +95,10 @@ export function getDateIntervalForPreset(datePreset, customRange = null, referen
 
   if ((datePreset === 'Custom' || datePreset === 'Custom Date Range') && customRange?.startDate && customRange?.endDate) {
     try {
-      const s = typeof customRange.startDate === 'string' ? parseISO(customRange.startDate) : customRange.startDate;
-      const e = typeof customRange.endDate === 'string' ? parseISO(customRange.endDate) : customRange.endDate;
+      const parsedS = typeof customRange.startDate === 'string' ? parseISO(customRange.startDate) : customRange.startDate;
+      const parsedE = typeof customRange.endDate === 'string' ? parseISO(customRange.endDate) : customRange.endDate;
+      const s = parsedS.getTime() <= parsedE.getTime() ? parsedS : parsedE;
+      const e = parsedS.getTime() <= parsedE.getTime() ? parsedE : parsedS;
       return {
         start: startOfDay(s),
         end: endOfDay(e),

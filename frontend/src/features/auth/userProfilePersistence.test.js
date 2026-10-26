@@ -70,6 +70,49 @@ describe('User Profile Persistence Across Logout/Login & Account Switching', () 
     expect(adminUser.initials).toBe('HO');
   });
 
+  it('preserves Admin custom name when logging out and logging back in with rms_users_list present', async () => {
+    // Simulate real app environment where rms_users_list is initialized with default 'Admin'
+    storage.set('rms_users_list', [
+      {
+        id: 'user_admin',
+        name: 'Admin',
+        username: 'admin',
+        role: 'admin',
+        isFixedAdmin: true,
+        password: '12345',
+      },
+    ]);
+
+    const store = useAppStore.getState();
+
+    // 1. Admin logs in
+    const loginRes = await store.login({ usernameOrEmail: 'admin', password: '12345' });
+    expect(loginRes.success).toBe(true);
+
+    // 2. Admin edits profile in Edit Profile modal
+    useAppStore.getState().updateUser({
+      name: 'Muhammad Farooq',
+      fullName: 'Muhammad Farooq',
+      role: 'Restaurant Owner',
+    });
+
+    expect(useAppStore.getState().user.name).toBe('Muhammad Farooq');
+
+    // Also verify rms_users_list was updated
+    const savedListAfterUpdate = storage.get('rms_users_list', []);
+    expect(savedListAfterUpdate[0].name).toBe('Muhammad Farooq');
+
+    // 3. Admin logs out
+    await useAppStore.getState().logout();
+    expect(useAppStore.getState().isAuthenticated).toBe(false);
+
+    // 4. Admin logs back in: name MUST NOT revert to 'Admin'
+    const reloginRes = await store.login({ usernameOrEmail: 'admin', password: '12345' });
+    expect(reloginRes.success).toBe(true);
+    expect(useAppStore.getState().user.name).toBe('Muhammad Farooq');
+    expect(useAppStore.getState().user.fullName).toBe('Muhammad Farooq');
+  });
+
   it('hydrates initial store state from persistent user profile if available', () => {
     storage.set('user_profiles', {
       admin: {

@@ -1,15 +1,24 @@
 import { z } from 'zod';
 
 export const createReversalSchema = z.object({
+  id: z.string().trim().optional(),
   orderId: z.string().trim().optional(),
+  originalOrderId: z.string().trim().optional(),
   invoiceNumber: z.string().trim().optional(),
+  originalInvoiceNumber: z.string().trim().optional(),
   reason: z
     .string()
     .trim()
     .min(3, 'Reversal reason must be at least 3 characters long')
     .max(500, 'Reason cannot exceed 500 characters'),
   cashierName: z.string().trim().max(100).default('Cashier 1').optional(),
-}).refine((data) => data.orderId || data.invoiceNumber, {
+  reversedBy: z.string().trim().max(100).optional(),
+  note: z.string().trim().optional().default(''),
+  subtotalReversed: z.number().optional(),
+  discountReversed: z.number().optional(),
+  taxReversed: z.number().optional(),
+  totalReversedIncludingTax: z.number().optional(),
+}).refine((data) => data.orderId || data.originalOrderId || data.invoiceNumber || data.originalInvoiceNumber, {
   message: 'Either orderId or invoiceNumber must be provided to reverse an order',
   path: ['orderId'],
 });

@@ -89,7 +89,7 @@ export const DataManagementTab = () => {
 
           <div className="p-3 rounded-xl bg-slate-50/70 border border-slate-200/60 text-xs text-slate-600">
             <p>
-              <strong>Architecture:</strong> Frontend First (In-browser IndexedDB & scoped localStorage persistence).
+              <strong>Architecture:</strong> Connected to live MongoDB Database & Express REST API (All records persisted directly in MongoDB).
             </p>
           </div>
         </CardContent>

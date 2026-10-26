@@ -161,6 +161,13 @@ describe('Batch 5: Complete Reporting Module (Sales, Revenue, Reversals)', () =>
     const cardOnly = filterReportOrders(sampleOrders, { paymentMethod: 'Card' });
     expect(cardOnly).toHaveLength(1);
     expect(cardOnly[0].paymentMethod).toBe('Card');
+
+    const splitOrders = filterReportOrders([
+      ...sampleOrders,
+      { id: 'ord-split', paymentMethod: 'Split', totalAmount: 500, lines: [] }
+    ], { paymentMethod: 'Split' });
+    expect(splitOrders).toHaveLength(1);
+    expect(splitOrders[0].id).toBe('ord-split');
   });
 
   // 4. Order type filtering

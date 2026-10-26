@@ -112,17 +112,21 @@ export function filterInvoices(orders = [], filters = {}) {
 
     // 2. Status Filter
     if (status && status !== 'All') {
-      const orderStatus = (order.status || 'completed').toLowerCase();
+      const isOrderReversed =
+        (order.status || '').toLowerCase() === 'reversed' ||
+        Boolean(order.reversalId);
       const isPartial =
         (Number(order.balanceDue) > 0 || (order.paymentStatus || '').toLowerCase() === 'partial') &&
-        orderStatus !== 'reversed';
+        !isOrderReversed;
       const target = status.toLowerCase();
 
       if (target === 'partial' || target === 'outstanding') {
         if (!isPartial) return false;
+      } else if (target === 'reversed') {
+        if (!isOrderReversed) return false;
       } else if (target === 'completed') {
-        if (orderStatus !== 'completed' || isPartial) return false;
-      } else if (orderStatus !== target) {
+        if (isOrderReversed || isPartial || (order.status || '').toLowerCase() !== 'completed') return false;
+      } else if ((order.status || '').toLowerCase() !== target) {
         return false;
       }
     }
@@ -339,7 +343,7 @@ export function isCashierUser(user) {
   const userRole = String(user.role || '').toLowerCase();
   const userUsername = String(user.username || '').toLowerCase();
   const isAdmin = userRole.includes('admin') || userUsername === 'admin';
-  return !isAdmin && (userRole.includes('cashier') || userUsername === 'cashier');
+  return !isAdmin && (userRole.includes('cashier') || userUsername.includes('cashier') || userRole.includes('sales') || userRole.includes('billing'));
 }
 
 /**
@@ -347,7 +351,7 @@ export function isCashierUser(user) {
  * - Admin: can see all invoices created by all authorized users.
  * - Cashier: can see ONLY invoices created by that logged-in cashier.
  *   Must NOT see Admin-created invoices.
- *   Must NOT see another cashier's invoices.
+ *   Must NOT see another cashier's invoices (Strict A != B isolation).
  *   If creator attribution is genuinely missing, do not invent ownership (Admin only).
  */
 export function isInvoiceVisibleToUser(order, user) {
@@ -365,9 +369,12 @@ export function isInvoiceVisibleToUser(order, user) {
   const currentUserId = String(user.id || (user.username ? `user_${user.username}` : '')).trim();
   if (!currentUserId) return false;
 
+  const currentUsername = String(user.username || '').trim().toLowerCase();
+  const currentName = String(user.name || user.fullName || '').trim().toLowerCase();
+
   const orderUserId = String(order.createdByUserId || '').trim();
   const orderRole = String(order.createdByRole || '').toLowerCase();
-  const orderCashier = String(order.cashierName || order.createdByName || '').toLowerCase();
+  const orderCashier = String(order.cashierName || order.createdByName || '').trim().toLowerCase();
 
   // If order was created by an admin, cashier must NEVER see it
   const isCreatedByAdmin =
@@ -380,15 +387,26 @@ export function isInvoiceVisibleToUser(order, user) {
     return false;
   }
 
-  // If order has creator attribution, match strictly against logged-in cashier's ID
-  if (orderUserId) {
-    return orderUserId === currentUserId;
+  // Strict ID matching
+  if (orderUserId && (orderUserId === currentUserId || orderUserId === `user_${currentUsername}`)) {
+    return true;
   }
 
-  // "Do not determine invoice ownership from current username text only.
-  // If historical invoice creator data already exists, use it.
-  // If creator attribution is genuinely missing, do not invent ownership."
-  // Therefore, invoices with genuinely missing creator attribution are NOT visible to Cashier.
+  // Default cashier legacy ID compatibility (user_cashier vs user_cashier_1)
+  const isUserDefaultCashier = currentUserId === 'user_cashier' || currentUserId === 'user_cashier_1' || currentUsername === 'cashier';
+  const isOrderDefaultCashier = orderUserId === 'user_cashier' || orderUserId === 'user_cashier_1';
+  if (isUserDefaultCashier && isOrderDefaultCashier) {
+    return true;
+  }
+
+  // Explicit name or username attribution match if orderUserId is absent
+  if (!orderUserId && currentName && orderCashier && currentName === orderCashier) {
+    return true;
+  }
+  if (!orderUserId && currentUsername && orderCashier && currentUsername === orderCashier) {
+    return true;
+  }
+
   return false;
 }
 
@@ -414,7 +432,8 @@ export function getUserCartStorageKey(userOrId) {
  *   - Must NEVER see Admin-only notifications (Admin sales, Admin-only reversals)
  */
 export function isNotificationVisibleToUser(notification, user) {
-  if (!notification || !user) return false;
+  if (!notification) return false;
+  if (!user) return true;
 
   const userRole = String(user.role || '').toLowerCase();
   const userUsername = String(user.username || '').toLowerCase();

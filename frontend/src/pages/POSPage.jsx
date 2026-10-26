@@ -46,7 +46,14 @@ export const POSPage = ({ defaultTab = 'register' }) => {
     orderType,
     setOrderType,
     user,
+    syncWithBackend,
+    fetchCategories,
+    fetchItems,
   } = useAppStore();
+
+  React.useEffect(() => {
+    useAppStore.getState().syncWithBackend();
+  }, []);
 
   const visibleOrdersCount = useMemo(() => {
     return filterOrdersByOwnership(orders, user).length;
@@ -130,10 +137,10 @@ export const POSPage = ({ defaultTab = 'register' }) => {
       id: `line_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       itemId: item.id,
       itemNameSnapshot: item.name,
-      itemImageSnapshot: item.imageRef || null,
-      categoryIdSnapshot: effectiveCat.id || item.categoryId || null,
+      itemImageSnapshot: item.imageRef || '',
+      categoryIdSnapshot: effectiveCat.id || item.categoryId || '',
       categoryNameSnapshot: effectiveCat.name || item.categoryName || 'Specialty',
-      pricingMode: isWeightBased ? 'weight' : (defaultPortion ? 'portion' : 'piece'),
+      pricingMode: isWeightBased ? (defaultPortion ? 'portion' : 'custom_weight') : 'piece',
       basePriceSnapshot: Number(item.basePrice) || 0,
       costPriceSnapshot: item.costPrice !== undefined ? item.costPrice : null,
       baseUnitSnapshot: item.unit || item.baseUnit || (isWeightBased ? 'kg' : 'Piece'),

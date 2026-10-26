@@ -76,7 +76,10 @@ function resolveDateRange(datePreset, startDate, endDate) {
  */
 export async function createReversal(req, res, next) {
   try {
-    const { orderId, invoiceNumber, reason, cashierName = 'Cashier 1' } = req.body;
+    const orderId = req.body.orderId || req.body.originalOrderId;
+    const invoiceNumber = req.body.invoiceNumber || req.body.originalInvoiceNumber;
+    const reason = req.body.reason;
+    const cashierName = req.body.cashierName || req.body.reversedBy || 'Cashier 1';
 
     // 1. Locate original order
     let order = null;
@@ -88,7 +91,7 @@ export async function createReversal(req, res, next) {
     }
 
     if (!order && invoiceNumber) {
-      order = await Order.findOne({ invoiceNumber: invoiceNumber.trim().toUpperCase() });
+      order = await Order.findOne({ invoiceNumber: String(invoiceNumber).trim().toUpperCase() });
     }
 
     if (!order) {

@@ -63,7 +63,7 @@ export const DashboardPage = () => {
     (user?.username?.toLowerCase() === 'cashier' && user?.username?.toLowerCase() !== 'admin')
   );
 
-  const effectiveDatePreset = isCashier ? 'Today' : datePreset;
+  const effectiveDatePreset = datePreset || 'All Dates';
 
   // Active candle key in revenue chart (guarantees exactly one active candle)
   const [activeCandleKey, setActiveCandleKey] = useState(null);
@@ -89,9 +89,9 @@ export const DashboardPage = () => {
       effectiveOrders,
       effectiveReversals,
       effectiveDatePreset,
-      isCashier ? null : customDateRange
+      customDateRange
     );
-  }, [effectiveOrders, effectiveReversals, effectiveDatePreset, customDateRange, isCashier]);
+  }, [effectiveOrders, effectiveReversals, effectiveDatePreset, customDateRange]);
 
   // Outstanding receivables summary
   const outstandingSummary = useMemo(() => {
@@ -291,19 +291,13 @@ export const DashboardPage = () => {
     return revenueDays[revenueDays.length - 1].id;
   }, [revenueDays, activeCandleKey]);
 
-  const presets = isCashier ? ['Today'] : ['All Dates', 'Today', 'This Week', 'This Month'];
+  const presets = ['All Dates', 'Today', 'This Week', 'This Month'];
 
   const toggleDropdown = (cardKey) => {
-    if (isCashier) return;
     setDropdownOpenCard(dropdownOpenCard === cardKey ? null : cardKey);
   };
 
   const handleSelectPreset = (p) => {
-    if (isCashier) {
-      setDatePreset('Today');
-      setDropdownOpenCard(null);
-      return;
-    }
     setDatePreset(p);
     setDropdownOpenCard(null);
   };

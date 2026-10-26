@@ -47,7 +47,10 @@ export const ItemsList = ({ isAddModalOpen: externalAddModalOpen, onAddModalClos
 
       // 2. Category filter
       if (categoryFilter !== 'All Categories') {
-        if (item.categoryId !== categoryFilter) return false;
+        const matchId = item.categoryId === categoryFilter;
+        const targetName = String(categoryMap.get(categoryFilter) || '').toLowerCase();
+        const matchName = targetName && String(item.categoryName || '').toLowerCase() === targetName;
+        if (!matchId && !matchName) return false;
       }
 
       // 3. Status filter

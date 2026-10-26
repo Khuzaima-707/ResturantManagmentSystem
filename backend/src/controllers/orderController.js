@@ -3,7 +3,9 @@ import { Order } from '../models/Order.js';
 import { Counter } from '../models/Counter.js';
 import { MenuItem } from '../models/Item.js';
 import { Deal } from '../models/Deal.js';
+import { Category } from '../models/Category.js';
 import { isDbConnected } from '../config/db.js';
+import { isCashierRequest } from '../middleware/authMiddleware.js';
 
 function getStartOfDay(d = new Date()) {
   const date = new Date(d);
@@ -276,6 +278,13 @@ export async function createOrder(req, res, next) {
     // DB lookup for cost enrichment if line costs were omitted (e.g. Cashier client)
     let dbItemMap = new Map();
     let dbDealMap = new Map();
+    let dbCatMap = new Map();
+    if (isDbConnected()) {
+      try {
+        const foundCats = await Category.find({}).lean();
+        foundCats.forEach((c) => dbCatMap.set(c.id, c.name));
+      } catch {}
+    }
     if (isDbConnected() && Array.isArray(body.lines)) {
       const itemIds = body.lines.map((l) => l.itemId).filter(Boolean);
       const dealIds = body.lines.filter((l) => l.isDeal && l.dealId).map((l) => l.dealId);
@@ -336,6 +345,25 @@ export async function createOrder(req, res, next) {
       const allocatedDiscount = l.allocatedDiscount || 0;
       const netRevenue = l.netRevenue !== undefined ? l.netRevenue : Math.max(0, grossLineSale - allocatedDiscount);
 
+      const isWeight = Boolean(
+        l.pricingMode === 'portion' ||
+        l.pricingMode === 'custom_weight' ||
+        l.pricingMode === 'weight' ||
+        (l.selectedWeightGrams && Number(l.selectedWeightGrams) > 0) ||
+        (l.weightGramsSnapshot && Number(l.weightGramsSnapshot) > 0) ||
+        (dbItem?.unit && String(dbItem.unit).toLowerCase().includes('kg')) ||
+        (l.baseUnitSnapshot && String(l.baseUnitSnapshot).toLowerCase().includes('kg'))
+      );
+
+      let derivedGrams = Number(l.selectedWeightGrams || l.weightGramsSnapshot) || 0;
+      if (derivedGrams <= 0) {
+        const label = String(l.selectedPortionLabel || l.portion || '').toLowerCase();
+        if (label.includes('1kg') || label === '1 kg') derivedGrams = 1000;
+        else if (label.match(/(\d+)\s*g/)) derivedGrams = Number(label.match(/(\d+)\s*g/)[1]);
+        else if (label.includes('half')) derivedGrams = 500;
+        else if (label.includes('quarter')) derivedGrams = 250;
+      }
+
       if (l.isDeal) {
         let dealUnitCost = 0;
         let dealHasAllCost = includedItems.length > 0;
@@ -353,13 +381,30 @@ export async function createOrder(req, res, next) {
           grossProfit = netRevenue - totalCOGS;
           grossProfitMargin = netRevenue > 0 ? Number(((grossProfit / netRevenue) * 100).toFixed(2)) : 0;
         }
-      } else if (costPriceSnapshot !== null && costPriceSnapshot !== undefined && (totalCOGS === undefined || totalCOGS === null)) {
-        itemCOGS = Number(costPriceSnapshot) * quantity;
+      } else if (costPriceSnapshot !== null && costPriceSnapshot !== undefined) {
+        const unitCostNum = Number(costPriceSnapshot);
         const addonCOGS = l.addonCOGS || 0;
-        totalCOGS = itemCOGS + addonCOGS;
-        hasCost = true;
-        grossProfit = netRevenue - totalCOGS;
-        grossProfitMargin = netRevenue > 0 ? Number(((grossProfit / netRevenue) * 100).toFixed(2)) : 0;
+
+        if (isWeight && derivedGrams > 0) {
+          const expectedPortionCOGS = Math.round((derivedGrams / 1000) * unitCostNum * quantity);
+          if (
+            totalCOGS === undefined ||
+            totalCOGS === null ||
+            (derivedGrams < 1000 && itemCOGS >= unitCostNum * quantity)
+          ) {
+            itemCOGS = expectedPortionCOGS;
+            totalCOGS = itemCOGS + addonCOGS;
+            hasCost = true;
+            grossProfit = netRevenue - totalCOGS;
+            grossProfitMargin = netRevenue > 0 ? Number(((grossProfit / netRevenue) * 100).toFixed(2)) : 0;
+          }
+        } else if (totalCOGS === undefined || totalCOGS === null) {
+          itemCOGS = unitCostNum * quantity;
+          totalCOGS = itemCOGS + addonCOGS;
+          hasCost = true;
+          grossProfit = netRevenue - totalCOGS;
+          grossProfitMargin = netRevenue > 0 ? Number(((grossProfit / netRevenue) * 100).toFixed(2)) : 0;
+        }
       }
 
       return {
@@ -368,8 +413,17 @@ export async function createOrder(req, res, next) {
         itemNameSnapshot: l.itemNameSnapshot,
         itemImageSnapshot: l.itemImageSnapshot || '',
         categoryIdSnapshot: l.categoryIdSnapshot || '',
-        categoryNameSnapshot: l.categoryNameSnapshot || '',
-        pricingMode: l.pricingMode || (l.isDeal ? 'deal' : 'piece'),
+        categoryNameSnapshot:
+          l.categoryNameSnapshot ||
+          (l.categoryIdSnapshot && dbCatMap.get(l.categoryIdSnapshot)) ||
+          (dbItem && (dbItem.categoryName || dbCatMap.get(dbItem.categoryId))) ||
+          '',
+        pricingMode:
+          l.pricingMode === 'weight'
+            ? (l.selectedPortionLabel ? 'portion' : 'custom_weight')
+            : l.pricingMode === 'amount'
+            ? 'custom_weight'
+            : (l.pricingMode || (l.isDeal ? 'deal' : 'piece')),
         isDeal: Boolean(l.isDeal),
         dealId: l.dealId || null,
         includedItems,
@@ -539,18 +593,7 @@ export async function getAllOrders(req, res, next) {
       });
     }
 
-    // Auto-heal duplicate invoice numbers if any exist in the database
-    try {
-      const duplicates = await Order.aggregate([
-        { $group: { _id: '$invoiceNumber', count: { $sum: 1 } } },
-        { $match: { count: { $gt: 1 }, _id: { $ne: null } } },
-      ]);
-      if (duplicates && duplicates.length > 0) {
-        await repairDuplicateInvoiceNumbers();
-      }
-    } catch {
-      // Non-blocking auto-repair attempt
-    }
+
 
     const {
       status,
@@ -561,6 +604,7 @@ export async function getAllOrders(req, res, next) {
       endDate,
       search,
       createdByUserId,
+      cashierName,
       page = 1,
       limit = 50,
       sort = '-completedAt',
@@ -568,7 +612,28 @@ export async function getAllOrders(req, res, next) {
 
     const filter = {};
 
-    if (createdByUserId) {
+    const isCashier = isCashierRequest(req);
+    const cashierId = req.user?.id || req.headers?.['x-user-id'] || createdByUserId;
+    const resolvedCashierName = req.user?.name || req.headers?.['x-user-name'] || cashierName;
+
+    if (isCashier) {
+      filter.createdByRole = { $ne: 'admin' };
+      const cashierConditions = [];
+      if (cashierId) {
+        cashierConditions.push({ createdByUserId: cashierId });
+        if (cashierId === 'user_cashier' || cashierId === 'user_cashier_1') {
+          cashierConditions.push({ createdByUserId: 'user_cashier' });
+          cashierConditions.push({ createdByUserId: 'user_cashier_1' });
+        }
+      }
+      if (resolvedCashierName) {
+        cashierConditions.push({ cashierName: resolvedCashierName });
+        cashierConditions.push({ createdByName: resolvedCashierName });
+      }
+      if (cashierConditions.length > 0) {
+        filter.$or = cashierConditions;
+      }
+    } else if (createdByUserId) {
       filter.createdByUserId = createdByUserId;
     }
 
@@ -612,12 +677,12 @@ export async function getAllOrders(req, res, next) {
     else sortOptions.completedAt = -1;
 
     const [orders, totalMatching] = await Promise.all([
-      Order.find(filter).sort(sortOptions).skip(skip).limit(limitNum),
+      Order.find(filter).sort(sortOptions).skip(skip).limit(limitNum).lean(),
       Order.countDocuments(filter),
     ]);
 
-    // Calculate aggregated metrics for the filtered view
-    const allMatching = await Order.find(filter);
+    // Calculate aggregated metrics for the filtered view with lean projection
+    const allMatching = await Order.find(filter, { grandTotal: 1, taxAmount: 1, status: 1, 'lines.quantity': 1 }).lean();
     const grossSales = allMatching.reduce((s, o) => s + (o.grandTotal || 0), 0);
     const validOrders = allMatching.filter((o) => o.status !== 'reversed');
     const reversedOrders = allMatching.filter((o) => o.status === 'reversed');
@@ -629,6 +694,12 @@ export async function getAllOrders(req, res, next) {
       (s, o) => s + o.lines.reduce((ls, l) => ls + (l.quantity || 1), 0),
       0
     );
+
+    let dbCatMap = new Map();
+    try {
+      const foundCats = await Category.find({}).lean();
+      foundCats.forEach((c) => dbCatMap.set(c.id, c.name));
+    } catch {}
 
     return res.status(200).json({
       success: true,
@@ -654,7 +725,18 @@ export async function getAllOrders(req, res, next) {
               )
             : 0,
       },
-      data: orders,
+      data: orders.map((doc) => {
+        const o = doc.toObject ? doc.toObject() : { ...doc };
+        if (Array.isArray(o.lines)) {
+          o.lines = o.lines.map((l) => {
+            if (!l.categoryNameSnapshot && l.categoryIdSnapshot && dbCatMap.has(l.categoryIdSnapshot)) {
+              return { ...l, categoryNameSnapshot: dbCatMap.get(l.categoryIdSnapshot) };
+            }
+            return l;
+          });
+        }
+        return o;
+      }),
     });
   } catch (error) {
     next(error);
@@ -859,6 +941,11 @@ export async function seedOrders(req, res, next) {
     ];
 
     await Order.insertMany(sampleOrders);
+    await Counter.findOneAndUpdate(
+      { _id: 'order_invoice_sequence' },
+      { $set: { seq: sampleOrders.length } },
+      { upsert: true }
+    );
 
     return res.status(200).json({
       success: true,

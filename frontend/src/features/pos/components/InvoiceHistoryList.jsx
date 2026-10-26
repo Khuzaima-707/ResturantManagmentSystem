@@ -54,11 +54,31 @@ export const InvoiceHistoryList = () => {
   const [selectedInvoiceForReversal, setSelectedInvoiceForReversal] = useState(null);
   const [orderToSettle, setOrderToSettle] = useState(null);
 
-  // Scoped orders based on role ownership
+  // Scoped orders based on role ownership, enriched with reversals
   const visibleOrders = useMemo(() => {
     const scoped = filterOrdersByOwnership(orders, user);
-    return repairDuplicateInvoiceNumbersLocally(scoped);
-  }, [orders, user]);
+    const healed = repairDuplicateInvoiceNumbersLocally(scoped);
+    const revMap = new Map();
+    for (const r of reversals || []) {
+      if (r.originalOrderId) revMap.set(r.originalOrderId, r);
+      if (r.originalInvoiceNumber) revMap.set(r.originalInvoiceNumber, r);
+      if (r.orderId) revMap.set(r.orderId, r);
+      if (r.invoiceNumber) revMap.set(r.invoiceNumber, r);
+    }
+    return healed.map((o) => {
+      const rev = revMap.get(o.id) || revMap.get(o.invoiceNumber);
+      if (rev) {
+        return {
+          ...o,
+          status: 'reversed',
+          reversalId: rev.id,
+          reversalReason: rev.reason,
+          reversedAt: rev.reversedAt || rev.createdAt,
+        };
+      }
+      return o;
+    });
+  }, [orders, user, reversals]);
 
   // Outstanding Invoices & Total Amount
   const outstandingInvoices = useMemo(() => {
@@ -184,7 +204,10 @@ export const InvoiceHistoryList = () => {
       align: 'center',
       cellClassName: 'text-center',
       render: (status, row) => {
-        const isReversed = (status || '').toLowerCase() === 'reversed';
+        const isReversed =
+          (status || '').toLowerCase() === 'reversed' ||
+          Boolean(row?.reversalId) ||
+          (reversals || []).some((r) => r.originalOrderId === row?.id || r.originalInvoiceNumber === row?.invoiceNumber);
         const isPartial = Number(row?.balanceDue) > 0 || (status || '').toLowerCase() === 'partial';
         if (isReversed) {
           return (

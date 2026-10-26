@@ -13,9 +13,12 @@ import { TablesPage } from './pages/TablesPage';
 import { KitchenPage } from './pages/KitchenPage';
 import { ShiftsPage } from './pages/ShiftsPage';
 import { useAppStore } from './store';
+import { cleanLegacyDataFromLocalStorage } from './services/persistence/storage';
 
 export function App() {
   useEffect(() => {
+    // Purge operational collections from browser localStorage
+    cleanLegacyDataFromLocalStorage();
     // Sync store with live Express + MongoDB Atlas backend
     useAppStore.getState().syncWithBackend();
   }, []);
@@ -44,9 +47,9 @@ export function App() {
             <Route path="/register" element={<ShiftsPage />} />
             <Route path="/menu" element={<MenuPage />} />
             <Route path="/menus" element={<MenuPage />} />
-            <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/reports" element={<Navigate to="/reports/sales" replace />} />
             <Route path="/reports/:section" element={<ReportsPage />} />
-            <Route path="/analytics" element={<ReportsPage />} />
+            <Route path="/analytics" element={<Navigate to="/reports/sales" replace />} />
             <Route path="/analytics/:section" element={<ReportsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/settings/:section" element={<SettingsPage />} />

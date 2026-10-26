@@ -288,7 +288,7 @@ const DealModalForm = ({ isOpen, onClose, deal = null }) => {
       ...(deal || {}),
       name: name.trim(),
       description: description.trim(),
-      imageRef: imageRef ? String(imageRef).trim() : null,
+      imageRef: imageRef ? String(imageRef).trim() : '',
       dealPrice: Math.round(Number(dealPrice)),
       status,
       includedItems,

@@ -16,8 +16,8 @@ export const createDealSchema = z
   .object({
     id: z.string().trim().optional(),
     name: z.string().trim().min(1, 'Deal name is required').max(150, 'Name must be 150 characters or less'),
-    description: z.string().trim().max(500, 'Description cannot exceed 500 characters').optional().default(''),
-    imageRef: z.string().trim().optional().default(''),
+    description: z.string().trim().max(500, 'Description cannot exceed 500 characters').nullable().optional().default(''),
+    imageRef: z.string().trim().nullable().optional().transform((v) => v || ''),
     dealPrice: z.number().min(0, 'Deal price must be a non-negative number'),
     status: z.enum(['active', 'inactive']).default('active').optional(),
     includedItems: z.array(includedItemSchema).min(1, 'Deal must contain at least one included item'),
@@ -28,8 +28,8 @@ export const createDealSchema = z
 export const updateDealSchema = z
   .object({
     name: z.string().trim().min(1).max(150).optional(),
-    description: z.string().trim().max(500).optional(),
-    imageRef: z.string().trim().optional(),
+    description: z.string().trim().max(500).nullable().optional(),
+    imageRef: z.string().trim().nullable().optional().transform((v) => v || ''),
     dealPrice: z.number().min(0).optional(),
     status: z.enum(['active', 'inactive']).optional(),
     includedItems: z.array(includedItemSchema).min(1).optional(),

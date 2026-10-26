@@ -11,9 +11,9 @@ export const updateSettingsSchema = z.object({
   isTaxEnabled: z.boolean().optional(),
   invoicePrefix: z.string().trim().max(10).optional(),
   footerNote: z.string().trim().max(300).optional(),
-  currencySymbol: z.string().trim().max(10).optional(),
   logo: z.string().optional(),
-});
+  paymentAccounts: z.array(z.any()).optional(),
+}).passthrough();
 
 export const dangerZoneResetSchema = z.object({
   confirmationPhrase: z.literal('DELETE ALL DATA', {

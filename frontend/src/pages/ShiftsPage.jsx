@@ -17,6 +17,7 @@ import {
 import { useAppStore } from '../store';
 import { ShiftRepository } from '../services/repositories';
 import { cn } from '../utils/cn';
+import { isInvoiceVisibleToUser, isCashierUser } from '../domain/selectors/invoiceSelectors';
 
 export function ShiftsPage() {
   const { currentShift, openShift, closeShift, user, orders, expenses, reversals } = useAppStore();
@@ -64,17 +65,19 @@ export function ShiftsPage() {
     };
   }, [currentShift]);
 
-  // Real-time Shift Calculations
+  // Real-time Shift Calculations (isolated per cashier)
   const shiftMetrics = useMemo(() => {
     if (!currentShift) return null;
 
+    const isCashier = isCashierUser(user);
     const shiftStartTime = new Date(currentShift.openedAt).getTime();
     const reversedOrderIds = new Set(
       Array.isArray(reversals) ? reversals.map((r) => r.originalOrderId || r.orderId) : []
     );
-    // Non-reversed completed orders since shift opened
+    // Non-reversed completed orders since shift opened (strictly isolated if cashier)
     const shiftOrders = (orders || []).filter((o) => {
       if (o.status !== 'completed' || reversedOrderIds.has(o.id)) return false;
+      if (isCashier && !isInvoiceVisibleToUser(o, user)) return false;
       const orderTime = new Date(o.completedAt || o.createdAt).getTime();
       return orderTime >= shiftStartTime;
     });

@@ -14,8 +14,12 @@ import { isCashierUser } from '../domain/selectors/invoiceSelectors';
  * Tabs: All Items, Categories, Add-ons, Deals
  */
 export const MenuPage = () => {
-  const { user } = useAppStore();
+  const { user, syncWithBackend, fetchCategories, fetchItems } = useAppStore();
   const isCashier = isCashierUser(user);
+
+  React.useEffect(() => {
+    useAppStore.getState().syncWithBackend();
+  }, []);
 
   const [activeTab, setActiveTab] = useState('All Items');
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);

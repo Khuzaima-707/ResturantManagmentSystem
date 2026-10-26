@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { NotificationDropdown } from './NotificationDropdown';
+import { ToastNotification } from '../ui/ToastNotification';
 
 /**
  * Metadata for each application section in the top navigation bar
@@ -96,6 +97,9 @@ export const AppLayout = () => {
 
   return (
     <div className="min-h-screen lg:h-screen lg:max-h-screen bg-[#ECEEF2] flex font-sans antialiased text-slate-900 p-3.5 sm:p-4 lg:p-4.5 gap-3.5 sm:gap-4 lg:gap-4.5 overflow-x-hidden lg:overflow-hidden">
+      {/* Real-time Order & Alert Notification Toast */}
+      <ToastNotification />
+
       {/* Left Sidebar (Aligned evenly on top, bottom, and sides) */}
       <Sidebar
         isOpen={isMobileSidebarOpen}

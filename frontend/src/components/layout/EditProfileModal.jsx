@@ -102,6 +102,7 @@ export const EditProfileModal = ({ isOpen, onClose }) => {
 
     updateUser({
       name: trimmedName,
+      fullName: trimmedName,
       role: role.trim() || defaultRole,
       avatarUrl: avatarUrl || null,
       initials: initials || (isCashier ? 'C1' : 'JH'),
