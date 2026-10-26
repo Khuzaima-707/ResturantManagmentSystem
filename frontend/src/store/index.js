@@ -855,9 +855,13 @@ export const useAppStore = create((set, get) => ({
         let orderHasChange = false;
         const enrichedLines = o.lines.map((l) => {
           const qty = Math.max(1, Number(l.quantity || 1));
-          const lineGross = Number(l.grossLineSale ?? l.lineSubtotal ?? (Number(l.unitPrice || 0) * qty));
+          const lineSubtotal = Number(l.lineSubtotal ?? (Number(l.unitPrice || 0) * qty));
+          const lineGross = (lineSubtotal > 0 && Number(l.grossLineSale || 0) > lineSubtotal)
+            ? lineSubtotal
+            : Number(l.grossLineSale ?? lineSubtotal);
           const allocatedDiscount = Number(l.allocatedDiscount || 0);
-          const netRev = Number(l.netRevenue ?? Math.max(0, lineGross - allocatedDiscount));
+          const maxNet = Math.max(0, lineGross - allocatedDiscount);
+          const netRev = Math.min(Number(l.netRevenue ?? maxNet), maxNet);
 
           // 1. Precise Deal Line COGS & Profit Attribution
           const lineName = String(l.itemNameSnapshot || l.name || '').trim();
@@ -953,7 +957,13 @@ export const useAppStore = create((set, get) => ({
           const hasValidCostSnap = l.costPriceSnapshot !== undefined && l.costPriceSnapshot !== null && Number(l.costPriceSnapshot) > 0;
           const isPortionCostDistorted = isWeight && derivedGrams > 0 && derivedGrams < 1000 && hasValidCostSnap && Number(l.itemCOGS) >= Number(l.costPriceSnapshot) * qty;
 
-          if (hasValidCostSnap && l.itemCOGS !== undefined && !isPortionCostDistorted) {
+          const isGrossInflated = (lineSubtotal > 0 && Number(l.grossLineSale || 0) > lineSubtotal);
+          const isNetInflated = Number(l.netRevenue || 0) > maxNet;
+          if (isGrossInflated || isNetInflated) {
+            orderHasChange = true;
+          }
+
+          if (hasValidCostSnap && l.itemCOGS !== undefined && !isPortionCostDistorted && !isGrossInflated && !isNetInflated) {
             return l;
           }
           orderHasChange = true;
@@ -992,6 +1002,8 @@ export const useAppStore = create((set, get) => ({
 
           return {
             ...l,
+            grossLineSale: lineGross,
+            netRevenue: netRev,
             costPriceSnapshot: itemCost,
             itemCOGS: lineItemCOGS,
             addonCOGS: lineAddonCOGS,

@@ -732,4 +732,138 @@ describe('Batch 6: Profit & Cost (COGS, Gross Profit & Historical Snapshots)', (
     expect(reportAddonsOnly.itemRows).toHaveLength(1);
     expect(reportAddonsOnly.itemRows[0].name).toBe('Extra Cheese');
   });
+
+  it('verifies exact mathematical reconciliation for 1.50 kg Chicken Biryani @ Rs 800/kg sold across 2 invoices with add-on (Rs 1,200 Biryani, Rs 150 Addon)', () => {
+    // Exact user scenario:
+    // Chicken Biryani basePrice = 800 / 1 Kg, costPrice = 600 / 1 Kg.
+    // Order 1 (INV-0001): 3 portions of 250g (total 750g = 0.75 kg) @ Rs 200 = Rs 600
+    //                    + Salaad Add-on (3 pcs @ Rs 50 = Rs 150) -> Line Subtotal = Rs 750
+    //                    Even if legacy grossLineSale / netRevenue was 800, report strictly bounds by lineSubtotal 750
+    // Order 2 (INV-0002): 1 portion of 750g (total 750g = 0.75 kg) @ Rs 600 = Line Subtotal Rs 600
+    const inv1 = {
+      id: 'ord-biryani-1',
+      invoiceNumber: 'INV-0001',
+      status: 'completed',
+      completedAt: todayIso,
+      createdAt: todayIso,
+      subtotal: 750,
+      discountAmount: 0,
+      taxAmount: 0,
+      grandTotal: 750,
+      lines: [
+        {
+          id: 'line-1',
+          itemId: 'item-biryani-user',
+          itemNameSnapshot: 'Chicken Biryani',
+          categoryNameSnapshot: 'Rice',
+          pricingMode: 'portion',
+          selectedPortionLabel: '250g',
+          selectedWeightGrams: 250,
+          baseUnitSnapshot: '1 Kg',
+          basePriceSnapshot: 800,
+          costPriceSnapshot: 600,
+          portionPrice: 200,
+          unitPrice: 200,
+          quantity: 3,
+          lineSubtotal: 750,
+          itemGrossSale: 600,
+          addonGrossSale: 150,
+          grossLineSale: 800, // Legacy inflated field from historical snapshot
+          netRevenue: 800,    // Legacy inflated field
+          itemCOGS: 450,
+          addonCOGS: 90,
+          totalCOGS: 540,
+          addonSnapshots: [
+            {
+              id: 'addon-salad-1',
+              name: 'Salaad',
+              price: 50,
+              costPrice: 30,
+              quantity: 1, // 1 per item portion * 3 portions = 3 pcs
+            },
+          ],
+        },
+      ],
+    };
+
+    const inv2 = {
+      id: 'ord-biryani-2',
+      invoiceNumber: 'INV-0002',
+      status: 'completed',
+      completedAt: todayIso,
+      createdAt: todayIso,
+      subtotal: 600,
+      discountAmount: 0,
+      taxAmount: 0,
+      grandTotal: 600,
+      lines: [
+        {
+          id: 'line-2',
+          itemId: 'item-biryani-user',
+          itemNameSnapshot: 'Chicken Biryani',
+          categoryNameSnapshot: 'Rice',
+          pricingMode: 'portion',
+          selectedPortionLabel: '750g',
+          selectedWeightGrams: 750,
+          baseUnitSnapshot: '1 Kg',
+          basePriceSnapshot: 800,
+          costPriceSnapshot: 600,
+          portionPrice: 600,
+          unitPrice: 600,
+          quantity: 1,
+          lineSubtotal: 600,
+          itemGrossSale: 600,
+          addonGrossSale: 0,
+          grossLineSale: 600,
+          netRevenue: 600,
+          itemCOGS: 450,
+          totalCOGS: 450,
+          addonSnapshots: [],
+        },
+      ],
+    };
+
+    const report = getProfitAndCostReportData([inv1, inv2], [], { datePreset: 'Today' });
+
+    // 1. Verify Chicken Biryani row
+    const biryaniRow = report.itemRows.find((r) => r.name === 'Chicken Biryani');
+    expect(biryaniRow).toBeDefined();
+    expect(biryaniRow.category).toBe('Rice');
+    expect(biryaniRow.qtyWeightDisplay).toBe('1.50 kg');
+    expect(biryaniRow.validInvoices).toBe(2);
+    // 1.50 kg * Rs 800/kg = Rs 1,200 Net Sales (NEVER Rs 1,250!)
+    expect(biryaniRow.netSales).toBe(1200);
+    // 1.50 kg * Rs 600/kg = Rs 900 COGS
+    expect(biryaniRow.cogs).toBe(900);
+    // Rs 1,200 - Rs 900 = Rs 300 Gross Profit
+    expect(biryaniRow.grossProfit).toBe(300);
+    // 300 / 1200 = 25% margin
+    expect(biryaniRow.margin).toBe(25);
+
+    // 2. Verify Salaad Add-on row
+    const saladRow = report.itemRows.find((r) => r.name === 'Salaad');
+    expect(saladRow).toBeDefined();
+    expect(saladRow.isAddon).toBe(true);
+    expect(saladRow.category).toBe('Add-ons');
+    expect(saladRow.qtySold).toBe(3);
+    expect(saladRow.validInvoices).toBe(1);
+    // 3 pcs * Rs 50 = Rs 150 Net Sales
+    expect(saladRow.netSales).toBe(150);
+    // 3 pcs * Rs 30 = Rs 90 COGS
+    expect(saladRow.cogs).toBe(90);
+    // Rs 150 - Rs 90 = Rs 60 Gross Profit
+    expect(saladRow.grossProfit).toBe(60);
+    // 60 / 150 = 40% margin
+    expect(saladRow.margin).toBe(40);
+
+    // 3. Verify TOTAL / OVERALL KPIs
+    // Total Net Sales: 1,200 + 150 = Rs 1,350 (NEVER Rs 1,400!)
+    expect(report.kpis.netSales).toBe(1350);
+    // Total COGS: 900 + 90 = Rs 990
+    expect(report.kpis.cogs).toBe(990);
+    // Total Gross Profit: 1,350 - 990 = Rs 360
+    expect(report.kpis.grossProfit).toBe(360);
+    // Overall Margin: (360 / 1350) * 100 = 26.67%
+    expect(report.kpis.grossProfitMargin).toBe(26.67);
+  });
 });

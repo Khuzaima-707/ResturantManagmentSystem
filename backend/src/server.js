@@ -39,4 +39,5 @@ async function startServer() {
   }
 }
 
+// Server entrypoint
 startServer();

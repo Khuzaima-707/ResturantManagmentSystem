@@ -309,12 +309,15 @@ export async function createOrder(req, res, next) {
     // 1. Calculate each line's subtotal and addons, preserving all snapshots & deals
     const calculatedLines = body.lines.map((l, index) => {
       const addonsTotal = (l.addonSnapshots || []).reduce(
-        (sum, a) => sum + (Number(a.price) || 0),
+        (sum, a) => sum + (Number(a.price) || 0) * (a.quantity !== undefined ? Math.max(0, Number(a.quantity)) : 1),
         0
       );
       const unitPrice = Number(l.unitPrice) || 0;
       const quantity = Math.max(1, Math.floor(Number(l.quantity) || 1));
-      const lineSubtotal = Math.round((unitPrice + addonsTotal) * quantity);
+      const isAddonFlat = l.addonsAreFlat !== false;
+      const lineSubtotal = (l.lineSubtotal !== undefined && Number(l.lineSubtotal) > 0)
+        ? Number(l.lineSubtotal)
+        : Math.round(isAddonFlat ? (unitPrice * quantity + addonsTotal) : ((unitPrice + addonsTotal) * quantity));
 
       const dbItem = dbItemMap.get(l.itemId);
       const dbDeal = l.dealId ? dbDealMap.get(l.dealId) : null;
@@ -341,9 +344,18 @@ export async function createOrder(req, res, next) {
       let grossProfitMargin = l.grossProfitMargin;
       let hasCost = l.hasCost;
 
-      const grossLineSale = l.grossLineSale !== undefined ? l.grossLineSale : lineSubtotal;
-      const allocatedDiscount = l.allocatedDiscount || 0;
-      const netRevenue = l.netRevenue !== undefined ? l.netRevenue : Math.max(0, grossLineSale - allocatedDiscount);
+      // grossLineSale must strictly match lineSubtotal before order discount
+      const grossLineSale = lineSubtotal;
+      const allocatedDiscount = Number(l.allocatedDiscount || 0);
+      const netRevenue = Math.max(0, grossLineSale - allocatedDiscount);
+
+      const addonGrossSale = Math.min(
+        grossLineSale,
+        l.addonGrossSale !== undefined && Number(l.addonGrossSale) >= 0 && Number(l.addonGrossSale) <= grossLineSale
+          ? Number(l.addonGrossSale)
+          : (isAddonFlat ? addonsTotal : (addonsTotal * quantity))
+      );
+      const itemGrossSale = Math.max(0, grossLineSale - addonGrossSale);
 
       const isWeight = Boolean(
         l.pricingMode === 'portion' ||
@@ -441,8 +453,8 @@ export async function createOrder(req, res, next) {
         portionPrice: l.portionPrice,
         quantitySnapshot: l.quantitySnapshot || quantity,
         weightGramsSnapshot: l.weightGramsSnapshot,
-        itemGrossSale: l.itemGrossSale !== undefined ? l.itemGrossSale : lineSubtotal,
-        addonGrossSale: l.addonGrossSale || 0,
+        itemGrossSale,
+        addonGrossSale,
         grossLineSale,
         allocatedDiscount,
         netRevenue,

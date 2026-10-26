@@ -181,7 +181,7 @@ export function buildOrderLineSnapshots(cartLines = [], itemsMaster = [], addons
 
     const isAddonFlat = line.addonsAreFlat === true;
 
-    const addonGrossSale = isAddonFlat ? addonFlatSum : (addonFlatSum * quantitySnapshot);
+    const addonGrossSale = Math.min(grossLineSale, isAddonFlat ? addonFlatSum : (addonFlatSum * quantitySnapshot));
     const itemGrossSale = Math.max(0, grossLineSale - addonGrossSale);
 
     // Proportional Discount Allocation

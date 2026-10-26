@@ -837,7 +837,11 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
       const qty = Math.max(1, Number(line.quantity || line.quantitySnapshot || 1));
       totalItemsSold += qty;
 
-      const grossLineSale = Number(line.grossLineSale ?? line.lineSubtotal ?? (Number(line.unitPrice || 0) * qty));
+      const lineSubtotal = Number(line.lineSubtotal ?? (Number(line.unitPrice || 0) * qty));
+      // Reconcile: grossLineSale can never exceed lineSubtotal (avoids historical distortion e.g. basePriceSnapshot bleed)
+      const grossLineSale = (lineSubtotal > 0 && Number(line.grossLineSale || 0) > lineSubtotal)
+        ? lineSubtotal
+        : Number(line.grossLineSale ?? lineSubtotal);
 
       let allocatedDiscount = 0;
       if (line.allocatedDiscount !== undefined && line.allocatedDiscount !== null) {
@@ -846,9 +850,12 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
         allocatedDiscount = Math.round((grossLineSale / order.subtotal) * order.discountAmount);
       }
 
-      const netRevenue = line.netRevenue !== undefined && line.netRevenue !== null
+      // Net revenue can never exceed grossLineSale minus allocatedDiscount
+      const maxPossibleNet = Math.max(0, grossLineSale - allocatedDiscount);
+      const rawNet = line.netRevenue !== undefined && line.netRevenue !== null
         ? Number(line.netRevenue)
-        : Math.max(0, grossLineSale - allocatedDiscount);
+        : maxPossibleNet;
+      const netRevenue = Math.min(rawNet, maxPossibleNet);
 
       // Extract raw addons attached to this line
       const rawAddons = Array.isArray(line.addonSnapshots) && line.addonSnapshots.length > 0
@@ -1002,12 +1009,14 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
       // Process attached add-ons
       let lineAddonsGrossSale = 0;
       let lineAddonsTotalCOGS = 0;
+      const isAddonFlat = line.addonsAreFlat === true;
       const processedAddons = rawAddons.map((a, aIdx) => {
         const aName = String(a.name || 'Add-on').trim();
         const aId = String(a.id || `addon_${aName.toLowerCase()}`);
         const aQty = a.quantity !== undefined ? Math.max(1, Number(a.quantity)) : 1;
+        const totalAddonQty = isAddonFlat ? aQty : (aQty * qty);
         const aPrice = Number(a.price ?? a.sellingPrice) || 0;
-        const aGross = aPrice * aQty * qty;
+        const aGross = aPrice * totalAddonQty;
         lineAddonsGrossSale += aGross;
 
         // Lookup add-on cost
@@ -1028,7 +1037,7 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
         }
 
         const aHasCost = aCost !== null && !isNaN(aCost) && aCost >= 0;
-        const aTotalCOGS = aHasCost ? Math.round(aCost * aQty * qty) : null;
+        const aTotalCOGS = aHasCost ? Math.round(aCost * totalAddonQty) : null;
         if (aHasCost) {
           lineAddonsTotalCOGS += aTotalCOGS;
         }
@@ -1038,7 +1047,7 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
           name: aName,
           price: aPrice,
           singleQty: aQty,
-          qty: aQty * qty,
+          qty: totalAddonQty,
           gross: aGross,
           cost: aCost,
           hasCost: aHasCost,
@@ -1088,7 +1097,19 @@ export function getProfitAndCostReportData(orders = [], reversals = [], filters 
           pa.netRevenue = Math.max(0, pa.gross - aDiscount);
           sumAddonsNet += pa.netRevenue;
         });
-        itemNetRevenue = Math.max(0, netRevenue - sumAddonsNet);
+
+        if (
+          line.itemGrossSale !== undefined &&
+          line.itemGrossSale !== null &&
+          Number(line.itemGrossSale) >= 0 &&
+          Number(line.itemGrossSale) <= grossLineSale
+        ) {
+          const itemGross = Number(line.itemGrossSale);
+          const itemDiscount = grossLineSale > 0 ? Math.round((itemGross / grossLineSale) * allocatedDiscount) : 0;
+          itemNetRevenue = Math.max(0, itemGross - itemDiscount);
+        } else {
+          itemNetRevenue = Math.max(0, netRevenue - sumAddonsNet);
+        }
       }
 
       // If line had totalCOGS stored without breakdown, fallback appropriately
