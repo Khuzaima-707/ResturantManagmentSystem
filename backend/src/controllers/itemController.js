@@ -5,11 +5,22 @@ import { defaultItems } from '../data/defaultItems.js';
 import cloudinary from '../config/cloudinary.js';
 import { isDbConnected } from '../config/db.js';
 import { isCashierRequest } from '../middleware/authMiddleware.js';
+import { invalidateCategoriesCache } from './categoryController.js';
 
 // Precompiled regex with word boundaries for high-performance, accurate tiering
 const DESSERT_REGEX = /\b(desert|dessert|sweet|ice\s*cream|icecream|kheer|halwa|gulab\s*jamun|jalebi|rasmalai|mithai|meetha|falooda|custard|pudding|cake|pastry|brownie)\b/i;
 
 const DRINK_REGEX = /\b(drink|coldrink|cold\s*drink|softdrink|soft\s*drink|beverage|water|juice|soda|shake|smoothie|dew|coke|pepsi|fanta|sprite|m[ia]rinda|7\s*up|sting|red\s*bull|monster|lemonade|lassi|mineral\s*water|cold\s*item|tea|coffee|chai|bottle)\b/i;
+
+// In-memory cache for ultra-fast item lookups
+let itemsCache = null;
+let itemsCacheTime = 0;
+const ITEMS_CACHE_TTL_MS = 60000;
+
+export function invalidateItemsCache() {
+  itemsCache = null;
+  itemsCacheTime = 0;
+}
 
 /**
  * Escapes special characters for safe use in a RegExp
@@ -71,6 +82,24 @@ export async function getAllItems(req, res, next) {
     }
 
     const { categoryId, status, search, sort = 'createdAt' } = req.query;
+    const isCashier = isCashierRequest(req);
+    const hasFilters = Boolean(
+      (categoryId && categoryId.trim()) ||
+      (status && status.trim()) ||
+      (search && search.trim()) ||
+      (sort && sort !== 'createdAt')
+    );
+
+    // Fast-path: return cached response in ~1ms if no custom query filters
+    if (!hasFilters && itemsCache && Date.now() - itemsCacheTime < ITEMS_CACHE_TTL_MS) {
+      const data = isCashier ? itemsCache.cashier : itemsCache.admin;
+      return res.status(200).json({
+        success: true,
+        count: data.length,
+        data,
+      });
+    }
+
     const filter = {};
 
     if (categoryId && categoryId.trim()) {
@@ -98,7 +127,7 @@ export async function getAllItems(req, res, next) {
     else if (sort === '-createdAt') sortOption.createdAt = -1;
     else sortOption.createdAt = 1;
 
-    let items = await MenuItem.find(filter).sort(sortOption);
+    let items = await MenuItem.find(filter).sort(sortOption).lean();
 
     // Default natural sorting: Food first, Desserts next, Drinks/Water last
     // Memoize tiers so getItemTier is computed once per item, avoiding O(N log N) regex re-evaluations
@@ -116,7 +145,15 @@ export async function getAllItems(req, res, next) {
       });
     }
 
-    const isCashier = isCashierRequest(req);
+    // Populate server-side cache if standard full list was requested
+    if (!hasFilters) {
+      itemsCache = {
+        admin: items,
+        cashier: items.map((item) => sanitizeItemForClient(item, true)),
+      };
+      itemsCacheTime = Date.now();
+    }
+
     const sanitizedItems = isCashier
       ? items.map((item) => sanitizeItemForClient(item, true))
       : items;
@@ -175,6 +212,12 @@ export async function createItem(req, res, next) {
 
     if (payload.categoryId) {
       category = await Category.findOne({ id: payload.categoryId });
+      if (!category && !catName) {
+        return res.status(400).json({
+          success: false,
+          error: { message: `Category with ID '${payload.categoryId}' not found` },
+        });
+      }
     }
 
     if (!category && catName) {
@@ -206,6 +249,7 @@ export async function createItem(req, res, next) {
     }
 
     if (category) {
+      invalidateCategoriesCache();
       payload.categoryId = category.id;
       payload.categoryName = category.name;
     } else {
@@ -247,6 +291,7 @@ export async function createItem(req, res, next) {
     }
 
     const item = await MenuItem.create(payload);
+    invalidateItemsCache();
 
     return res.status(201).json({
       success: true,
@@ -327,6 +372,8 @@ export async function updateItem(req, res, next) {
       });
     }
 
+    invalidateItemsCache();
+
     return res.status(200).json({
       success: true,
       message: 'Menu item updated successfully',
@@ -354,6 +401,8 @@ export async function deleteItem(req, res, next) {
         error: { message: `Menu item with ID '${id}' not found` },
       });
     }
+
+    invalidateItemsCache();
 
     return res.status(200).json({
       success: true,
@@ -391,8 +440,10 @@ export async function seedItems(req, res, next) {
 
     const seededItems = await MenuItem.find({
       id: { $in: defaultItems.map((d) => d.id) },
-    });
+    }).lean();
     const totalCount = await MenuItem.countDocuments();
+
+    invalidateItemsCache();
 
     return res.status(200).json({
       success: true,

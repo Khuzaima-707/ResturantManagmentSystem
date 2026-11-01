@@ -10,6 +10,8 @@ import { Table } from '../models/Table.js';
 import { Shift } from '../models/Shift.js';
 import { Deal } from '../models/Deal.js';
 import { Counter } from '../models/Counter.js';
+import { invalidateCategoriesCache } from './categoryController.js';
+import { invalidateItemsCache } from './itemController.js';
 
 /**
  * GET /api/settings
@@ -92,6 +94,9 @@ export async function deleteAllData(req, res, next) {
     }
 
     const [ordersResult, reversalsResult, , cRes, iRes, aRes, dRes, expRes, expCatRes, tblRes, shfRes] = await Promise.all(deleteTasks);
+
+    invalidateCategoriesCache();
+    invalidateItemsCache();
 
     return res.status(200).json({
       success: true,

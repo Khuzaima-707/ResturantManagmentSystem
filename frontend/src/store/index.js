@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { toast as hotToast } from 'react-hot-toast';
 import { storage } from '../services/persistence/storage';
 import { clearAllImages } from '../services/persistence/imageStorage';
 import {
@@ -1481,8 +1482,18 @@ export const useAppStore = create((set, get) => ({
 
   // Active toast notification for on-screen popup
   activeToast: null,
-  showToast: (toast) => {
-    set({ activeToast: toast });
+  showToast: (toastData) => {
+    set({ activeToast: toastData });
+    if (toastData && typeof window !== 'undefined') {
+      const msg = toastData.description || toastData.title || toastData.message || 'Notification';
+      if (toastData.type === 'error') {
+        hotToast.error(msg);
+      } else if (toastData.type === 'success') {
+        hotToast.success(msg);
+      } else {
+        hotToast(msg);
+      }
+    }
   },
   dismissToast: () => {
     set({ activeToast: null });
@@ -2359,12 +2370,32 @@ export const useAppStore = create((set, get) => ({
 
       const initialUpdates = {};
       if (Array.isArray(cats)) {
-        initialUpdates.categories = cats;
+        const currentCats = get().categories || [];
+        const isCatsIdentical = currentCats.length === cats.length &&
+          currentCats.every((c, idx) => c.id === cats[idx]?.id && c.name === cats[idx]?.name && c.sortOrder === cats[idx]?.sortOrder && c.status === cats[idx]?.status);
+        if (!isCatsIdentical) {
+          initialUpdates.categories = cats;
+        }
         storage.set('categories', cats);
       }
       if (Array.isArray(its)) {
         const healed = healMiscategorizedItems(its, initialUpdates.categories || get().categories || []);
-        initialUpdates.items = healed;
+        const currentItems = get().items || [];
+        const isItemsIdentical = currentItems.length === healed.length &&
+          currentItems.every((i, idx) => {
+            const h = healed[idx];
+            return i.id === h?.id &&
+              i.updatedAt === h?.updatedAt &&
+              i.name === h?.name &&
+              i.basePrice === h?.basePrice &&
+              i.status === h?.status &&
+              i.categoryId === h?.categoryId &&
+              i.imageRef === h?.imageRef &&
+              i.costPrice === h?.costPrice;
+          });
+        if (!isItemsIdentical) {
+          initialUpdates.items = healed;
+        }
         storage.set('menu_items', healed);
       }
       if (Object.keys(initialUpdates).length > 0) {
@@ -2495,4 +2526,5 @@ export const useAppStore = create((set, get) => ({
 },
 }));
 
+export { hotToast as toast };
 export default useAppStore;

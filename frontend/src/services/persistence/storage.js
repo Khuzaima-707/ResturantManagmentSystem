@@ -2,16 +2,16 @@
  * Frontend Persistence Helpers
  * Safe localStorage wrapper with memory fallback for SSR / Node / Vitest
  *
- * NOTE: All business operational data (Orders, Menu Items, Categories, Add-ons, Deals,
- * Expenses, Shifts, Tables, Reversals, Settings) are 100% saved in MongoDB Atlas.
- * LocalStorage is STRICTLY restricted to user authentication session (auth_token, active_user).
+ * Implements high-performance client-side caching (stale-while-revalidate):
+ * - Instant zero-latency loading on page reload / refresh
+ * - Smooth offline capability & immediate data availability
+ * - Non-blocking asynchronous sync with Express & MongoDB Atlas backend
  */
 
 const STORAGE_PREFIX = 'rms_pos_v2_';
 const memoryStore = new Map();
 
-// Operational database collections and transactional states must NEVER be stored in localStorage.
-// MongoDB Atlas is the single source of truth; frontend cache remains in-memory only.
+// Operational database collections & cache keys cached locally for instant rendering
 export const ALLOWED_LOCAL_STORAGE_KEYS = new Set([
   'auth_token',
   'active_user',
@@ -23,6 +23,20 @@ export const ALLOWED_LOCAL_STORAGE_KEYS = new Set([
   'user_profiles',
   'auth_credentials',
   'settings',
+  'menu_items',
+  'categories',
+  'addons',
+  'deals',
+  'orders',
+  'reversals',
+  'expenses',
+  'expense_categories',
+  'tables',
+  'shifts',
+  'current_shift',
+  'notifications',
+  'deletion_history',
+  'pos_cart',
 ]);
 
 export const DB_COLLECTION_KEYS = new Set([
@@ -51,13 +65,6 @@ export function cleanLegacyDataFromLocalStorage() {
     for (const k of keys) {
       if (k.startsWith('rms_pos_v1_')) {
         window.localStorage.removeItem(k);
-        continue;
-      }
-      if (k.startsWith(STORAGE_PREFIX)) {
-        const rawKey = k.slice(STORAGE_PREFIX.length);
-        if (!ALLOWED_LOCAL_STORAGE_KEYS.has(rawKey)) {
-          window.localStorage.removeItem(k);
-        }
       }
     }
   } catch {}
@@ -80,16 +87,6 @@ function isLocalStorageAvailable() {
 export const storage = {
   get: (key, defaultValue = null) => {
     try {
-      if (!ALLOWED_LOCAL_STORAGE_KEYS.has(key)) {
-        if (isLocalStorageAvailable()) {
-          // Clean up if residual legacy data exists in browser localStorage
-          window.localStorage.removeItem(STORAGE_PREFIX + key);
-        }
-        return memoryStore.has(STORAGE_PREFIX + key)
-          ? memoryStore.get(STORAGE_PREFIX + key)
-          : defaultValue;
-      }
-
       if (isLocalStorageAvailable()) {
         const item = window.localStorage.getItem(STORAGE_PREFIX + key);
         if (item !== null && item !== undefined) {
@@ -109,11 +106,6 @@ export const storage = {
       memoryStore.set(STORAGE_PREFIX + key, value);
 
       if (isLocalStorageAvailable()) {
-        if (!ALLOWED_LOCAL_STORAGE_KEYS.has(key)) {
-          // Never dump database collections or runtime operational states into browser localStorage
-          window.localStorage.removeItem(STORAGE_PREFIX + key);
-          return true;
-        }
         window.localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
         return true;
       }
@@ -157,7 +149,7 @@ export const storage = {
   },
 };
 
-// Clean legacy and database collection dumps from localStorage on initialize
+// Clean legacy v1 demo data on initialize
 cleanLegacyDataFromLocalStorage();
 
 export default storage;

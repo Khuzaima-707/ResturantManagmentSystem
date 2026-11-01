@@ -26,20 +26,24 @@ export async function connectDB() {
     return null;
   }
 
-  if (cached.conn) {
+  if (cached.conn && mongoose.connection.readyState === 1) {
     return cached.conn;
   }
 
-  if (!cached.promise) {
+  if (!cached.promise || mongoose.connection.readyState === 0) {
     const opts = {
       bufferCommands: true,
       maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 15000,
+      connectTimeoutMS: 15000,
     };
 
     cached.promise = mongoose.connect(uri, opts).then((mongooseInstance) => {
       console.log(`✅ Connected to MongoDB Atlas successfully! Database: ${mongooseInstance.connection.name}`);
       return mongooseInstance;
+    }).catch((err) => {
+      cached.promise = null;
+      throw err;
     });
   }
 
@@ -47,6 +51,7 @@ export async function connectDB() {
     cached.conn = await cached.promise;
   } catch (e) {
     cached.promise = null;
+    cached.conn = null;
     console.error('❌ MongoDB Connection Error:', e.message);
     throw e;
   }

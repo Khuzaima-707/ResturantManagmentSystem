@@ -13,8 +13,18 @@ export const CategoryRepository = {
     try {
       const res = await api.get('/categories');
       if (res && res.success && Array.isArray(res.data)) {
-        storage.set(STORAGE_KEY, res.data);
-        return res.data;
+        if (res.offline) {
+          const local = storage.get(STORAGE_KEY, []) || [];
+          return Array.isArray(local) ? local : [];
+        }
+        const local = storage.get(STORAGE_KEY, []) || [];
+        const backendIds = new Set(res.data.map((c) => c.id));
+        const pendingOffline = Array.isArray(local)
+          ? local.filter((loc) => loc?.id && loc?._isOfflineCreated && !backendIds.has(loc.id))
+          : [];
+        const merged = [...res.data, ...pendingOffline];
+        storage.set(STORAGE_KEY, merged);
+        return merged;
       }
     } catch (err) {
       console.warn('[CategoryRepository] API fetch failed, using cached storage:', err?.message);
@@ -63,6 +73,7 @@ export const CategoryRepository = {
       id: category.id || `cat-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       createdAt: category.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      _isOfflineCreated: true,
     };
     const updated = [newRecord, ...all.filter((c) => c.id !== newRecord.id)];
     storage.set(STORAGE_KEY, updated);

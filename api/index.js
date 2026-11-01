@@ -9,18 +9,15 @@ try {
 }
 
 import { app } from '../backend/src/app.js';
-import { connectDB } from '../backend/src/config/db.js';
+import { connectDB, isDbConnected } from '../backend/src/config/db.js';
 import { ensureDefaultUsers } from '../backend/src/controllers/authController.js';
-
-let isConnected = false;
 
 // Export default serverless handler for Vercel
 export default async function handler(req, res) {
-  if (!isConnected && process.env.MONGODB_URI) {
+  if (process.env.MONGODB_URI && !isDbConnected()) {
     try {
       await connectDB();
       await ensureDefaultUsers().catch(() => {});
-      isConnected = true;
     } catch (err) {
       console.error('Serverless DB connection error:', err.message);
     }

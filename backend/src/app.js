@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { connectDB, isDbConnected } from './config/db.js';
 import categoryRoutes from './routes/categoryRoutes.js';
 import itemRoutes from './routes/itemRoutes.js';
 import addonRoutes from './routes/addonRoutes.js';
@@ -77,6 +78,19 @@ app.get('/', (req, res) => {
     message: 'Restaurant Management System API is running.',
     health: '/api/health',
   });
+});
+
+// On-demand database auto-reconnect for API requests
+app.use('/api', async (req, res, next) => {
+  if (req.path === '/health') return next();
+  if (process.env.MONGODB_URI && !isDbConnected()) {
+    try {
+      await connectDB();
+    } catch {
+      // Continue even if DB connection failed so resilient offline fallbacks can respond
+    }
+  }
+  next();
 });
 
 // Module API Routes

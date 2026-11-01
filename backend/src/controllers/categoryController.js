@@ -93,6 +93,16 @@ export function getCategoryTier(category) {
  * GET /api/categories
  * Retrieve all categories with optional search and status filtering
  */
+// In-memory cache for ultra-fast category lookups
+let categoriesCache = null;
+let categoriesCacheTime = 0;
+const CATEGORIES_CACHE_TTL_MS = 60000;
+
+export function invalidateCategoriesCache() {
+  categoriesCache = null;
+  categoriesCacheTime = 0;
+}
+
 export function sortCategoriesList(categories = []) {
   const parseOrder = (v) => {
     if (v === undefined || v === null || v === '') return null;
@@ -149,6 +159,17 @@ export async function getAllCategories(req, res, next) {
     }
 
     const { status, search } = req.query;
+    const hasFilters = Boolean((status && status.trim()) || (search && search.trim()));
+
+    // Fast-path: return cached categories in ~1ms
+    if (!hasFilters && categoriesCache && Date.now() - categoriesCacheTime < CATEGORIES_CACHE_TTL_MS) {
+      return res.status(200).json({
+        success: true,
+        count: categoriesCache.length,
+        data: categoriesCache,
+      });
+    }
+
     const filter = {};
 
     if (status && ['active', 'inactive'].includes(status)) {
@@ -164,8 +185,13 @@ export async function getAllCategories(req, res, next) {
       ];
     }
 
-    const rawCategories = await Category.find(filter);
+    const rawCategories = await Category.find(filter).lean();
     const categories = sortCategoriesList(rawCategories);
+
+    if (!hasFilters) {
+      categoriesCache = categories;
+      categoriesCacheTime = Date.now();
+    }
 
     return res.status(200).json({
       success: true,
@@ -244,6 +270,7 @@ export async function createCategory(req, res, next) {
     }
 
     const category = await Category.create(payload);
+    invalidateCategoriesCache();
 
     return res.status(201).json({
       success: true,
@@ -305,6 +332,8 @@ export async function updateCategory(req, res, next) {
       });
     }
 
+    invalidateCategoriesCache();
+
     return res.status(200).json({
       success: true,
       message: 'Category updated successfully',
@@ -335,6 +364,8 @@ export async function deleteCategory(req, res, next) {
         error: { message: `Category with ID '${id}' not found` },
       });
     }
+
+    invalidateCategoriesCache();
 
     return res.status(200).json({
       success: true,
@@ -369,6 +400,7 @@ export async function seedCategories(req, res, next) {
     }
 
     const totalCount = await Category.countDocuments();
+    invalidateCategoriesCache();
 
     return res.status(200).json({
       success: true,
